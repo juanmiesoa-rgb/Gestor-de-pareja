@@ -3,7 +3,6 @@ import { getToken } from './auth.js';
 
 function generateUUID() {
   if (crypto.randomUUID) return crypto.randomUUID();
-  // Fallback para navegadores antiguos
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
     const r = Math.random() * 16 | 0;
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -30,7 +29,7 @@ export async function callApi(action, payload = {}) {
     const response = await fetch(CONFIG.API_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'text/plain' // text/plain evita preflight CORS complejo en Apps Script
+        'Content-Type': 'text/plain'
       },
       body: JSON.stringify(requestData)
     });
@@ -45,8 +44,8 @@ export async function callApi(action, payload = {}) {
     const data = await response.json();
 
     if (!data.ok) {
-      const err = new Error(data.message || 'El servidor devolvió un error.');
-      err.code = data.code || 'BACKEND_ERROR';
+      const err = new Error(data.error?.message || 'El servidor devolvió un error.');
+      err.code = data.error?.code || 'BACKEND_ERROR';
       throw err;
     }
 
