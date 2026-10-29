@@ -3,103 +3,297 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Aplicación financiera compartida">
   <title>Finanzas Compartidas</title>
-  <link rel="stylesheet" href="styles.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #1a202c; line-height: 1.6; }
+    .hidden { display: none !important; }
+    
+    /* Login */
+    .login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .login-card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 420px; width: 100%; text-align: center; }
+    .login-card h1 { font-size: 28px; margin-bottom: 12px; color: #2d3748; }
+    .login-card p { color: #718096; margin-bottom: 32px; font-size: 15px; }
+    #g_id_signin { display: flex; justify-content: center; margin: 20px 0; }
+    
+    /* Dashboard */
+    .topbar { background: white; padding: 16px 24px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+    .topbar-brand { font-size: 20px; font-weight: 700; color: #2d3748; }
+    .topbar-user { display: flex; align-items: center; gap: 16px; }
+    .topbar-user-name { font-weight: 500; color: #4a5568; }
+    .btn { padding: 8px 16px; border-radius: 6px; border: 1px solid #e2e8f0; background: white; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; }
+    .btn:hover { background: #f7fafc; }
+    .btn-primary { background: #4299e1; color: white; border-color: #4299e1; }
+    .btn-primary:hover { background: #3182ce; }
+    
+    .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+    
+    .grid { display: grid; gap: 24px; }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+    
+    .card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .card h2 { font-size: 18px; margin-bottom: 16px; color: #2d3748; }
+    .card h3 { font-size: 16px; margin-bottom: 12px; color: #4a5568; }
+    
+    .kpi { display: flex; flex-direction: column; gap: 8px; }
+    .kpi-label { font-size: 13px; color: #718096; }
+    .kpi-value { font-size: 28px; font-weight: 700; color: #2d3748; }
+    .kpi-sub { font-size: 12px; color: #a0aec0; }
+    
+    .account-card { padding: 20px; background: #f7fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .account-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+    .account-name { font-weight: 600; font-size: 16px; color: #2d3748; }
+    .account-entity { font-size: 13px; color: #718096; }
+    .account-balance { font-size: 24px; font-weight: 700; color: #38a169; }
+    .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-active { background: #c6f6d5; color: #22543d; }
+    .badge-planned { background: #feebc8; color: #744210; }
+    
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { text-align: left; padding: 12px; background: #f7fafc; font-weight: 600; color: #4a5568; border-bottom: 2px solid #e2e8f0; }
+    td { padding: 12px; border-bottom: 1px solid #e2e8f0; }
+    tr:hover td { background: #f7fafc; }
+    
+    .amount-positive { color: #38a169; font-weight: 600; }
+    .amount-negative { color: #e53e3e; font-weight: 600; }
+    
+    .notification { position: fixed; top: 20px; right: 20px; padding: 16px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 1000; animation: slideIn 0.3s ease-out; max-width: 320px; }
+    .notification-success { background: #c6f6d5; color: #22543d; border: 1px solid #9ae6b4; }
+    .notification-error { background: #fed7d7; color: #742a2a; border: 1px solid #fc8181; }
+    .notification-info { background: #bee3f8; color: #2a4365; border: 1px solid #90cdf4; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    
+    .empty-state { text-align: center; padding: 40px; color: #a0aec0; }
+    
+    @media (max-width: 768px) {
+      .topbar { flex-direction: column; gap: 12px; align-items: flex-start; }
+      .topbar-user { width: 100%; justify-content: space-between; }
+      .container { padding: 20px 16px; }
+    }
+  </style>
 </head>
 <body>
-  <!-- Área de notificaciones globales -->
-  <div id="notification-area" class="notification-area"></div>
 
-  <!-- Pantalla de Login -->
-  <div id="login-screen" class="container hidden">
+  <!-- LOGIN SCREEN -->
+  <div id="loginScreen" class="login-container">
     <div class="login-card">
-      <h1>Finanzas Compartidas</h1>
+      <h1>💰 Finanzas Compartidas</h1>
       <p>Inicia sesión con tu cuenta de Google para acceder a tu panel financiero.</p>
       <div id="g_id_signin"></div>
+      <p style="font-size: 12px; color: #a0aec0; margin-top: 20px;">
+        Demo: haz clic en el botón para entrar con datos de prueba
+      </p>
     </div>
   </div>
 
-  <!-- Pantalla Principal (Dashboard) -->
-  <div id="dashboard-screen" class="hidden">
-    <header class="top-bar">
-      <div class="container top-bar-content">
-        <div class="brand">
-          <span>💰 Finanzas Compartidas</span>
-          <span class="version" id="app-version">v1.0.0</span>
+  <!-- DASHBOARD SCREEN -->
+  <div id="dashboardScreen" class="hidden">
+    <div class="topbar">
+      <div class="topbar-brand">💰 Finanzas Compartidas</div>
+      <div class="topbar-user">
+        <span id="userName" class="topbar-user-name">Usuario</span>
+        <button id="logoutBtn" class="btn">Cerrar sesión</button>
+      </div>
+    </div>
+
+    <div class="container">
+      <!-- KPIs -->
+      <div class="grid grid-3" style="margin-bottom: 24px;">
+        <div class="card kpi">
+          <div class="kpi-label">Saldo total estimado</div>
+          <div class="kpi-value" id="totalBalance">—</div>
+          <div class="kpi-sub">2 cuentas activas</div>
         </div>
-        <div class="user-info">
-          <span id="user-name-display">Usuario</span>
-          <button id="logout-btn" class="btn btn-secondary">Cerrar sesión</button>
+        <div class="card kpi">
+          <div class="kpi-label">Gasto del mes</div>
+          <div class="kpi-value" id="monthExpense">—</div>
+          <div class="kpi-sub">Octubre 2026</div>
+        </div>
+        <div class="card kpi">
+          <div class="kpi-label">Aportación acordada</div>
+          <div class="kpi-value" id="agreedContribution">—</div>
+          <div class="kpi-sub">60% Ana · 40% Luis</div>
         </div>
       </div>
-    </header>
-
-    <main class="container main-content">
-      <!-- Resumen -->
-      <section class="card">
-        <h2>📊 Resumen del mes</h2>
-        <div id="resumen-data" class="resumen-grid">
-          <div class="loading">Cargando datos...</div>
-        </div>
-      </section>
 
       <!-- Cuentas -->
-      <section class="card">
+      <div class="card" style="margin-bottom: 24px;">
         <h2>🏦 Cuentas conjuntas</h2>
-        <div id="cuentas-list" class="cuentas-grid">
-          <div class="loading">Cargando cuentas...</div>
+        <div class="grid grid-2" id="accountsList"></div>
+      </div>
+
+      <!-- Últimos movimientos -->
+      <div class="card" style="margin-bottom: 24px;">
+        <h2>📊 Últimos movimientos</h2>
+        <div style="overflow-x: auto;">
+          <table id="movementsTable">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Cuenta</th>
+                <th>Tipo</th>
+                <th>Categoría</th>
+                <th>Descripción</th>
+                <th style="text-align: right;">Importe</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="movementsBody"></tbody>
+          </table>
         </div>
-      </section>
+      </div>
 
       <!-- Acciones rápidas -->
-      <section class="card">
+      <div class="card">
         <h2>⚡ Acciones rápidas</h2>
-        <div class="acciones-grid">
-          <button class="btn btn-primary" onclick="alert('Módulo en desarrollo')">
-            ➕ Nuevo movimiento
-          </button>
-          <button class="btn btn-secondary" onclick="alert('Módulo en desarrollo')">
-            🔄 Nueva transferencia
-          </button>
-          <button class="btn btn-secondary" onclick="alert('Módulo en desarrollo')">
-            🎯 Nuevo objetivo
-          </button>
-          <button class="btn btn-secondary" onclick="alert('Módulo en desarrollo')">
-            ✈️ Nuevo viaje
-          </button>
+        <div class="grid grid-3">
+          <button class="btn btn-primary" onclick="showNotification('Módulo en desarrollo', 'info')">➕ Nuevo movimiento</button>
+          <button class="btn" onclick="showNotification('Módulo en desarrollo', 'info')">🔄 Nueva transferencia</button>
+          <button class="btn" onclick="showNotification('Módulo en desarrollo', 'info')">🎯 Nuevo objetivo</button>
         </div>
-      </section>
-
-      <!-- Placeholder para módulos futuros -->
-      <section class="card placeholder-module">
-        <h2>🚧 Módulos en desarrollo</h2>
-        <p>Los siguientes módulos estarán disponibles próximamente:</p>
-        <ul>
-          <li>Presupuesto y categorías</li>
-          <li>Aportaciones y reparto</li>
-          <li>Nóminas y gastos individuales</li>
-          <li>Conciliación de saldos</li>
-          <li>Análisis y gráficos</li>
-        </ul>
-      </section>
-    </main>
+      </div>
+    </div>
   </div>
 
-  <!-- Script principal como módulo -->
-  <script type="module">
-    import { CONFIG } from './config.js';
-    import { checkSession, logout, showNotification } from './auth.js';
+  <script>
+    // ==================== DATOS MOCK ====================
+    const MOCK_DATA = {
+      user: { nombre: 'Bombón', email: 'juanmi.sexto.a@gmail.com', rol: 'MIEMBRO' },
+      cuentas: [
+        { cuenta_id: 'acc_tr1', nombre: 'Trade Republic 1', entidad: 'Trade Republic', saldo_inicial_cent: 125000, estado: 'ACTIVA', icono: '💳' },
+        { cuenta_id: 'acc_my', nombre: 'MyInvestor', entidad: 'MyInvestor', saldo_inicial_cent: 80000, estado: 'ACTIVA', icono: '🏦' },
+        { cuenta_id: 'acc_tr2', nombre: 'Trade Republic 2', entidad: 'Trade Republic', saldo_inicial_cent: 0, estado: 'PLANIFICADA', icono: '💳' }
+      ],
+      movimientos: [
+        { fecha: '2026-10-27', cuenta: 'Trade Republic 1', tipo: 'GASTO', categoria: 'Alimentación', descripcion: 'Mercadona semanal', importe: -4590, estado: 'CONFIRMADO' },
+        { fecha: '2026-10-24', cuenta: 'Trade Republic 1', tipo: 'GASTO', categoria: 'Ocio', descripcion: 'Cine + cena', importe: -2350, estado: 'CONFIRMADO' },
+        { fecha: '2026-10-22', cuenta: 'MyInvestor', tipo: 'GASTO', categoria: 'Hogar', descripcion: 'Luz octubre', importe: -8500, estado: 'CONFIRMADO' },
+        { fecha: '2026-10-26', cuenta: 'Trade Republic 1', tipo: 'APORTACION', categoria: 'Aportación', descripcion: 'Aportación octubre Ana', importe: 60000, estado: 'CONFIRMADO' },
+        { fecha: '2026-10-26', cuenta: 'Trade Republic 1', tipo: 'APORTACION', categoria: 'Aportación', descripcion: 'Aportación octubre Luis', importe: 40000, estado: 'CONFIRMADO' },
+        { fecha: '2026-10-31', cuenta: 'Trade Republic 1', tipo: 'GASTO', categoria: 'Suscripciones', descripcion: 'Netflix', importe: -1500, estado: 'PREVISTO' }
+      ]
+    };
 
-    // Inicializar versión en la UI
-    document.getElementById('app-version').textContent = `v${CONFIG.APP_VERSION}`;
+    // ==================== FUNCIONES UTILITARIAS ====================
+    function formatMoney(centimos) {
+      if (centimos === null || centimos === undefined) return '—';
+      const euros = Math.abs(centimos) / 100;
+      return euros.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+    }
 
-    // Manejar evento de logout
-    document.getElementById('logout-btn').addEventListener('click', logout);
+    function showNotification(message, type = 'info') {
+      const div = document.createElement('div');
+      div.className = `notification notification-${type}`;
+      div.textContent = message;
+      document.body.appendChild(div);
+      setTimeout(() => {
+        div.style.opacity = '0';
+        div.style.transition = 'opacity 0.3s';
+        setTimeout(() => div.remove(), 300);
+      }, 3000);
+    }
 
-    // Verificar sesión al cargar el DOM
+    // ==================== RENDER DASHBOARD ====================
+    function renderDashboard() {
+      // KPIs
+      const totalBalance = MOCK_DATA.cuentas
+        .filter(c => c.estado === 'ACTIVA')
+        .reduce((sum, c) => sum + c.saldo_inicial_cent, 0);
+      document.getElementById('totalBalance').textContent = formatMoney(totalBalance);
+
+      const monthExpense = MOCK_DATA.movimientos
+        .filter(m => m.tipo === 'GASTO' && m.estado === 'CONFIRMADO')
+        .reduce((sum, m) => sum + Math.abs(m.importe), 0);
+      document.getElementById('monthExpense').textContent = formatMoney(monthExpense);
+
+      document.getElementById('agreedContribution').textContent = formatMoney(100000);
+
+      // Cuentas
+      const accountsHtml = MOCK_DATA.cuentas.map(c => `
+        <div class="account-card">
+          <div class="account-header">
+            <div>
+              <div class="account-name">${c.icono} ${c.nombre}</div>
+              <div class="account-entity">${c.entidad}</div>
+            </div>
+            <span class="badge ${c.estado === 'ACTIVA' ? 'badge-active' : 'badge-planned'}">${c.estado}</span>
+          </div>
+          <div class="account-balance">${formatMoney(c.saldo_inicial_cent)}</div>
+        </div>
+      `).join('');
+      document.getElementById('accountsList').innerHTML = accountsHtml;
+
+      // Movimientos
+      const movementsHtml = MOCK_DATA.movimientos.map(m => `
+        <tr>
+          <td>${m.fecha}</td>
+          <td>${m.cuenta}</td>
+          <td>${m.tipo}</td>
+          <td>${m.categoria}</td>
+          <td>${m.descripcion}</td>
+          <td style="text-align: right;" class="${m.importe > 0 ? 'amount-positive' : 'amount-negative'}">${formatMoney(m.importe)}</td>
+          <td><span class="badge ${m.estado === 'CONFIRMADO' ? 'badge-active' : 'badge-planned'}">${m.estado}</span></td>
+        </tr>
+      `).join('');
+      document.getElementById('movementsBody').innerHTML = movementsHtml;
+    }
+
+    // ==================== LOGIN CON GOOGLE ====================
+    function initGoogleSignIn() {
+      // Cargar librería de Google
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        if (window.google && window.google.accounts) {
+          window.google.accounts.id.initialize({
+            client_id: '1029580766773-at7scng1e5d7gvgtpskqoh52blrrcgtr.apps.googleusercontent.com',
+            callback: handleCredentialResponse,
+            auto_select: false
+          });
+          window.google.accounts.id.renderButton(
+            document.getElementById('g_id_signin'),
+            { theme: 'outline', size: 'large', width: 300 }
+          );
+        }
+      };
+      document.head.appendChild(script);
+    }
+
+    function handleCredentialResponse(response) {
+      // Guardar token
+      sessionStorage.setItem('id_token', response.credential);
+      
+      // Mostrar dashboard con datos mock
+      document.getElementById('loginScreen').classList.add('hidden');
+      document.getElementById('dashboardScreen').classList.remove('hidden');
+      document.getElementById('userName').textContent = MOCK_DATA.user.nombre;
+      
+      renderDashboard();
+      showNotification(`Bienvenido/a, ${MOCK_DATA.user.nombre}`, 'success');
+    }
+
+    function logout() {
+      sessionStorage.removeItem('id_token');
+      location.reload();
+    }
+
+    // ==================== INICIALIZACIÓN ====================
     document.addEventListener('DOMContentLoaded', () => {
-      checkSession();
+      // Verificar si ya hay sesión
+      const token = sessionStorage.getItem('id_token');
+      if (token) {
+        document.getElementById('loginScreen').classList.add('hidden');
+        document.getElementById('dashboardScreen').classList.remove('hidden');
+        document.getElementById('userName').textContent = MOCK_DATA.user.nombre;
+        renderDashboard();
+      } else {
+        initGoogleSignIn();
+      }
+
+      document.getElementById('logoutBtn').addEventListener('click', logout);
     });
   </script>
 </body>
