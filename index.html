@@ -6,6 +6,8 @@
   <meta name="description" content="Aplicación financiera compartida">
   <title>Finanzas Compartidas</title>
   <link rel="stylesheet" href="styles.css">
+  
+  <!-- NO agregues aquí <script src="auth.js"> ni <script src="api.js"> -->
 </head>
 <body>
   <!-- Área de notificaciones globales -->
@@ -47,7 +49,7 @@
     </main>
   </div>
 
-  <!-- Script principal como módulo ES6 -->
+  <!-- ÚNICO punto de entrada: Un script de tipo módulo -->
   <script type="module">
     import { CONFIG } from './config.js';
     import { checkSession, logout, showNotification } from './auth.js';
