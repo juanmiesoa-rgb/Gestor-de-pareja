@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Aplicación financiera compartida">
+  <title>Finanzas Compartidas</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Área de notificaciones globales -->
+  <div id="notification-area" class="notification-area"></div>
+
+  <!-- Pantalla de Login -->
+  <div id="login-screen" class="container hidden">
+    <div class="login-card">
+      <h1>Finanzas Compartidas</h1>
+      <p>Inicia sesión con tu cuenta de Google para acceder a tu panel financiero.</p>
+      <div id="g_id_signin"></div>
+    </div>
+  </div>
+
+  <!-- Pantalla Principal (Dashboard) -->
+  <div id="dashboard-screen" class="hidden">
+    <header class="top-bar">
+      <div class="container top-bar-content">
+        <div class="brand">
+          <span>Finanzas Compartidas</span>
+          <span class="version" id="app-version">v1.0.0</span>
+        </div>
+        <div class="user-info">
+          <span id="user-name-display">Usuario</span>
+          <button id="logout-btn" class="btn btn-secondary">Cerrar sesión</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container main-content">
+      <div class="card">
+        <h2>Panel de Control</h2>
+        <p>La sesión se ha iniciado correctamente y la conexión con el backend es funcional.</p>
+        
+        <div class="placeholder-module">
+          <p>Módulo en desarrollo (F6 en adelante)</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Script principal como módulo ES6 -->
+  <script type="module">
+    import { CONFIG } from './config.js';
+    import { checkSession, logout, showNotification } from './auth.js';
+
+    // Inicializar versión en la UI
+    document.getElementById('app-version').textContent = `v${CONFIG.APP_VERSION}`;
+
+    // Manejar evento de logout
+    document.getElementById('logout-btn').addEventListener('click', logout);
+
+    // Verificar sesión al cargar el DOM
+    document.addEventListener('DOMContentLoaded', () => {
+      checkSession();
+    });
+  </script>
+</body>
+</html>
