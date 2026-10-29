@@ -6,8 +6,6 @@
   <meta name="description" content="Aplicación financiera compartida">
   <title>Finanzas Compartidas</title>
   <link rel="stylesheet" href="styles.css">
-  
-  <!-- NO agregues aquí <script src="auth.js"> ni <script src="api.js"> -->
 </head>
 <body>
   <!-- Área de notificaciones globales -->
@@ -27,7 +25,7 @@
     <header class="top-bar">
       <div class="container top-bar-content">
         <div class="brand">
-          <span>Finanzas Compartidas</span>
+          <span>💰 Finanzas Compartidas</span>
           <span class="version" id="app-version">v1.0.0</span>
         </div>
         <div class="user-info">
@@ -38,18 +36,57 @@
     </header>
 
     <main class="container main-content">
-      <div class="card">
-        <h2>Panel de Control</h2>
-        <p>La sesión se ha iniciado correctamente y la conexión con el backend es funcional.</p>
-        
-        <div class="placeholder-module">
-          <p>Módulo en desarrollo (F6 en adelante)</p>
+      <!-- Resumen -->
+      <section class="card">
+        <h2>📊 Resumen del mes</h2>
+        <div id="resumen-data" class="resumen-grid">
+          <div class="loading">Cargando datos...</div>
         </div>
-      </div>
+      </section>
+
+      <!-- Cuentas -->
+      <section class="card">
+        <h2>🏦 Cuentas conjuntas</h2>
+        <div id="cuentas-list" class="cuentas-grid">
+          <div class="loading">Cargando cuentas...</div>
+        </div>
+      </section>
+
+      <!-- Acciones rápidas -->
+      <section class="card">
+        <h2>⚡ Acciones rápidas</h2>
+        <div class="acciones-grid">
+          <button class="btn btn-primary" onclick="alert('Módulo en desarrollo')">
+            ➕ Nuevo movimiento
+          </button>
+          <button class="btn btn-secondary" onclick="alert('Módulo en desarrollo')">
+            🔄 Nueva transferencia
+          </button>
+          <button class="btn btn-secondary" onclick="alert('Módulo en desarrollo')">
+            🎯 Nuevo objetivo
+          </button>
+          <button class="btn btn-secondary" onclick="alert('Módulo en desarrollo')">
+            ✈️ Nuevo viaje
+          </button>
+        </div>
+      </section>
+
+      <!-- Placeholder para módulos futuros -->
+      <section class="card placeholder-module">
+        <h2>🚧 Módulos en desarrollo</h2>
+        <p>Los siguientes módulos estarán disponibles próximamente:</p>
+        <ul>
+          <li>Presupuesto y categorías</li>
+          <li>Aportaciones y reparto</li>
+          <li>Nóminas y gastos individuales</li>
+          <li>Conciliación de saldos</li>
+          <li>Análisis y gráficos</li>
+        </ul>
+      </section>
     </main>
   </div>
 
-  <!-- ÚNICO punto de entrada: Un script de tipo módulo -->
+  <!-- Script principal como módulo -->
   <script type="module">
     import { CONFIG } from './config.js';
     import { checkSession, logout, showNotification } from './auth.js';
