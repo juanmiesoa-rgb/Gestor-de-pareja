@@ -23,15 +23,16 @@ export function initGoogleSignIn() {
     });
     
     window.google.accounts.id.renderButton(
-  document.getElementById('g_id_signin'),
-  { 
-    theme: 'outline', 
-    size: 'large', 
-    width: 320,          // ← Cambia '100%' por un número en píxeles
-    text: 'signin_with',
-    shape: 'rectangular'
-  }
-);
+      document.getElementById('g_id_signin'),
+      { 
+        theme: 'outline', 
+        size: 'large', 
+        width: 320,
+        text: 'signin_with',
+        shape: 'rectangular'
+      }
+    );
+  };
   
   document.head.appendChild(script);
 }
@@ -44,9 +45,9 @@ export async function handleCredentialResponse(response) {
     showNotification('Verificando sesión...', 'info');
     const user = await callApi('auth.me', {});
     
-    sessionStorage.setItem('user_name', user.nombre || user.email);
+    sessionStorage.setItem('user_name', user.usuario?.nombre || user.usuario?.email || 'Usuario');
     showDashboard(user);
-    showNotification(`Bienvenido/a, ${user.nombre || 'Usuario'}`, 'success');
+    showNotification(`Bienvenido/a, ${user.usuario?.nombre || 'Usuario'}`, 'success');
   } catch (error) {
     console.error('Auth error:', error);
     sessionStorage.removeItem('id_token');
@@ -87,8 +88,72 @@ function showDashboard(user) {
   
   const userNameEl = document.getElementById('user-name-display');
   if (userNameEl) {
-    userNameEl.textContent = user.nombre || user.email || 'Usuario';
+    userNameEl.textContent = user.usuario?.nombre || user.usuario?.email || 'Usuario';
   }
+  
+  // Cargar datos iniciales del dashboard
+  loadDashboardData();
+}
+
+async function loadDashboardData() {
+  try {
+    const [cuentas, resumen] = await Promise.all([
+      callApi('cuentas.listar', {}),
+      callApi('informes.resumen', {})
+    ]);
+    
+    renderDashboard(cuentas, resumen);
+  } catch (error) {
+    console.error('Error cargando dashboard:', error);
+    showNotification('Error al cargar datos: ' + error.message, 'error');
+  }
+}
+
+function renderDashboard(cuentas, resumen) {
+  const cuentasContainer = document.getElementById('cuentas-list');
+  if (cuentasContainer) {
+    cuentasContainer.innerHTML = cuentas
+      .filter(c => c.estado === 'ACTIVA')
+      .map(c => `
+        <div class="cuenta-card">
+          <div class="cuenta-header">
+            <span class="cuenta-icono">${c.icono || '💳'}</span>
+            <div>
+              <div class="cuenta-nombre">${c.nombre}</div>
+              <div class="cuenta-entidad">${c.entidad}</div>
+            </div>
+          </div>
+          <div class="cuenta-saldo">
+            <div class="saldo-label">Saldo inicial</div>
+            <div class="saldo-valor">${formatMoney(c.saldo_inicial_cent)}</div>
+          </div>
+        </div>
+      `).join('');
+  }
+  
+  const resumenContainer = document.getElementById('resumen-data');
+  if (resumenContainer) {
+    resumenContainer.innerHTML = `
+      <div class="resumen-item">
+        <span class="resumen-label">Periodo</span>
+        <span class="resumen-valor">${resumen.periodo}</span>
+      </div>
+      <div class="resumen-item">
+        <span class="resumen-label">Gasto del mes</span>
+        <span class="resumen-valor">${formatMoney(resumen.gasto_mes_cent)}</span>
+      </div>
+      <div class="resumen-item">
+        <span class="resumen-label">Cuentas activas</span>
+        <span class="resumen-valor">${resumen.cuentas?.length || 0}</span>
+      </div>
+    `;
+  }
+}
+
+function formatMoney(centimos) {
+  if (centimos === null || centimos === undefined) return '—';
+  const euros = Math.abs(centimos) / 100;
+  return euros.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 }
 
 export function showNotification(message, type = 'info') {
