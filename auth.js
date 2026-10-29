@@ -23,10 +23,15 @@ export function initGoogleSignIn() {
     });
     
     window.google.accounts.id.renderButton(
-      document.getElementById('g_id_signin'),
-      { theme: 'outline', size: 'large', width: '100%', text: 'signin_with' }
-    );
-  };
+  document.getElementById('g_id_signin'),
+  { 
+    theme: 'outline', 
+    size: 'large', 
+    width: 320,          // ← Cambia '100%' por un número en píxeles
+    text: 'signin_with',
+    shape: 'rectangular'
+  }
+);
   
   document.head.appendChild(script);
 }
