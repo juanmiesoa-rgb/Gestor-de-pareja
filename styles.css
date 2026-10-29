@@ -100,6 +100,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
 .top-bar-content {
@@ -143,13 +144,25 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 16px;
+  padding: 10px 16px;
   border-radius: 6px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   border: 1px solid transparent;
   transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: #6366f1;
+  color: white;
+  border-color: #6366f1;
+}
+
+.btn-primary:hover {
+  background: #4f46e5;
+  border-color: #4f46e5;
 }
 
 .btn-secondary {
@@ -167,6 +180,9 @@ body {
 .main-content {
   padding-top: 32px;
   padding-bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .card {
@@ -178,20 +194,123 @@ body {
 
 .card h2 {
   font-size: 20px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   color: #111827;
 }
 
+/* Resumen */
+.resumen-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.resumen-item {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
+.resumen-label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.resumen-valor {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+}
+
+/* Cuentas */
+.cuentas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.cuenta-card {
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.cuenta-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cuenta-icono {
+  font-size: 24px;
+}
+
+.cuenta-nombre {
+  font-weight: 600;
+  font-size: 15px;
+  color: #111827;
+}
+
+.cuenta-entidad {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.cuenta-saldo {
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.saldo-label {
+  font-size: 11px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.saldo-valor {
+  font-size: 18px;
+  font-weight: 700;
+  color: #10b981;
+}
+
+/* Acciones */
+.acciones-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+/* Placeholder */
 .placeholder-module {
-  margin-top: 24px;
-  padding: 48px 24px;
   background: #f9fafb;
   border: 2px dashed #d1d5db;
-  border-radius: 8px;
-  text-align: center;
+}
+
+.placeholder-module h2 {
   color: #6b7280;
-  font-weight: 500;
-  font-size: 16px;
+}
+
+.placeholder-module ul {
+  margin-top: 12px;
+  padding-left: 24px;
+  color: #6b7280;
+}
+
+.placeholder-module li {
+  margin-bottom: 8px;
+}
+
+/* Loading */
+.loading {
+  text-align: center;
+  padding: 24px;
+  color: #6b7280;
+  font-style: italic;
 }
 
 /* Responsive (Móvil) */
@@ -219,5 +338,11 @@ body {
   
   .notification {
     max-width: 100%;
+  }
+  
+  .resumen-grid,
+  .cuentas-grid,
+  .acciones-grid {
+    grid-template-columns: 1fr;
   }
 }
