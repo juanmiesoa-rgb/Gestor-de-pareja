@@ -421,6 +421,37 @@ const BudgetApp = (function () {
             .budget-empty i { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
             .budget-empty h3 { font-size: 15px; color: var(--text); margin-bottom: 6px; }
             .budget-empty p { font-size: 13px; margin-bottom: 16px; }
+
+            /* ===== PANTALLA ÚNICA (pc-*) ===== */
+            .pc-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+            @media (max-width: 1024px) { .pc-kpis { grid-template-columns: repeat(2, 1fr); } }
+            @media (max-width: 640px) { .pc-kpis { grid-template-columns: 1fr; } }
+            .pc-kpi { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
+            .pc-kpi-label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+            .pc-kpi-value { font-size: 22px; font-weight: 700; }
+            .pc-kpi-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+            .pc-block { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px; }
+            .pc-block-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+            .pc-block-title { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+            .pc-block-sub { font-size: 12px; color: var(--text-muted); }
+            .pc-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-secondary); }
+            .pc-chip.green { background: rgba(16,185,129,.12); color: #059669; border-color: rgba(16,185,129,.35); }
+            .pc-chip.amber { background: rgba(245,158,11,.14); color: #b45309; border-color: rgba(245,158,11,.4); }
+            .pc-chip.red   { background: rgba(239,68,68,.12); color: #dc2626; border-color: rgba(239,68,68,.35); }
+            .pc-chip.gray  { background: var(--bg); color: var(--text-muted); }
+            .pc-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--border); flex-wrap: wrap; }
+            .pc-row:last-child { border-bottom: none; }
+            .pc-bar { height: 8px; border-radius: 6px; background: var(--bg); overflow: hidden; min-width: 120px; flex: 1; max-width: 260px; }
+            .pc-bar > div { height: 100%; border-radius: 6px; background: var(--primary); transition: width .3s; }
+            .pc-bar > div.warn { background: #f59e0b; }
+            .pc-bar > div.over { background: #ef4444; }
+            .pc-bar > div.ok { background: #10b981; }
+            .pc-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+            @media (max-width: 900px) { .pc-grid2 { grid-template-columns: 1fr; } }
+            .pc-week { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; }
+            .pc-week.current { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
+            .pc-loan-badge { font-family: monospace; font-weight: 700; font-size: 13px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+            .pc-mini-input { width: 90px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font-size: 13px; }
         `;
         document.head.appendChild(style);
     }
@@ -428,8 +459,8 @@ const BudgetApp = (function () {
     // =========================================================
     // ESTADO LOCAL
     // =========================================================
-    let currentPeriod = '2026-10';
-    let currentView = 'resumen';
+    let currentPeriod = '2026-11';
+    let currentView = 'pantalla';
     let filters = { search: '', categoryId: '', status: '', person: '', dateFrom: '', dateTo: '', type: '' };
     let charts = {};
     let containerEl = null;
@@ -538,6 +569,56 @@ const BudgetApp = (function () {
     }
 
     // =========================================================
+    // HELPERS PANTALLA ÚNICA (presupuesto común dinámico)
+    // =========================================================
+    function pcCats()      { return data().pcCategories || []; }
+    function pcSubs(pid)   { return (data().pcSubcategories || []).filter(s => s.parentId === pid); }
+    function pcWeeks()     { return (data().pcWeeks || []).slice().sort((a,b) => a.start.localeCompare(b.start)); }
+    function pcLoans()     { return (data().pcLoans || []).filter(l => l.status !== 'archived'); }
+    function pcIncomes()   { return data().pcIncomes || []; }
+
+    // Gastos del periodo que NO son aportaciones de ahorro (evita doble contabilización)
+    function pcRealExpenses(period) {
+        return getExpensesForPeriod(period).filter(e => e.status !== 'aportacion');
+    }
+    function pcExpenseTotal(list) { return list.reduce((s, e) => s + e.amount, 0); }
+    function pcCatExpense(catId, period) {
+        const ids = getDescendantIds(catId);
+        return pcExpenseTotal(pcRealExpenses(period).filter(e => ids.includes(e.categoryId)));
+    }
+    // Presupuesto "no definido" (null) vs fijado en 0 → suman solo los definidos
+    function pcDefinedBudget(catId) {
+        const c = pcCats().find(x => x.id === catId);
+        if (!c) return null;
+        let total = (c.budget === null || c.budget === undefined) ? null : Number(c.budget);
+        pcSubs(catId).forEach(s => {
+            if (s.budget !== null && s.budget !== undefined) {
+                total = (total === null ? 0 : total) + Number(s.budget);
+            }
+        });
+        return total;
+    }
+    function pcChip(presupuesto, gasto) {
+        if (presupuesto === null || presupuesto === undefined)
+            return '<span class="pc-chip gray">No definido</span>';
+        if (presupuesto === 0)
+            return '<span class="pc-chip red">Fijado 0,00 €' + (gasto > 0 ? ` · gasto ${App.formatCurrency(gasto)}` : '') + '</span>';
+        const pct = (gasto / presupuesto) * 100;
+        const cls = pct > 100 ? 'red' : pct >= 80 ? 'amber' : 'green';
+        return `<span class="pc-chip ${cls}">${pct.toFixed(0)}% usado</span>`;
+    }
+    function pcBarHtml(gasto, presupuesto) {
+        if (!presupuesto) return '';
+        const pct = Math.min((gasto / presupuesto) * 100, 100);
+        const cls = gasto > presupuesto ? 'over' : pct >= 80 ? 'warn' : 'ok';
+        return `<div class="pc-bar"><div class="${cls}" style="width:${pct}%"></div></div>`;
+    }
+    function fmtShortDate(iso) {
+        const d = new Date(iso + 'T00:00:00');
+        return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+    }
+
+    // =========================================================
     // RENDER PRINCIPAL
     // =========================================================
     function render(container) {
@@ -600,16 +681,12 @@ const BudgetApp = (function () {
             </div>
 
             <div class="budget-subnav">
-                <button class="budget-subnav-item active" data-view="resumen"><i class="fas fa-chart-pie"></i> Resumen</button>
-                <button class="budget-subnav-item" data-view="categorias"><i class="fas fa-tags"></i> Categorías</button>
+                <button class="budget-subnav-item active" data-view="pantalla"><span style="font-size:14px">🗂️</span> Pantalla única</button>
                 <button class="budget-subnav-item" data-view="gastos"><i class="fas fa-receipt"></i> Gastos</button>
-                <button class="budget-subnav-item" data-view="configuracion"><i class="fas fa-cog"></i> Configuración</button>
             </div>
 
-            <div class="budget-subview active" id="budgetView-resumen"></div>
-            <div class="budget-subview" id="budgetView-categorias"></div>
+            <div class="budget-subview active" id="budgetView-pantalla"></div>
             <div class="budget-subview" id="budgetView-gastos"></div>
-            <div class="budget-subview" id="budgetView-configuracion"></div>
 
             <!-- Modal Gasto -->
             <div class="budget-modal" id="budgetExpenseModal">
@@ -825,8 +902,7 @@ const BudgetApp = (function () {
     // DISPATCH VISTAS
     // =========================================================
     function renderView(view) {
-        if (view === 'resumen') renderResumen();
-        else if (view === 'categorias') renderCategorias();
+        if (view === 'pantalla') renderPantallaUnica();
         else if (view === 'gastos') renderGastos();
         else if (view === 'configuracion') renderConfiguracion();
     }
@@ -988,7 +1064,7 @@ const BudgetApp = (function () {
         view.querySelectorAll('[data-action]').forEach(el => {
             el.addEventListener('click', () => {
                 const a = el.dataset.action;
-                if (a === 'goto-categorias') switchView('categorias');
+                if (a === 'goto-categorias') switchView('pantalla');
                 else if (a === 'goto-gastos') switchView('gastos');
             });
         });
@@ -998,7 +1074,7 @@ const BudgetApp = (function () {
                 const q = btn.dataset.quick;
                 if (q === 'new-expense') openExpenseModal();
                 else if (q === 'new-category') openCategoryModal();
-                else if (q === 'goto-categorias') switchView('categorias');
+                else if (q === 'goto-categorias') switchView('pantalla');
                 else if (q === 'uncategorized') {
                     switchView('gastos');
                     filters.categoryId = '__uncategorized';
@@ -2255,8 +2331,282 @@ const BudgetApp = (function () {
     }
 
     function onThemeChange() {
-        if (currentView === 'resumen') renderCharts();
+        if (currentView === 'pantalla') renderPantallaUnica();
     }
+
+    // =========================================================
+    // PANTALLA ÚNICA — Dashboard consolidado del presupuesto común
+    // =========================================================
+    function renderPantallaUnica() {
+        const view = containerEl.querySelector('#budgetView-pantalla');
+        const period = currentPeriod;
+        const expenses = pcRealExpenses(period);
+
+        // KPIs globales
+        let totalBudget = 0, anyDefined = false;
+        pcCats().forEach(c => {
+            const b = pcDefinedBudget(c.id);
+            if (b !== null) { totalBudget += b; anyDefined = true; }
+        });
+        const totalExpense = pcExpenseTotal(expenses);
+        const remaining = anyDefined ? totalBudget - totalExpense : null;
+        const deviation = anyDefined ? totalExpense - totalBudget : null;
+
+        const kpis = `
+            <div class="pc-kpis">
+                <div class="pc-kpi"><div class="pc-kpi-label">Presupuesto total definido</div>
+                    <div class="pc-kpi-value">${anyDefined ? App.formatCurrency(totalBudget) : '—'}</div>
+                    <div class="pc-kpi-meta">${anyDefined ? '' : 'Sin presupuestos definidos'}</div></div>
+                <div class="pc-kpi"><div class="pc-kpi-label">Gastos reales registrados</div>
+                    <div class="pc-kpi-value" style="color:var(--danger)">${App.formatCurrency(totalExpense)}</div>
+                    <div class="pc-kpi-meta">${expenses.length} movimientos (excluye aportaciones)</div></div>
+                <div class="pc-kpi"><div class="pc-kpi-label">Dinero restante</div>
+                    <div class="pc-kpi-value" style="color:${remaining === null ? 'var(--text-muted)' : remaining >= 0 ? 'var(--success)' : 'var(--danger)'}">${remaining === null ? '—' : App.formatCurrency(remaining)}</div>
+                    <div class="pc-kpi-meta">Presupuesto − Gastos</div></div>
+                <div class="pc-kpi"><div class="pc-kpi-label">Desviación</div>
+                    <div class="pc-kpi-value" style="color:${deviation === null ? 'var(--text-muted)' : deviation > 0 ? 'var(--danger)' : 'var(--success)'}">${deviation === null ? '—' : (deviation > 0 ? '+' : '') + App.formatCurrency(deviation)}</div>
+                    <div class="pc-kpi-meta">${deviation === null ? 'Requiere presupuesto' : deviation > 0 ? 'Sobrecoste' : 'Margen a favor'}</div></div>
+            </div>`;
+
+        // 🏠 Renta
+        const rent = pcCats().find(c => c.id === 'pc-rent');
+        const rentGasto = pcCatExpense('cat-3-1', period) || pcCatExpense('pc-rent', period);
+        const rentPrevisto = expenses.filter(e => e.status === 'previsto' && (e.categoryId === 'cat-3-1')).reduce((s,e)=>s+e.amount,0);
+        const blockRent = `
+            <div class="pc-block">
+                <div class="pc-block-head">
+                    <div><div class="pc-block-title">🏠 Renta <span class="pc-block-sub">· MyInvestor · importe fijo mensual</span></div></div>
+                    ${pcChip(rent ? rent.budget : null, rentGasto)}
+                </div>
+                <div class="pc-row">
+                    <div style="display:flex;align-items:center;gap:12px;flex:1">
+                        <strong>${App.formatCurrency(rent ? rent.budget : 0)}</strong>
+                        ${pcBarHtml(rentGasto, rent ? rent.budget : 0)}
+                    </div>
+                    <div class="pc-block-sub">Pagado: ${App.formatCurrency(rentGasto)}${rentPrevisto ? ' · Previsto: ' + App.formatCurrency(rentPrevisto) : ''}</div>
+                    <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-rent" data-default-cat="cat-3-1"><i class="fas fa-plus"></i></button>
+                </div>
+            </div>`;
+
+        // 💡 Utilities
+        const utils = pcCats().find(c => c.id === 'pc-utilities');
+        let utilsRows = '';
+        let utilsBudgetSum = 0, utilsGastoSum = 0;
+        pcSubs('pc-utilities').forEach(s => {
+            const mapCat = { 'pcs-electricity': ['cat-4-1'], 'pcs-water': ['cat-4-2'], 'pcs-phone': ['cat-4-4'] };
+            const ids = (mapCat[s.id] || []);
+            const gasto = pcExpenseTotal(pcRealExpenses(period).filter(e => ids.includes(e.categoryId)));
+            if (s.budget !== null) utilsBudgetSum += Number(s.budget);
+            utilsGastoSum += gasto;
+            utilsRows += `<div class="pc-row">
+                <div>${s.icon} <strong>${s.name}</strong> <span class="pc-block-sub">· ${s.account}</span></div>
+                ${pcBarHtml(gasto, s.budget)}
+                <div>${App.formatCurrency(gasto)} / ${s.budget === null ? '—' : App.formatCurrency(s.budget)}</div>
+                ${pcChip(s.budget, gasto)}
+                <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-utilities" data-default-cat="${ids[0] || ''}"><i class="fas fa-plus"></i></button>
+            </div>`;
+        });
+        const blockUtils = `
+            <div class="pc-block">
+                <div class="pc-block-head">
+                    <div class="pc-block-title">💡 Utilities <span class="pc-block-sub">· Suministros desde MyInvestor</span></div>
+                    ${pcChip(utils && utils.budget === null ? utilsBudgetSum : (utils ? utils.budget : null), utilsGastoSum)}
+                </div>
+                ${utilsRows || '<div class="pc-block-sub">Sin subcategorías.</div>'}
+            </div>`;
+
+        // 🛒 Groceries & Leisure (semanal)
+        const today = new Date().toISOString().substring(0, 10);
+        const groceryIds = getDescendantIds('cat-1').concat(getDescendantIds('cat-2'));
+        let weeksHtml = '', weekBudgetSum = 0, weekGastoSum = 0;
+        pcWeeks().forEach(w => {
+            const isCurrent = today >= w.start && today <= w.end;
+            const gastosSemana = pcExpenseTotal(pcRealExpenses(period).filter(e => e.date >= w.start && e.date <= w.end && (groceryIds.includes(e.categoryId) || !e.categoryId)));
+            weekBudgetSum += Number(w.budget || 0); weekGastoSum += gastosSemana;
+            weeksHtml += `<div class="pc-week ${isCurrent ? 'current' : ''}">
+                <div class="pc-row" style="padding:0;border:none">
+                    <div><strong>${w.label}</strong> <span class="pc-block-sub">${fmtShortDate(w.start)} → ${fmtShortDate(w.end)}</span>${isCurrent ? ' <span class="pc-chip green">Actual</span>' : ''}</div>
+                    ${pcBarHtml(gastosSemana, w.budget)}
+                    <div>${App.formatCurrency(gastosSemana)} / ${App.formatCurrency(w.budget)}</div>
+                    <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-groceries" data-week="${w.id}" data-default-cat=""><i class="fas fa-plus"></i></button>
+                </div></div>`;
+        });
+        const blockGroceries = `
+            <div class="pc-block">
+                <div class="pc-block-head">
+                    <div class="pc-block-title">🛒 Groceries & Leisure <span class="pc-block-sub">· Presupuesto semanal (juntas)</span></div>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        ${pcChip(weekBudgetSum, weekGastoSum)}
+                        <button class="btn btn-sm btn-secondary" id="pcEditWeeks"><i class="fas fa-calendar-week"></i> Editar semanas</button>
+                    </div>
+                </div>
+                <div class="pc-row" style="font-weight:600"><div>Total semanas</div><div>${App.formatCurrency(weekGastoSum)} / ${App.formatCurrency(weekBudgetSum)}</div></div>
+                ${weeksHtml || '<div class="pc-block-sub">Define las semanas en "Editar semanas".</div>'}
+            </div>`;
+
+        // 💳 Préstamos
+        let loansHtml = '', loanBudget = 0, loanGasto = 0;
+        pcLoans().forEach(l => {
+            const cuotaTxt = `${l.paidInstallments}/${l.totalInstallments}`;
+            const pct = (l.paidInstallments / l.totalInstallments) * 100;
+            const pendiente = (l.totalInstallments - l.paidInstallments) * l.amountPerInstallment;
+            loanBudget += l.totalInstallments * l.amountPerInstallment;
+            loanGasto += l.paidInstallments * l.amountPerInstallment;
+            loansHtml += `<div class="pc-row">
+                <div><strong>${l.name}</strong> <span class="pc-loan-badge">${cuotaTxt}</span></div>
+                <div class="pc-bar"><div class="${pct >= 80 ? 'ok' : ''}" style="width:${pct}%"></div></div>
+                <div class="pc-block-sub">${App.formatCurrency(l.amountPerInstallment)}/cuota · Pendiente ${App.formatCurrency(pendiente)}</div>
+                <button class="btn btn-sm btn-primary pc-pay-loan" data-id="${l.id}"><i class="fas fa-hand-holding-usd"></i> Pagar cuota</button>
+            </div>`;
+        });
+        const blockLoans = `
+            <div class="pc-block">
+                <div class="pc-block-head">
+                    <div class="pc-block-title">💳 Préstamos y Financiaciones <span class="pc-block-sub">· compras a plazos</span></div>
+                    ${pcChip(pcLoans().length ? loanBudget : null, loanGasto)}
+                </div>
+                ${loansHtml || '<div class="pc-block-sub">Sin préstamos activos.</div>'}
+            </div>`;
+
+        // 💰 Savings (aportaciones: no computan como gasto)
+        const aportes = getExpensesForPeriod(period).filter(e => e.status === 'aportacion');
+        let savHtml = '', savTotal = 0;
+        pcSubs('pc-savings').forEach(s => {
+            const monto = aportes.filter(a => a.notes && a.notes.includes(s.destination)).reduce((sum,a)=>sum+a.amount,0);
+            savTotal += monto;
+            savHtml += `<div class="pc-row"><div>${s.icon} <strong>${s.name}</strong></div>
+                <div>${monto > 0 ? App.formatCurrency(monto) : '<span class="pc-block-sub">Sin aportaciones este mes</span>'}</div></div>`;
+        });
+        const blockSavings = `
+            <div class="pc-block">
+                <div class="pc-block-head">
+                    <div class="pc-block-title">💰 Savings <span class="pc-block-sub">· Ahorros e inversiones (no computan como gasto)</span></div>
+                    <span class="pc-chip gray">Total ahorrado: ${App.formatCurrency(savTotal)}</span>
+                </div>
+                ${savHtml}
+            </div>`;
+
+        // 📦 Others
+        const othersGasto = pcExpenseTotal(pcRealExpenses(period).filter(e => !getDescendantIds('cat-3').includes(e.categoryId) && !getDescendantIds('cat-4').includes(e.categoryId) && !groceryIds.includes(e.categoryId)));
+        const recentOthers = expenses.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3);
+        const blockOthers = `
+            <div class="pc-block">
+                <div class="pc-block-head">
+                    <div class="pc-block-title">📦 Others <span class="pc-block-sub">· varios e imprevistos</span></div>
+                    ${pcChip(null, othersGasto)}
+                </div>
+                ${recentOthers.map(e => `<div class="pc-row"><div>${App.escapeHtml(e.concept)}</div><div class="pc-block-sub">${App.formatDate(e.date)}</div><strong>${App.formatCurrency(e.amount)}</strong></div>`).join('') || '<div class="pc-block-sub">Sin gastos recientes fuera de las categorías principales.</div>'}
+                <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-others" style="margin-top:8px"><i class="fas fa-plus"></i> Añadir gasto</button>
+            </div>`;
+
+        // 👥 Ingresos de la pareja
+        let incHtml = '', totalSalario = 0, totalLibre = 0, totalAporte = 0;
+        pcIncomes().forEach(i => {
+            const libre = i.salary * (i.freePct / 100);
+            totalSalario += i.salary; totalLibre += libre; totalAporte += i.contribution;
+            incHtml += `<div class="pc-row">
+                <div><strong>${i.name}</strong> <span class="pc-block-sub">${App.formatCurrency(i.salary)}/mes</span></div>
+                <div class="pc-chip green">${i.freePct}% libre · ${App.formatCurrency(libre)}</div>
+                <div class="pc-block-sub">Aporte común: <strong>${App.formatCurrency(i.contribution)}</strong></div>
+                <input type="number" class="pc-mini-input" min="0" step="50" value="${i.contribution}" data-inc="${i.id}" title="Editar aporte">
+            </div>`;
+        });
+        const equitativo = totalAporte / 2;
+        const blockIncomes = `
+            <div class="pc-block">
+                <div class="pc-block-head">
+                    <div class="pc-block-title">👥 Ingresos de la pareja <span class="pc-block-sub">· Nena + Bombón</span></div>
+                    <span class="pc-chip gray">Sueldo libre total: ${App.formatCurrency(totalLibre)} (${totalSalario ? ((totalLibre/totalSalario)*100).toFixed(0) : 0}% de ${App.formatCurrency(totalSalario)})</span>
+                </div>
+                ${incHtml}
+                <div class="pc-row" style="font-weight:600"><div>Distribución</div>
+                    <div class="pc-block-sub">Equitativa: ${App.formatCurrency(equitativo)}/persona · Proporcional al sueldo libre: ${pcIncomes().map(i => App.formatCurrency(totalAporte * ((i.salary*i.freePct/100)/totalLibre))).join(' / ')}</div>
+                </div>
+            </div>`;
+
+        view.innerHTML = kpis + blockRent + blockUtils + blockGroceries + blockLoans + blockSavings + blockOthers + blockIncomes;
+
+        // Eventos
+        view.querySelectorAll('.pc-add').forEach(btn => btn.addEventListener('click', () => openExpenseModal()));
+        view.querySelectorAll('.pc-pay-loan').forEach(btn => btn.addEventListener('click', () => payLoanInstallment(btn.dataset.id)));
+        view.querySelectorAll('[data-inc]').forEach(inp => inp.addEventListener('change', (e) => {
+            const inc = pcIncomes().find(i => i.id === e.target.dataset.inc);
+            if (inc) { inc.contribution = parseFloat(e.target.value) || 0; App.saveData(); renderPantallaUnica(); App.showToast('Aporte actualizado', 'success'); }
+        }));
+        const editBtn = view.querySelector('#pcEditWeeks');
+        if (editBtn) editBtn.addEventListener('click', openWeeksEditor);
+    }
+
+    function payLoanInstallment(loanId) {
+        const loan = pcLoans().find(l => l.id === loanId);
+        if (!loan) return;
+        if (loan.paidInstallments >= loan.totalInstallments) { App.showToast('Préstamo ya liquidado', 'info'); return; }
+        loan.paidInstallments += 1;
+        data().expenses.unshift({
+            id: App.generateId(), concept: `Cuota ${loan.name} (${loan.paidInstallments}/${loan.totalInstallments})`,
+            amount: loan.amountPerInstallment, date: new Date().toISOString().substring(0,10),
+            categoryId: 'cat-7', person: 'conjunto', status: 'registrado', type: 'individual', notes: 'Préstamo/financiación'
+        });
+        if (loan.paidInstallments === loan.totalInstallments) {
+            loan.status = 'archived';
+            App.addHistory('loan_finished', `Préstamo ${loan.name} liquidado — archivado con historial preservado`);
+            App.showToast(`${loan.name} liquidado ✔ (archivado)`, 'success');
+        } else {
+            App.addHistory('loan_payment', `Cuota ${loan.paidInstallments}/${loan.totalInstallments} de ${loan.name}`);
+            App.showToast(`Cuota de ${loan.name} registrada`, 'success');
+        }
+        App.saveData();
+        renderPantallaUnica();
+    }
+
+    function openWeeksEditor() {
+        const modal = containerEl.querySelector('#budgetCategoryDetailModal');
+        const weeks = pcWeeks();
+        let html = `<p class="pc-block-sub" style="margin-bottom:12px">Define el rango de fechas y el presupuesto de cada semana. Los cambios se guardan automáticamente al cerrar.</p>`;
+        weeks.forEach((w, idx) => {
+            html += `<div class="pc-row" data-widx="${idx}">
+                <strong>${w.label}</strong>
+                <label class="pc-block-sub">Desde <input type="date" class="pc-mini-input" data-f="start" value="${w.start}" style="width:140px"></label>
+                <label class="pc-block-sub">Hasta <input type="date" class="pc-mini-input" data-f="end" value="${w.end}" style="width:140px"></label>
+                <label class="pc-block-sub">Presup. <input type="number" min="0" step="5" class="pc-mini-input" data-f="budget" value="${w.budget}"></label>
+                <button class="btn btn-sm btn-danger pc-del-week" data-id="${w.id}"><i class="fas fa-trash"></i></button>
+            </div>`;
+        });
+        html += `<button class="btn btn-sm btn-secondary" id="pcAddWeek" style="margin-top:10px"><i class="fas fa-plus"></i> Añadir semana</button>`;
+        containerEl.querySelector('#budgetCategoryDetailTitle').textContent = '🛒 Semanas de Groceries & Leisure';
+        containerEl.querySelector('#budgetCategoryDetailBody').innerHTML = html;
+        modal.classList.add('active');
+
+        const body = containerEl.querySelector('#budgetCategoryDetailBody');
+        body.querySelector('#pcAddWeek').addEventListener('click', () => {
+            const last = weeks[weeks.length - 1];
+            const nextStart = last ? new Date(new Date(last.end).getTime() + 86400000) : new Date();
+            const nextEnd = new Date(nextStart.getTime() + 6 * 86400000);
+            data().pcWeeks.push({ id: App.generateId(), label: `Semana ${weeks.length + 1}`,
+                start: nextStart.toISOString().substring(0,10), end: nextEnd.toISOString().substring(0,10), budget: 160 });
+            App.saveData(); openWeeksEditor();
+        });
+        body.querySelectorAll('.pc-del-week').forEach(b => b.addEventListener('click', () => {
+            const arr = data().pcWeeks;
+            const i = arr.findIndex(w => w.id === b.dataset.id);
+            if (i >= 0) { const [removed] = arr.splice(i, 1); App.addHistory('week_removed', `Semana eliminada: ${removed.label} (${removed.start}→${removed.end})`); }
+            App.saveData(); openWeeksEditor();
+        }));
+        modal.querySelectorAll('[data-close-budget-modal], .budget-modal-close').forEach(b => {
+            b.addEventListener('click', function saveOnce() {
+                body.querySelectorAll('.pc-row[data-widx]').forEach(row => {
+                    const w = weeks[parseInt(row.dataset.widx)];
+                    row.querySelectorAll('[data-f]').forEach(inp => {
+                        const f = inp.dataset.f;
+                        w[f] = f === 'budget' ? (parseFloat(inp.value) || 0) : inp.value;
+                    });
+                });
+                App.saveData(); renderPantallaUnica();
+                b.removeEventListener('click', saveOnce);
+            }, { once: false });
+        });
+    }
+
 
     // =========================================================
     // API PÚBLICA

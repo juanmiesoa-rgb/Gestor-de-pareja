@@ -120,7 +120,39 @@ const App = (function() {
             recentCount: 5,
             defaultSort: 'date-desc'
         },
-        history: []
+        history: [],
+
+        // ===== PRESUPUESTO COMÚN (pantalla única) — datos maestros =====
+        pcCategories: [
+            { id: 'pc-rent',       name: 'Renta',                    icon: '🏠', account: 'MyInvestor', budget: 950,   order: 1 },
+            { id: 'pc-utilities',  name: 'Utilities',                icon: '💡', account: 'MyInvestor', budget: null,  order: 2 },
+            { id: 'pc-groceries',  name: 'Groceries & Leisure',      icon: '🛒', account: 'Junta',      budget: null,  order: 3 },
+            { id: 'pc-loans',      name: 'Préstamos y Financiaciones', icon: '💳', account: 'Junta',   budget: null,  order: 4 },
+            { id: 'pc-savings',    name: 'Savings',                  icon: '💰', account: null,         budget: null,  order: 5 },
+            { id: 'pc-others',     name: 'Others',                   icon: '📦', account: null,         budget: null,  order: 6 }
+        ],
+        pcSubcategories: [
+            { id: 'pcs-electricity', parentId: 'pc-utilities', name: 'Electricity (Luz)',        icon: '⚡', account: 'MyInvestor', budget: 90 },
+            { id: 'pcs-water',       parentId: 'pc-utilities', name: 'Water (Agua)',             icon: '💧', account: 'MyInvestor', budget: 35 },
+            { id: 'pcs-phone',       parentId: 'pc-utilities', name: 'Phone & Wifi (Lowi)',      icon: '📶', account: 'MyInvestor', budget: 50 },
+            { id: 'pcs-tr',          parentId: 'pc-savings',   name: 'TradeRepublic',            icon: '📈', destination: 'TradeRepublic' },
+            { id: 'pcs-mi',          parentId: 'pc-savings',   name: 'MyInvestor',               icon: '🏦', destination: 'MyInvestor' },
+            { id: 'pcs-general',     parentId: 'pc-savings',   name: 'Ahorro general',           icon: '🐷', destination: 'General' }
+        ],
+        pcWeeks: [
+            { id: 'wk-1', label: 'Semana 1', start: '2026-11-02', end: '2026-11-08', budget: 160 },
+            { id: 'wk-2', label: 'Semana 2', start: '2026-11-09', end: '2026-11-15', budget: 160 },
+            { id: 'wk-3', label: 'Semana 3', start: '2026-11-16', end: '2026-11-22', budget: 160 },
+            { id: 'wk-4', label: 'Semana 4', start: '2026-11-23', end: '2026-11-29', budget: 160 }
+        ],
+        pcLoans: [
+            { id: 'loan-sofa', name: 'Sofá',     totalInstallments: 18, paidInstallments: 4,  amountPerInstallment: 45,  status: 'active' },
+            { id: 'loan-bed',  name: 'Cama',     totalInstallments: 23, paidInstallments: 6,  amountPerInstallment: 38,  status: 'active' }
+        ],
+        pcIncomes: [
+            { id: 'inc-nena',   name: 'Nena',   salary: 2100, freePct: 35, contribution: 550 },
+            { id: 'inc-bombon', name: 'Bombón', salary: 1750, freePct: 30, contribution: 550 }
+        ]
     };
 
     // =========================================================
@@ -133,7 +165,14 @@ const App = (function() {
     function loadData() {
         try {
             const saved = localStorage.getItem('finanzas_data');
-            if (saved) return JSON.parse(saved);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                // Migración: inyectar claves nuevas del presupuesto común sin perder datos guardados
+                ['pcCategories','pcSubcategories','pcWeeks','pcLoans','pcIncomes'].forEach(k => {
+                    if (!(k in parsed)) parsed[k] = JSON.parse(JSON.stringify(DEFAULT_DATA[k]));
+                });
+                return parsed;
+            }
         } catch(e) {}
         return JSON.parse(JSON.stringify(DEFAULT_DATA));
     }
