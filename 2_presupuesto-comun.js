@@ -452,6 +452,63 @@ const BudgetApp = (function () {
             .pc-week.current { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
             .pc-loan-badge { font-family: monospace; font-weight: 700; font-size: 13px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
             .pc-mini-input { width: 90px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font-size: 13px; }
+            /* ===== DASHBOARD INTERACTIVO (pcw-*) ===== */
+            .pcw-topbar { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1.2fr; gap: 14px; margin-bottom: 18px; }
+            @media (max-width: 1100px) { .pcw-topbar { grid-template-columns: 1fr 1fr; } }
+            @media (max-width: 620px) { .pcw-topbar { grid-template-columns: 1fr; } }
+            .pcw-kpi { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; transition: transform .15s, box-shadow .15s; }
+            .pcw-kpi:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.07); }
+            .pcw-klabel { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+            .pcw-kvalue { font-size: 24px; font-weight: 800; }
+            .pcw-kmeta { font-size: 12px; color: var(--text-muted); margin-top: 5px; }
+            .pcw-split { display: flex; gap: 12px; font-size: 12px; font-weight: 700; margin-top: 6px; }
+            .pcw-layout { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 16px; align-items: start; }
+            @media (max-width: 1024px) { .pcw-layout { grid-template-columns: 1fr; } }
+            .pcw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+            .pcw-card { background: var(--bg-card); border: 1px solid var(--border); border-left: 4px solid var(--card-color, var(--primary)); border-radius: 14px; padding: 14px 16px; cursor: pointer; transition: all .18s ease; outline: none; }
+            .pcw-card:hover { transform: translateY(-3px); box-shadow: 0 8px 22px rgba(0,0,0,.09); }
+            .pcw-card.selected { border-color: var(--card-color, var(--primary)); box-shadow: 0 0 0 2px var(--card-color, var(--primary)), 0 8px 22px rgba(0,0,0,.08); }
+            .pcw-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+            .pcw-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+            .pcw-ico { font-size: 18px; }
+            .pcw-badge { font-size: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; color: var(--text-muted); }
+            .pcw-bar { height: 8px; border-radius: 6px; background: var(--bg); overflow: hidden; margin: 4px 0 6px; }
+            .pcw-bar > div { height: 100%; border-radius: 6px; background: var(--card-color, var(--primary)); transition: width .4s ease; }
+            .pcw-bar > div.warn { background: #f59e0b !important; }
+            .pcw-bar > div.over { background: #ef4444 !important; }
+            .pcw-foot { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); gap: 8px; }
+            .pcw-over-txt { color: #dc2626; font-weight: 700; }
+            .pcw-nodef { color: var(--text-muted); font-style: italic; }
+            .pcw-card-sub { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+            .pcw-hint { font-size: 11px; color: var(--card-color, var(--primary)); margin-top: 8px; opacity: .75; }
+            .pcw-card.selected .pcw-hint i { transform: rotate(180deg); }
+            .pcw-hint i { transition: transform .2s; }
+            .pcw-detail { max-height: 0; overflow: hidden; opacity: 0; transition: max-height .35s ease, opacity .3s ease, margin .3s ease; background: var(--bg-card); border: 1px solid transparent; border-radius: 14px; margin-top: 0; }
+            .pcw-detail.open { max-height: 900px; opacity: 1; border-color: var(--border); margin-top: 14px; padding: 4px 18px 16px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.02); }
+            .pcw-detail-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 0 8px; border-bottom: 1px dashed var(--border); margin-bottom: 10px; }
+            .pcw-detail-head h3 { font-size: 15px; margin: 0; }
+            .pcw-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 15px; padding: 4px 8px; border-radius: 8px; }
+            .pcw-close:hover { background: var(--bg); color: var(--danger); }
+            .pcw-dgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
+            @media (max-width: 620px) { .pcw-dgrid { grid-template-columns: 1fr; } }
+            .pcw-dlabel { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
+            .pcw-sidebar { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 12px; }
+            @media (max-width: 1024px) { .pcw-sidebar { position: static; } }
+            .pcw-widget { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+            .pcw-whead { font-size: 13px; font-weight: 800; margin-bottom: 10px; }
+            .pcw-alert { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; padding: 9px 11px; border-radius: 10px; margin-bottom: 8px; animation: pcwIn .3s ease; }
+            .pcw-alert.amber { background: rgba(245,158,11,.13); color: #b45309; border: 1px solid rgba(245,158,11,.35); }
+            .pcw-alert.red { background: rgba(239,68,68,.12); color: #dc2626; border: 1px solid rgba(239,68,68,.35); }
+            .pcw-alert.ok { background: rgba(16,185,129,.1); color: #059669; border: 1px solid rgba(16,185,129,.3); }
+            .pcw-act { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--border); animation: pcwIn .3s ease; }
+            .pcw-act:last-child { border-bottom: none; }
+            .pcw-avatar { width: 26px; height: 26px; min-width: 26px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+            .pcw-act-main { flex: 1; min-width: 0; }
+            .pcw-act-concept { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .pcw-act-meta { font-size: 11px; color: var(--text-muted); }
+            .pcw-act-amt { font-size: 12.5px; white-space: nowrap; }
+            .pcw-empty { font-size: 12px; color: var(--text-muted); padding: 8px 0; }
+            @keyframes pcwIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         `;
         document.head.appendChild(style);
     }
@@ -2335,6 +2392,235 @@ const BudgetApp = (function () {
     }
 
     // =========================================================
+    // DASHBOARD INTERACTIVO — helpers de widget
+    // =========================================================
+    let selectedCardId = 'pc-rent';
+
+    function pcWidgetTitle(icon, title, sub) {
+        return `<div class="pcw-head"><div class="pcw-title">${icon} ${title}</div>${sub ? `<div class="pcw-sub">${sub}</div>` : ''}</div>`;
+    }
+
+    function pcMiniBar(gasto, presupuesto, color) {
+        if (presupuesto === null || presupuesto === undefined || presupuesto <= 0) {
+            return `<div class="pcw-bar"><div style="width:${gasto > 0 ? 100 : 0}%;background:${color};opacity:.45"></div></div><div class="pcw-foot"><span>Gasto: ${App.formatCurrency(gasto)}</span><span class="pcw-nodef">Presupuesto no definido</span></div>`;
+        }
+        const pct = Math.min((gasto / presupuesto) * 100, 100);
+        const real = (gasto / presupuesto) * 100;
+        const cls = real > 100 ? 'over' : real >= 85 ? 'warn' : '';
+        return `<div class="pcw-bar"><div class="${cls}" style="width:${pct}%;background:${cls ? '' : color}"></div></div>
+            <div class="pcw-foot"><span>${App.formatCurrency(gasto)} / ${App.formatCurrency(presupuesto)}</span><span class="${real > 100 ? 'pcw-over-txt' : ''}">${real.toFixed(0)}%${real > 100 ? ' ⚠' : ''}</span></div>`;
+    }
+
+    function pcCard(cat, inner, opts) {
+        opts = opts || {};
+        const sel = selectedCardId === cat.id ? 'selected' : '';
+        return `<div class="pcw-card ${sel}" data-card-id="${cat.id}" tabindex="0" role="button" aria-pressed="${sel ? 'true' : 'false'}" style="--card-color:${cat.color || 'var(--primary)'}">
+            <div class="pcw-head"><div class="pcw-title"><span class="pcw-ico">${cat.icon}</span> ${cat.name}${opts.badge ? ` <span class="pcw-badge">${opts.badge}</span>` : ''}</div>${pcChip(opts.budget !== undefined ? opts.budget : cat.budget, opts.gasto || 0)}</div>
+            ${inner}
+            <div class="pcw-hint"><i class="fas fa-chevron-down"></i> Ver detalle</div>
+        </div>`;
+    }
+
+    // Gasto real por bloque de tarjeta
+    function pcCardGasto(catId, period) {
+        const expenses = pcRealExpenses(period);
+        switch (catId) {
+            case 'pc-rent':      return pcCatExpense('cat-3-1', period);
+            case 'pc-utilities': return pcExpenseTotal(expenses.filter(e => ['cat-4-1','cat-4-2','cat-4-4'].includes(e.categoryId)));
+            case 'pc-groceries': { const ids = getDescendantIds('cat-1').concat(getDescendantIds('cat-2'));
+                                   return pcExpenseTotal(expenses.filter(e => ids.includes(e.categoryId) || !e.categoryId)); }
+            case 'pc-loans':     return pcLoans().reduce((s,l) => s + l.paidInstallments * l.amountPerInstallment, 0);
+            case 'pc-others':    { const ex = ['cat-3','cat-4'].flatMap(c => getDescendantIds(c)).concat(getDescendantIds('cat-1'), getDescendantIds('cat-2'));
+                                   return pcExpenseTotal(expenses.filter(e => !ex.includes(e.categoryId))); }
+            default:             return 0;
+        }
+    }
+    function pcCardBudget(catId) {
+        switch (catId) {
+            case 'pc-rent':      return pcDefinedBudget('pc-rent');
+            case 'pc-utilities': return pcDefinedBudget('pc-utilities');
+            case 'pc-groceries': return pcWeeks().length ? pcWeeks().reduce((s,w)=>s+Number(w.budget||0),0) : null;
+            case 'pc-loans':     return pcLoans().length ? pcLoans().reduce((s,l)=>s+l.totalInstallments*l.amountPerInstallment,0) : null;
+            case 'pc-savings':   return null;
+            case 'pc-others':    return pcDefinedBudget('pc-others');
+            default:             return null;
+        }
+    }
+
+    // SVG mini cash-flow: ingresos vs gastos por quincena del mes
+    function pcCashflowSvg(income, expense) {
+        const h1i = income/2, h2i = income/2, h1e = expense*0.45, h2e = expense*0.55;
+        const max = Math.max(h1i, h2i, h1e, h2e, 1);
+        const W = 260, H = 96, bw = 26, gap = 14;
+        const y = v => H - 16 - (v/max)*(H-30);
+        const bars = [
+            { x: 20,           hh: y(h1i), c: '#10b981', t: 'In·Q1' },
+            { x: 20+bw+gap,    hh: y(h1e), c: '#ef4444', t: 'Gas·Q1' },
+            { x: 130,          hh: y(h2i), c: '#10b981', t: 'In·Q2' },
+            { x: 130+bw+gap,   hh: y(h2e), c: '#ef4444', t: 'Gas·Q2' }
+        ].map(b => `<rect x="${b.x}" y="${b.hh}" width="${bw}" height="${H-16-b.hh}" rx="4" fill="${b.c}" opacity=".85"/><text x="${b.x+bw/2}" y="${H-4}" text-anchor="middle" font-size="8.5" fill="#94a3b8">${b.t}</text>`).join('');
+        return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${bars}<line x1="0" y1="${H-16}" x2="${W}" y2="${H-16}" stroke="var(--border)" stroke-width="1"/></svg>`;
+    }
+
+    function personBadge(person) {
+        const map = { ana: ['Nena', '#ec4899'], carlos: ['Bombón', '#2563eb'], conjunto: ['∞', 'var(--primary)'] };
+        const [ini, col] = map[person] || ['?', 'var(--text-muted)'];
+        const name = ({ana:'Nena',carlos:'Bombón',conjunto:'Conjunto'})[person] || person;
+        return `<span class="pcw-avatar" style="background:${col}" title="${name}">${ini}</span>`;
+    }
+
+    function pcAlertsHtml(period) {
+        const alerts = [];
+        pcCats().forEach(c => {
+            if (c.id === 'pc-savings') return;
+            const b = pcCardBudget(c.id), g = pcCardGasto(c.id, period);
+            if (b && b > 0) {
+                const pct = (g/b)*100;
+                if (pct > 100) alerts.push({ sev: 'red', txt: `${c.icon} ${c.name} al ${pct.toFixed(0)}% de su presupuesto`, over: true });
+                else if (pct >= 85) alerts.push({ sev: 'amber', txt: `${c.icon} ${c.name} al ${pct.toFixed(0)}% de su presupuesto` });
+            } else if (b === 0 && g > 0) {
+                alerts.push({ sev: 'red', txt: `${c.icon} ${c.name}: fijado en 0,00 € con gasto registrado`, over: true });
+            }
+        });
+        pcSubs('pc-utilities').forEach(s => {
+            const ids = { 'pcs-electricity':'cat-4-1','pcs-water':'cat-4-2','pcs-phone':'cat-4-4' }[s.id];
+            const g = pcExpenseTotal(pcRealExpenses(period).filter(e => e.categoryId === ids));
+            if (s.budget > 0 && (g/s.budget)*100 >= 85) alerts.push({ sev: (g/s.budget)*100 > 100 ? 'red' : 'amber', txt: `${s.icon} ${s.name} al ${((g/s.budget)*100).toFixed(0)}% de su presupuesto` });
+        });
+        if (!alerts.length) alerts.push({ sev: 'ok', txt: '🟢 Todo bajo control: sin categorías por encima del 85%' });
+        return alerts.map(a => `<div class="pcw-alert ${a.sev}"><i class="fas ${a.over ? 'fa-triangle-exclamation' : a.sev === 'ok' ? 'fa-circle-check' : 'fa-bell'}"></i><span>${a.txt}</span></div>`).join('');
+    }
+
+    function pcActivityHtml(period) {
+        const list = getExpensesForPeriod(period, true).slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8);
+        if (!list.length) return '<div class="pcw-empty">Sin movimientos registrados este periodo.</div>';
+        return list.map(e => {
+            const cat = getCategoryById(e.categoryId);
+            return `<div class="pcw-act">
+                ${personBadge(e.person)}
+                <div class="pcw-act-main"><div class="pcw-act-concept">${App.escapeHtml(e.concept)}</div>
+                <div class="pcw-act-meta">${App.formatDate(e.date)} · ${cat ? cat.icon + ' ' + cat.name : '📦 Sin categoría'}${e.status==='aportacion'?' · <em>aportación</em>':''}${e.status==='previsto'?' · <em>previsto</em>':''}</div></div>
+                <strong class="pcw-act-amt" style="color:${e.status==='aportacion'?'var(--success)':'inherit'}">${App.formatCurrency(e.amount)}</strong>
+            </div>`;
+        }).join('');
+    }
+
+    // -------- Paneles de detalle (drill-down) --------
+    function pcDetailRent() {
+        const period = currentPeriod, rent = pcCats().find(c=>c.id==='pc-rent') || {budget:950};
+        const pagado = pcCatExpense('cat-3-1', period);
+        const previsto = getExpensesForPeriod(period, true).filter(e=>e.status==='previsto'&&e.categoryId==='cat-3-1').reduce((s,e)=>s+e.amount,0);
+        return `<div class="pcw-detail-body">
+            <div class="pcw-dgrid">
+                <div><div class="pcw-dlabel">Importe fijo mensual</div><strong>${App.formatCurrency(rent.budget||950)}</strong></div>
+                <div><div class="pcw-dlabel">Pagado desde MyInvestor</div><strong>${App.formatCurrency(pagado)}</strong></div>
+                <div><div class="pcw-dlabel">Previsto</div><strong>${App.formatCurrency(previsto)}</strong></div>
+            </div>
+            ${pcBarHtml(pagado + previsto, rent.budget||950)}
+            <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-rent" data-default-cat="cat-3-1" style="margin-top:10px"><i class="fas fa-plus"></i> Registrar pago de renta</button>
+        </div>`;
+    }
+    function pcDetailUtilities() {
+        const period = currentPeriod;
+        const mapCat = { 'pcs-electricity':'cat-4-1','pcs-water':'cat-4-2','pcs-phone':'cat-4-4' };
+        const rows = pcSubs('pc-utilities').map(s => {
+            const ids=[mapCat[s.id]];
+            const gasto = pcExpenseTotal(pcRealExpenses(period).filter(e=>ids.includes(e.categoryId)));
+            return `<div class="pc-row">
+                <div>${s.icon} <strong>${s.name}</strong> <span class="pc-block-sub">· ${s.account}</span></div>
+                ${pcBarHtml(gasto, s.budget)}
+                <div>${App.formatCurrency(gasto)} / ${s.budget===null?'—':App.formatCurrency(s.budget)}</div>
+                ${pcChip(s.budget, gasto)}
+                <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-utilities" data-default-cat="${ids[0]}"><i class="fas fa-plus"></i></button>
+            </div>`;
+        }).join('');
+        return `<div class="pcw-detail-body">${rows}</div>`;
+    }
+    function pcDetailGroceries() {
+        const today = new Date().toISOString().substring(0,10);
+        const period = currentPeriod;
+        const groceryIds = getDescendantIds('cat-1').concat(getDescendantIds('cat-2'));
+        const weeks = pcWeeks().map(w => {
+            const isCurrent = today>=w.start && today<=w.end;
+            const g = pcExpenseTotal(pcRealExpenses(period).filter(e=>e.date>=w.start&&e.date<=w.end&&(groceryIds.includes(e.categoryId)||!e.categoryId)));
+            return `<div class="pc-week ${isCurrent?'current':''}"><div class="pc-row" style="padding:0;border:none">
+                <div><strong>${w.label}</strong> <span class="pc-block-sub">${fmtShortDate(w.start)} → ${fmtShortDate(w.end)}</span>${isCurrent?' <span class="pc-chip green">Actual</span>':''}</div>
+                ${pcBarHtml(g,w.budget)}<div>${App.formatCurrency(g)} / ${App.formatCurrency(w.budget)}</div>
+                <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-groceries" data-default-cat=""><i class="fas fa-plus"></i></button></div></div>`;
+        }).join('');
+        return `<div class="pcw-detail-body"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span class="pc-block-sub">Semanas con rango de fechas personalizable · asignación por bloque (ej. 160 €/semana)</span><button class="btn btn-sm btn-secondary" id="pcEditWeeks"><i class="fas fa-calendar-week"></i> Editar semanas</button></div>${weeks||'<div class="pcw-empty">Define las semanas en «Editar semanas».</div>'}</div>`;
+    }
+    function pcDetailLoans() {
+        const rows = pcLoans().map(l => {
+            const pct=(l.paidInstallments/l.totalInstallments)*100, pend=(l.totalInstallments-l.paidInstallments)*l.amountPerInstallment;
+            return `<div class="pc-row">
+                <div><strong>${l.name}</strong> <span class="pc-loan-badge">${l.paidInstallments}/${l.totalInstallments}</span></div>
+                <div class="pc-bar"><div class="${pct>=80?'ok':''}" style="width:${pct}%"></div></div>
+                <div class="pc-block-sub">${App.formatCurrency(l.amountPerInstallment)}/cuota · Pendiente ${App.formatCurrency(pend)}</div>
+                <button class="btn btn-sm btn-primary pc-pay-loan" data-id="${l.id}"><i class="fas fa-hand-holding-usd"></i> Pagar cuota</button>
+            </div>`;
+        }).join('');
+        return `<div class="pcw-detail-body">${rows||'<div class="pcw-empty">Sin préstamos activos.</div>'}<div class="pc-block-sub" style="margin-top:8px">Al liquidar la última cuota el préstamo se archiva preservando su historial.</div></div>`;
+    }
+    function pcDetailSavings() {
+        const aportes = getExpensesForPeriod(currentPeriod).filter(e=>e.status==='aportacion');
+        const rows = pcSubs('pc-savings').map(s=>{
+            const m = aportes.filter(a=>a.notes&&a.notes.includes(s.destination)).reduce((sum,a)=>sum+a.amount,0);
+            return `<div class="pc-row"><div>${s.icon} <strong>${s.name}</strong></div><div>${m>0?App.formatCurrency(m):'<span class="pc-block-sub">Sin aportaciones este mes</span>'}</div></div>`;
+        }).join('');
+        return `<div class="pcw-detail-body">${rows}<div class="pc-block-sub" style="margin-top:8px">Las aportaciones a ahorro/inversión <strong>no computan como gasto</strong> (evita doble contabilización con el salario aportado).</div></div>`;
+    }
+    function pcDetailOthers() {
+        const period = currentPeriod;
+        const ex = ['cat-3','cat-4'].flatMap(c=>getDescendantIds(c)).concat(getDescendantIds('cat-1'),getDescendantIds('cat-2'));
+        const list = pcRealExpenses(period).filter(e=>!ex.includes(e.categoryId)).slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+        const rows = list.map(e=>`<div class="pc-row"><div>${App.escapeHtml(e.concept)}</div><div class="pc-block-sub">${App.formatDate(e.date)}</div><strong>${App.formatCurrency(e.amount)}</strong></div>`).join('');
+        return `<div class="pcw-detail-body">${rows||'<div class="pcw-empty">Sin imprevistos este periodo.</div>'}<button class="btn btn-sm btn-secondary pc-add" data-cat="pc-others" style="margin-top:8px"><i class="fas fa-plus"></i> Añadir gasto</button></div>`;
+    }
+    function pcDetailIncomes() {
+        let totalSalario=0,totalLibre=0,totalAporte=0;
+        pcIncomes().forEach(i=>{totalSalario+=i.salary;totalLibre+=i.salary*(i.freePct/100);totalAporte+=i.contribution;});
+        const rows = pcIncomes().map(i=>{
+            const libre=i.salary*(i.freePct/100);
+            return `<div class="pc-row">
+                <div><strong>${i.name}</strong> <span class="pc-block-sub">${App.formatCurrency(i.salary)}/mes</span></div>
+                <div class="pc-chip green">${i.freePct}% libre · ${App.formatCurrency(libre)}</div>
+                <div class="pc-block-sub">Aporte común: <strong>${App.formatCurrency(i.contribution)}</strong></div>
+                <input type="number" class="pc-mini-input" min="0" step="50" value="${i.contribution}" data-inc="${i.id}" title="Editar aporte">
+            </div>`;
+        }).join('');
+        const prop = pcIncomes().map(i=>App.formatCurrency(totalAporte*((i.salary*i.freePct/100)/totalLibre))).join(' / ');
+        return `<div class="pcw-detail-body">${rows}<div class="pc-row" style="font-weight:600"><div>Distribución</div><div class="pc-block-sub">Equitativa (50/50): ${App.formatCurrency(totalAporte/2)}/persona · Proporcional al sueldo libre: ${prop}</div></div></div>`;
+    }
+
+    function pcRenderDetailPanel() {
+        const panel = containerEl.querySelector('#pcDetailPanel');
+        if (!panel) return;
+        const meta = {
+            'pc-rent':      ['🏠','Renta', pcDetailRent],
+            'pc-utilities': ['💡','Utilities — Suministros (MyInvestor)', pcDetailUtilities],
+            'pc-groceries': ['🛒','Groceries & Leisure — Desglose semanal', pcDetailGroceries],
+            'pc-loans':     ['💳','Préstamos y Financiaciones — Cuotas', pcDetailLoans],
+            'pc-savings':   ['💰','Savings — Ahorros e inversiones', pcDetailSavings],
+            'pc-others':    ['📦','Others — Varios e imprevistos', pcDetailOthers],
+            'pc-incomes':   ['👥','Ingresos de la pareja — Nena + Bombón', pcDetailIncomes]
+        };
+        const m = meta[selectedCardId];
+        if (!m) { panel.classList.remove('open'); return; }
+        panel.innerHTML = `<div class="pcw-detail-head"><h3>${m[0]} ${m[1]}</h3><button class="pcw-close" id="pcCloseDetail" aria-label="Cerrar"><i class="fas fa-times"></i></button></div>${m[2]()}`;
+        panel.classList.add('open');
+        // re-bind eventos dentro del panel
+        panel.querySelectorAll('.pc-add').forEach(b=>b.addEventListener('click',()=>openExpenseModal()));
+        panel.querySelectorAll('.pc-pay-loan').forEach(b=>b.addEventListener('click',()=>payLoanInstallment(b.dataset.id)));
+        panel.querySelectorAll('[data-inc]').forEach(inp=>inp.addEventListener('change',(e)=>{
+            const inc=pcIncomes().find(i=>i.id===e.target.dataset.inc);
+            if(inc){inc.contribution=parseFloat(e.target.value)||0;App.saveData();renderPantallaUnica();App.showToast('Aporte actualizado','success');}
+        }));
+        const eb=panel.querySelector('#pcEditWeeks'); if(eb) eb.addEventListener('click',openWeeksEditor);
+        const cb=panel.querySelector('#pcCloseDetail'); if(cb) cb.addEventListener('click',()=>{selectedCardId=null;panel.classList.remove('open');containerEl.querySelectorAll('.pcw-card.selected').forEach(c=>c.classList.remove('selected'));});
+    }
+
+    // =========================================================
     // PANTALLA ÚNICA — Dashboard consolidado del presupuesto común
     // =========================================================
     function renderPantallaUnica() {
@@ -2342,199 +2628,84 @@ const BudgetApp = (function () {
         const period = currentPeriod;
         const expenses = pcRealExpenses(period);
 
-        // KPIs globales
+        // ---- KPIs superiores ----
         let totalBudget = 0, anyDefined = false;
-        pcCats().forEach(c => {
-            const b = pcDefinedBudget(c.id);
-            if (b !== null) { totalBudget += b; anyDefined = true; }
-        });
+        pcCats().forEach(c => { const b = pcDefinedBudget(c.id); if (b !== null) { totalBudget += b; anyDefined = true; } });
         const totalExpense = pcExpenseTotal(expenses);
         const remaining = anyDefined ? totalBudget - totalExpense : null;
         const deviation = anyDefined ? totalExpense - totalBudget : null;
+        const incomes = pcIncomes();
+        const totalIncome = incomes.reduce((s,i)=>s+i.salary,0);
+        const aportesMes = getExpensesForPeriod(period).filter(e=>e.status==='aportacion').reduce((s,e)=>s+e.amount,0);
+        const nena = incomes.find(i=>i.name==='Nena'), bombon = incomes.find(i=>i.name==='Bombón');
+        const pctN = totalIncome&&nena ? ((nena.salary/totalIncome)*100).toFixed(0) : '50';
+        const pctB = totalIncome&&bombon ? ((bombon.salary/totalIncome)*100).toFixed(0) : '50';
 
         const kpis = `
-            <div class="pc-kpis">
-                <div class="pc-kpi"><div class="pc-kpi-label">Presupuesto total definido</div>
-                    <div class="pc-kpi-value">${anyDefined ? App.formatCurrency(totalBudget) : '—'}</div>
-                    <div class="pc-kpi-meta">${anyDefined ? '' : 'Sin presupuestos definidos'}</div></div>
-                <div class="pc-kpi"><div class="pc-kpi-label">Gastos reales registrados</div>
-                    <div class="pc-kpi-value" style="color:var(--danger)">${App.formatCurrency(totalExpense)}</div>
-                    <div class="pc-kpi-meta">${expenses.length} movimientos (excluye aportaciones)</div></div>
-                <div class="pc-kpi"><div class="pc-kpi-label">Dinero restante</div>
-                    <div class="pc-kpi-value" style="color:${remaining === null ? 'var(--text-muted)' : remaining >= 0 ? 'var(--success)' : 'var(--danger)'}">${remaining === null ? '—' : App.formatCurrency(remaining)}</div>
-                    <div class="pc-kpi-meta">Presupuesto − Gastos</div></div>
-                <div class="pc-kpi"><div class="pc-kpi-label">Desviación</div>
-                    <div class="pc-kpi-value" style="color:${deviation === null ? 'var(--text-muted)' : deviation > 0 ? 'var(--danger)' : 'var(--success)'}">${deviation === null ? '—' : (deviation > 0 ? '+' : '') + App.formatCurrency(deviation)}</div>
-                    <div class="pc-kpi-meta">${deviation === null ? 'Requiere presupuesto' : deviation > 0 ? 'Sobrecoste' : 'Margen a favor'}</div></div>
+            <div class="pcw-topbar">
+                <div class="pcw-kpi big"><div class="pcw-klabel">💶 Saldo restante total</div>
+                    <div class="pcw-kvalue" style="color:${remaining===null?'var(--text-muted)':remaining>=0?'var(--success)':'var(--danger)'}">${remaining===null?'—':App.formatCurrency(remaining)}</div>
+                    <div class="pcw-kmeta">Presupuesto definido ${anyDefined?App.formatCurrency(totalBudget):'—'} − Gastos ${App.formatCurrency(totalExpense)}</div></div>
+                <div class="pcw-kpi"><div class="pcw-klabel">📥 Ingresos totales</div>
+                    <div class="pcw-kvalue">${App.formatCurrency(totalIncome)}</div>
+                    <div class="pcw-split"><span style="color:#ec4899">Nena ${pctN}%</span><span style="color:#2563eb">Bombón ${pctB}%</span></div></div>
+                <div class="pcw-kpi"><div class="pcw-klabel">📤 Gastos totales acumulados</div>
+                    <div class="pcw-kvalue" style="color:var(--danger)">${App.formatCurrency(totalExpense)}</div>
+                    <div class="pcw-kmeta">${expenses.length} movimientos · Desviación: <strong style="color:${deviation===null?'inherit':deviation>0?'var(--danger)':'var(--success)'}">${deviation===null?'—':(deviation>0?'+':'')+App.formatCurrency(deviation)}</strong></div></div>
+                <div class="pcw-kpi chart"><div class="pcw-klabel">📊 Cash flow del mes</div>${pcCashflowSvg(totalIncome, totalExpense)}
+                    <div class="pcw-kmeta">Aportado a ahorro: ${App.formatCurrency(aportesMes)}</div></div>
             </div>`;
 
-        // 🏠 Renta
-        const rent = pcCats().find(c => c.id === 'pc-rent');
-        const rentGasto = pcCatExpense('cat-3-1', period) || pcCatExpense('pc-rent', period);
-        const rentPrevisto = expenses.filter(e => e.status === 'previsto' && (e.categoryId === 'cat-3-1')).reduce((s,e)=>s+e.amount,0);
-        const blockRent = `
-            <div class="pc-block">
-                <div class="pc-block-head">
-                    <div><div class="pc-block-title">🏠 Renta <span class="pc-block-sub">· MyInvestor · importe fijo mensual</span></div></div>
-                    ${pcChip(rent ? rent.budget : null, rentGasto)}
-                </div>
-                <div class="pc-row">
-                    <div style="display:flex;align-items:center;gap:12px;flex:1">
-                        <strong>${App.formatCurrency(rent ? rent.budget : 0)}</strong>
-                        ${pcBarHtml(rentGasto, rent ? rent.budget : 0)}
-                    </div>
-                    <div class="pc-block-sub">Pagado: ${App.formatCurrency(rentGasto)}${rentPrevisto ? ' · Previsto: ' + App.formatCurrency(rentPrevisto) : ''}</div>
-                    <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-rent" data-default-cat="cat-3-1"><i class="fas fa-plus"></i></button>
-                </div>
-            </div>`;
-
-        // 💡 Utilities
-        const utils = pcCats().find(c => c.id === 'pc-utilities');
-        let utilsRows = '';
-        let utilsBudgetSum = 0, utilsGastoSum = 0;
-        pcSubs('pc-utilities').forEach(s => {
-            const mapCat = { 'pcs-electricity': ['cat-4-1'], 'pcs-water': ['cat-4-2'], 'pcs-phone': ['cat-4-4'] };
-            const ids = (mapCat[s.id] || []);
-            const gasto = pcExpenseTotal(pcRealExpenses(period).filter(e => ids.includes(e.categoryId)));
-            if (s.budget !== null) utilsBudgetSum += Number(s.budget);
-            utilsGastoSum += gasto;
-            utilsRows += `<div class="pc-row">
-                <div>${s.icon} <strong>${s.name}</strong> <span class="pc-block-sub">· ${s.account}</span></div>
-                ${pcBarHtml(gasto, s.budget)}
-                <div>${App.formatCurrency(gasto)} / ${s.budget === null ? '—' : App.formatCurrency(s.budget)}</div>
-                ${pcChip(s.budget, gasto)}
-                <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-utilities" data-default-cat="${ids[0] || ''}"><i class="fas fa-plus"></i></button>
-            </div>`;
+        // ---- Grid central de tarjetas (clic => drill-down) ----
+        const cats = pcCats();
+        const cardMeta = {
+            'pc-rent':      { sub:'MyInvestor · fijo mensual', badge:'' },
+            'pc-utilities': { sub:'⚡ Luz · 💧 Agua · 📶 Lowi', badge:'' },
+            'pc-groceries': { sub:'Presupuesto semanal dinámico', badge: pcWeeks().length + ' sem' },
+            'pc-loans':     { sub: pcLoans().map(l=>`${l.name} ${l.paidInstallments}/${l.totalInstallments}`).join(' · '), badge:'' },
+            'pc-savings':   { sub:'TradeRepublic · MyInvestor · Ahorro', badge:'' },
+            'pc-others':    { sub:'Varios e imprevistos', badge:'' }
+        };
+        const colors = { 'pc-rent':'#6366f1','pc-utilities':'#f59e0b','pc-groceries':'#10b981','pc-loans':'#ef4444','pc-savings':'#8b5cf6','pc-others':'#64748b' };
+        let cardsHtml = '';
+        cats.forEach(c => {
+            const g = pcCardGasto(c.id, period), b = pcCardBudget(c.id), m = cardMeta[c.id] || {};
+            const inner = `${pcMiniBar(g, b, colors[c.id]||'var(--primary)')}<div class="pcw-card-sub">${m.sub||''}</div>`;
+            cardsHtml += pcCard({ ...c, color: colors[c.id] }, inner, { budget: b, gasto: g, badge: m.badge });
         });
-        const blockUtils = `
-            <div class="pc-block">
-                <div class="pc-block-head">
-                    <div class="pc-block-title">💡 Utilities <span class="pc-block-sub">· Suministros desde MyInvestor</span></div>
-                    ${pcChip(utils && utils.budget === null ? utilsBudgetSum : (utils ? utils.budget : null), utilsGastoSum)}
-                </div>
-                ${utilsRows || '<div class="pc-block-sub">Sin subcategorías.</div>'}
-            </div>`;
+        // tarjeta ingresos
+        const totalLibre = incomes.reduce((s,i)=>s+i.salary*(i.freePct/100),0);
+        const incCard = `<div class="pcw-card ${selectedCardId==='pc-incomes'?'selected':''}" data-card-id="pc-incomes" tabindex="0" role="button" style="--card-color:#0ea5e9">
+            <div class="pcw-head"><div class="pcw-title"><span class="pcw-ico">👥</span> Ingresos pareja</div><span class="pc-chip gray">${totalLibre?((totalLibre/totalIncome)*100).toFixed(0):0}% libre</span></div>
+            <div class="pcw-foot"><span>Nena ${nena?App.formatCurrency(nena.salary):'—'}</span><span>Bombón ${bombon?App.formatCurrency(bombon.salary):'—'}</span></div>
+            <div class="pcw-hint"><i class="fas fa-chevron-down"></i> Ver detalle</div></div>`;
 
-        // 🛒 Groceries & Leisure (semanal)
-        const today = new Date().toISOString().substring(0, 10);
-        const groceryIds = getDescendantIds('cat-1').concat(getDescendantIds('cat-2'));
-        let weeksHtml = '', weekBudgetSum = 0, weekGastoSum = 0;
-        pcWeeks().forEach(w => {
-            const isCurrent = today >= w.start && today <= w.end;
-            const gastosSemana = pcExpenseTotal(pcRealExpenses(period).filter(e => e.date >= w.start && e.date <= w.end && (groceryIds.includes(e.categoryId) || !e.categoryId)));
-            weekBudgetSum += Number(w.budget || 0); weekGastoSum += gastosSemana;
-            weeksHtml += `<div class="pc-week ${isCurrent ? 'current' : ''}">
-                <div class="pc-row" style="padding:0;border:none">
-                    <div><strong>${w.label}</strong> <span class="pc-block-sub">${fmtShortDate(w.start)} → ${fmtShortDate(w.end)}</span>${isCurrent ? ' <span class="pc-chip green">Actual</span>' : ''}</div>
-                    ${pcBarHtml(gastosSemana, w.budget)}
-                    <div>${App.formatCurrency(gastosSemana)} / ${App.formatCurrency(w.budget)}</div>
-                    <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-groceries" data-week="${w.id}" data-default-cat=""><i class="fas fa-plus"></i></button>
-                </div></div>`;
+        const grid = `<div class="pcw-grid">${cardsHtml}${incCard}</div>`;
+
+        // ---- Panel de detalle (drill-down animado) ----
+        const detail = `<div class="pcw-detail" id="pcDetailPanel"></div>`;
+
+        // ---- Sidebar derecho: actividad + alertas ----
+        const sidebar = `<aside class="pcw-sidebar">
+            <section class="pcw-widget"><div class="pcw-whead">🔔 Spending Alerts</div>${pcAlertsHtml(period)}</section>
+            <section class="pcw-widget"><div class="pcw-whead">🕘 Actividad reciente</div><div class="pcw-acts">${pcActivityHtml(period)}</div></section>
+        </aside>`;
+
+        view.innerHTML = kpis + `<div class="pcw-layout"><div>${grid}${detail}</div>${sidebar}</div>`;
+
+        pcRenderDetailPanel();
+
+        // Eventos: selección de tarjetas
+        view.querySelectorAll('.pcw-card').forEach(card => {
+            const activate = () => {
+                selectedCardId = card.dataset.cardId;
+                view.querySelectorAll('.pcw-card').forEach(c => c.classList.toggle('selected', c === card));
+                pcRenderDetailPanel();
+                document.getElementById('pcDetailPanel') && document.getElementById('pcDetailPanel').scrollIntoView({ behavior:'smooth', block:'nearest' });
+            };
+            card.addEventListener('click', activate);
+            card.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' ') { e.preventDefault(); activate(); } });
         });
-        const blockGroceries = `
-            <div class="pc-block">
-                <div class="pc-block-head">
-                    <div class="pc-block-title">🛒 Groceries & Leisure <span class="pc-block-sub">· Presupuesto semanal (juntas)</span></div>
-                    <div style="display:flex;gap:8px;align-items:center">
-                        ${pcChip(weekBudgetSum, weekGastoSum)}
-                        <button class="btn btn-sm btn-secondary" id="pcEditWeeks"><i class="fas fa-calendar-week"></i> Editar semanas</button>
-                    </div>
-                </div>
-                <div class="pc-row" style="font-weight:600"><div>Total semanas</div><div>${App.formatCurrency(weekGastoSum)} / ${App.formatCurrency(weekBudgetSum)}</div></div>
-                ${weeksHtml || '<div class="pc-block-sub">Define las semanas en "Editar semanas".</div>'}
-            </div>`;
-
-        // 💳 Préstamos
-        let loansHtml = '', loanBudget = 0, loanGasto = 0;
-        pcLoans().forEach(l => {
-            const cuotaTxt = `${l.paidInstallments}/${l.totalInstallments}`;
-            const pct = (l.paidInstallments / l.totalInstallments) * 100;
-            const pendiente = (l.totalInstallments - l.paidInstallments) * l.amountPerInstallment;
-            loanBudget += l.totalInstallments * l.amountPerInstallment;
-            loanGasto += l.paidInstallments * l.amountPerInstallment;
-            loansHtml += `<div class="pc-row">
-                <div><strong>${l.name}</strong> <span class="pc-loan-badge">${cuotaTxt}</span></div>
-                <div class="pc-bar"><div class="${pct >= 80 ? 'ok' : ''}" style="width:${pct}%"></div></div>
-                <div class="pc-block-sub">${App.formatCurrency(l.amountPerInstallment)}/cuota · Pendiente ${App.formatCurrency(pendiente)}</div>
-                <button class="btn btn-sm btn-primary pc-pay-loan" data-id="${l.id}"><i class="fas fa-hand-holding-usd"></i> Pagar cuota</button>
-            </div>`;
-        });
-        const blockLoans = `
-            <div class="pc-block">
-                <div class="pc-block-head">
-                    <div class="pc-block-title">💳 Préstamos y Financiaciones <span class="pc-block-sub">· compras a plazos</span></div>
-                    ${pcChip(pcLoans().length ? loanBudget : null, loanGasto)}
-                </div>
-                ${loansHtml || '<div class="pc-block-sub">Sin préstamos activos.</div>'}
-            </div>`;
-
-        // 💰 Savings (aportaciones: no computan como gasto)
-        const aportes = getExpensesForPeriod(period).filter(e => e.status === 'aportacion');
-        let savHtml = '', savTotal = 0;
-        pcSubs('pc-savings').forEach(s => {
-            const monto = aportes.filter(a => a.notes && a.notes.includes(s.destination)).reduce((sum,a)=>sum+a.amount,0);
-            savTotal += monto;
-            savHtml += `<div class="pc-row"><div>${s.icon} <strong>${s.name}</strong></div>
-                <div>${monto > 0 ? App.formatCurrency(monto) : '<span class="pc-block-sub">Sin aportaciones este mes</span>'}</div></div>`;
-        });
-        const blockSavings = `
-            <div class="pc-block">
-                <div class="pc-block-head">
-                    <div class="pc-block-title">💰 Savings <span class="pc-block-sub">· Ahorros e inversiones (no computan como gasto)</span></div>
-                    <span class="pc-chip gray">Total ahorrado: ${App.formatCurrency(savTotal)}</span>
-                </div>
-                ${savHtml}
-            </div>`;
-
-        // 📦 Others
-        const othersGasto = pcExpenseTotal(pcRealExpenses(period).filter(e => !getDescendantIds('cat-3').includes(e.categoryId) && !getDescendantIds('cat-4').includes(e.categoryId) && !groceryIds.includes(e.categoryId)));
-        const recentOthers = expenses.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3);
-        const blockOthers = `
-            <div class="pc-block">
-                <div class="pc-block-head">
-                    <div class="pc-block-title">📦 Others <span class="pc-block-sub">· varios e imprevistos</span></div>
-                    ${pcChip(null, othersGasto)}
-                </div>
-                ${recentOthers.map(e => `<div class="pc-row"><div>${App.escapeHtml(e.concept)}</div><div class="pc-block-sub">${App.formatDate(e.date)}</div><strong>${App.formatCurrency(e.amount)}</strong></div>`).join('') || '<div class="pc-block-sub">Sin gastos recientes fuera de las categorías principales.</div>'}
-                <button class="btn btn-sm btn-secondary pc-add" data-cat="pc-others" style="margin-top:8px"><i class="fas fa-plus"></i> Añadir gasto</button>
-            </div>`;
-
-        // 👥 Ingresos de la pareja
-        let incHtml = '', totalSalario = 0, totalLibre = 0, totalAporte = 0;
-        pcIncomes().forEach(i => {
-            const libre = i.salary * (i.freePct / 100);
-            totalSalario += i.salary; totalLibre += libre; totalAporte += i.contribution;
-            incHtml += `<div class="pc-row">
-                <div><strong>${i.name}</strong> <span class="pc-block-sub">${App.formatCurrency(i.salary)}/mes</span></div>
-                <div class="pc-chip green">${i.freePct}% libre · ${App.formatCurrency(libre)}</div>
-                <div class="pc-block-sub">Aporte común: <strong>${App.formatCurrency(i.contribution)}</strong></div>
-                <input type="number" class="pc-mini-input" min="0" step="50" value="${i.contribution}" data-inc="${i.id}" title="Editar aporte">
-            </div>`;
-        });
-        const equitativo = totalAporte / 2;
-        const blockIncomes = `
-            <div class="pc-block">
-                <div class="pc-block-head">
-                    <div class="pc-block-title">👥 Ingresos de la pareja <span class="pc-block-sub">· Nena + Bombón</span></div>
-                    <span class="pc-chip gray">Sueldo libre total: ${App.formatCurrency(totalLibre)} (${totalSalario ? ((totalLibre/totalSalario)*100).toFixed(0) : 0}% de ${App.formatCurrency(totalSalario)})</span>
-                </div>
-                ${incHtml}
-                <div class="pc-row" style="font-weight:600"><div>Distribución</div>
-                    <div class="pc-block-sub">Equitativa: ${App.formatCurrency(equitativo)}/persona · Proporcional al sueldo libre: ${pcIncomes().map(i => App.formatCurrency(totalAporte * ((i.salary*i.freePct/100)/totalLibre))).join(' / ')}</div>
-                </div>
-            </div>`;
-
-        view.innerHTML = kpis + blockRent + blockUtils + blockGroceries + blockLoans + blockSavings + blockOthers + blockIncomes;
-
-        // Eventos
-        view.querySelectorAll('.pc-add').forEach(btn => btn.addEventListener('click', () => openExpenseModal()));
-        view.querySelectorAll('.pc-pay-loan').forEach(btn => btn.addEventListener('click', () => payLoanInstallment(btn.dataset.id)));
-        view.querySelectorAll('[data-inc]').forEach(inp => inp.addEventListener('change', (e) => {
-            const inc = pcIncomes().find(i => i.id === e.target.dataset.inc);
-            if (inc) { inc.contribution = parseFloat(e.target.value) || 0; App.saveData(); renderPantallaUnica(); App.showToast('Aporte actualizado', 'success'); }
-        }));
-        const editBtn = view.querySelector('#pcEditWeeks');
-        if (editBtn) editBtn.addEventListener('click', openWeeksEditor);
     }
 
     function payLoanInstallment(loanId) {
