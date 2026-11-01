@@ -421,9 +421,31 @@
     <script src="3_calendario.js"></script>
     <script src="4_ingresos-personales.js"></script>
     <script src="6_viajes.js"></script>
+    <script src="analisis.js"></script>
     <script src="cuentas.js"></script>
+    <script src="configuracion.js"></script>
 
     <script>
+        // =========================================================
+        // CONEXIONES ENTRE MÓDULOS (centralizadas en App)
+        // Cada módulo publica aquí la API que expone al resto;
+        // ningún módulo llama directamente a otro módulo.
+        // =========================================================
+        App.registerModule('presupuesto-comun', {
+            openExpenseModal: (id) => BudgetApp.openExpenseModal(id),
+            openCategoryModal: (id) => BudgetApp.openCategoryModal(id)
+        });
+        App.registerModule('viajes', {
+            openTripDetail: (tripId, tab) => TripsApp.openTripDetail(tripId, tab || 'resumen'),
+            openTripModal: (id) => TripsApp.openTripModal(id)
+        });
+        App.registerModule('cuentas', {
+            openMovementModal: (movementId, accountId) => AccountsApp.openMovementModal(movementId, accountId)
+        });
+        App.registerModule('mi-dinero', {
+            getSavings: () => MyMoneyApp.getSavings()
+        });
+
         document.addEventListener('DOMContentLoaded', () => {
             App.init();
         });

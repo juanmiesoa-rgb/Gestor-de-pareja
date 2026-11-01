@@ -839,12 +839,15 @@ const CalendarApp = (function () {
         containerEl.querySelector('#calDetailTitle').textContent = ev.title;
 
         let originLink = '';
-        if (ev.originSection === 'presupuesto-comun' && window.BudgetApp) {
-            originLink = `<button class="btn btn-sm btn-secondary" id="btnGoOrigin"><i class="fas fa-external-link-alt"></i> Ver en Presupuesto</button>`;
-        } else if (ev.originSection === 'viajes' && window.TripsApp) {
-            originLink = `<button class="btn btn-sm btn-secondary" id="btnGoOrigin"><i class="fas fa-external-link-alt"></i> Ver en Viajes</button>`;
-        } else if (ev.originSection === 'cuentas' && window.AccountsApp) {
-            originLink = `<button class="btn btn-sm btn-secondary" id="btnGoOrigin"><i class="fas fa-external-link-alt"></i> Ver en Cuentas</button>`;
+        // Comprobamos si el módulo de origen existe a través del puente de App,
+        // sin referencias directas a otros módulos
+        const ORIGIN_LABELS = {
+            'presupuesto-comun': 'Ver en Presupuesto',
+            'viajes': 'Ver en Viajes',
+            'cuentas': 'Ver en Cuentas'
+        };
+        if (ORIGIN_LABELS[ev.originSection]) {
+            originLink = `<button class="btn btn-sm btn-secondary" id="btnGoOrigin"><i class="fas fa-external-link-alt"></i> ${ORIGIN_LABELS[ev.originSection]}</button>`;
         }
 
         body.innerHTML = `
@@ -884,13 +887,21 @@ const CalendarApp = (function () {
         if (btnOrigin) {
             btnOrigin.addEventListener('click', () => {
                 modal.classList.remove('active');
-                App.navigateTo(ev.originSection);
-                // Intentar abrir el detalle específico si la API lo permite
-                setTimeout(() => {
-                    if (ev.originSection === 'presupuesto-comun' && window.BudgetApp) window.BudgetApp.openExpenseModal(ev.originId);
-                    if (ev.originSection === 'viajes' && window.TripsApp) window.TripsApp.openTripDetail(ev.tripId || ev.originId);
-                    if (ev.originSection === 'cuentas' && window.AccountsApp) window.AccountsApp.openMovementModal(ev.originId);
-                }, 150);
+                // Sin acoplamiento directo: App.goTo navega y pide al módulo
+                // destino la acción correspondiente a través del puente de App.
+                switch (ev.originSection) {
+                    case 'presupuesto-comun':
+                        App.goTo('presupuesto-comun', 'openExpenseModal', ev.originId);
+                        break;
+                    case 'viajes':
+                        App.goTo('viajes', 'openTripDetail', [ev.tripId || ev.originId, 'resumen']);
+                        break;
+                    case 'cuentas':
+                        App.goTo('cuentas', 'openMovementModal', [null, ev.originId]);
+                        break;
+                    default:
+                        App.navigateTo(ev.originSection);
+                }
             });
         }
 

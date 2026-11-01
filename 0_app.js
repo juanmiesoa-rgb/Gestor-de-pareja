@@ -269,7 +269,19 @@ const App = (function() {
         'configuracion': { title: 'Configuración', subtitle: () => 'Personaliza la aplicación' }
     };
 
+    // Alias de nombres de sección (soporta acentos y variantes en data-section)
+    const SECTION_ALIASES = {
+        'configuración': 'configuracion',
+        'analisis': 'analisis',
+        'análisis': 'analisis'
+    };
+
+    function normalizeSectionName(name) {
+        return SECTION_ALIASES[name] || name;
+    }
+
     function navigateTo(section) {
+        section = normalizeSectionName(section);
         if (!sections[section]) {
             console.warn('Sección no registrada:', section);
             showToast('Sección no disponible', 'warning');
@@ -295,7 +307,43 @@ const App = (function() {
     }
 
     function registerSection(name, module) {
-        sections[name] = module;
+        // Normaliza el nombre para que 'configuración' y 'configuracion'
+        // sean intercambiables al registrar/navegar
+        sections[normalizeSectionName(name)] = module;
+    }
+
+    // =========================================================
+    // PUENTE ENTRE MÓDULOS (único punto de acoplamiento)
+    // =========================================================
+    // Los módulos se registran aquí con su clave y publican solo la API
+    // que otros módulos necesitan. Ningún módulo llama directamente a otro.
+    const modules = {};
+
+    function registerModule(key, api) {
+        modules[key] = api;
+    }
+
+    // Acceso a datos que un módulo expone a través del puente (read-only helpers)
+    function getSavings() {
+        const mod = modules['mi-dinero'];
+        return mod && typeof mod.getSavings === 'function' ? mod.getSavings() : null;
+    }
+
+    // Navega a una sección y, si procede, invoca una acción del módulo destino
+    // (p.ej. abrir el modal de un gasto concreto desde el calendario).
+    function goTo(section, action, params) {
+        navigateTo(section);
+        if (!action) return;
+        const mod = modules[section];
+        if (mod && typeof mod[action] === 'function') {
+            try {
+                mod[action](...(Array.isArray(params) ? params : (params !== undefined ? [params] : [])));
+            } catch (e) {
+                console.error(`Error en la acción "${action}" del módulo "${section}":`, e);
+            }
+        } else {
+            console.warn(`Módulo "${section}" no registrado o acción "${action}" no disponible`);
+        }
     }
 
     // =========================================================
@@ -377,11 +425,12 @@ const App = (function() {
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
-                navigateTo(item.dataset.section);
+                navigateTo(normalizeSectionName(item.dataset.section));
             });
         });
 
-        navigateTo('inicio');
+        // Inicio siempre como sección por defecto, con nombre normalizado
+        navigateTo(normalizeSectionName('inicio'));
     }
 
     // =========================================================
@@ -394,7 +443,10 @@ const App = (function() {
         addHistory,
 
         navigateTo,
+        goTo,
         registerSection,
+        registerModule,
+        getSavings,
         get currentSection() { return currentSection; },
 
         formatCurrency,
