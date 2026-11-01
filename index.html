@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finanzas+ | Gestión Compartida</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --primary-light: #dbeafe;
+            --success: #10b981;
+            --success-light: #d1fae5;
+            --warning: #f59e0b;
+            --warning-light: #fef3c7;
+            --danger: #ef4444;
+            --danger-light: #fee2e2;
+            --info: #06b6d4;
+            --info-light: #cffafe;
+            --bg: #f8fafc;
+            --bg-card: #ffffff;
+            --bg-sidebar: #ffffff;
+            --text: #0f172a;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --border-light: #f1f5f9;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+            --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -1px rgba(0,0,0,0.04);
+            --radius: 10px;
+            --radius-sm: 6px;
+            --radius-lg: 14px;
+        }
+
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --bg-card: #1e293b;
+            --bg-sidebar: #1e293b;
+            --text: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #64748b;
+            --border: #334155;
+            --border-light: #1e293b;
+            --primary-light: #1e3a8a;
+            --success-light: #064e3b;
+            --warning-light: #78350f;
+            --danger-light: #7f1d1d;
+            --info-light: #164e63;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+
+        .app { display: flex; min-height: 100vh; }
+
+        .sidebar {
+            width: 260px;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border);
+            position: fixed;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--primary), #7c3aed);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 18px;
+        }
+
+        .brand-text h1 { font-size: 16px; font-weight: 700; }
+        .brand-text p { font-size: 11px; color: var(--text-muted); }
+
+        .profile-selector {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+
+        .avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--primary-light);
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .profile-info { flex: 1; }
+        .profile-info strong { font-size: 13px; display: block; }
+        .profile-info small { font-size: 11px; color: var(--text-muted); }
+
+        .nav { flex: 1; padding: 12px; overflow-y: auto; }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 2px;
+            transition: all 0.15s;
+            cursor: pointer;
+        }
+
+        .nav-item:hover { background: var(--border-light); color: var(--text); }
+        .nav-item.active { background: var(--primary); color: white; }
+        .nav-item i { width: 18px; text-align: center; font-size: 14px; }
+
+        .nav-section {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 12px 12px 6px;
+        }
+
+        .sidebar-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .demo-badge {
+            background: var(--warning-light);
+            color: var(--warning);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .main {
+            flex: 1;
+            margin-left: 260px;
+            padding: 24px 32px;
+            min-width: 0;
+        }
+
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .topbar-left { display: flex; align-items: center; gap: 12px; }
+
+        .page-title { font-size: 24px; font-weight: 700; }
+        .page-subtitle { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
+
+        .topbar-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 16px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            text-decoration: none;
+            font-family: inherit;
+        }
+
+        .btn:hover { background: var(--border-light); }
+        .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-secondary { background: var(--bg-card); }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn-icon { padding: 8px 10px; }
+        .btn-ghost { background: transparent; border-color: transparent; }
+        .btn-ghost:hover { background: var(--border-light); }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 16px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .card-title { font-size: 15px; font-weight: 600; }
+        .card-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .badge-success { background: var(--success-light); color: var(--success); }
+        .badge-warning { background: var(--warning-light); color: var(--warning); }
+        .badge-danger { background: var(--danger-light); color: var(--danger); }
+        .badge-info { background: var(--info-light); color: var(--info); }
+        .badge-neutral { background: var(--border-light); color: var(--text-secondary); }
+
+        .menu-toggle {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            color: var(--text);
+        }
+
+        .overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 90;
+        }
+
+        .theme-toggle {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 8px 10px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            color: var(--text);
+        }
+
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .toast {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--success);
+            border-radius: var(--radius-sm);
+            padding: 12px 16px;
+            box-shadow: var(--shadow-md);
+            min-width: 280px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideIn 0.3s ease;
+            font-size: 13px;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @media (max-width: 768px) {
+            .sidebar { transform: translateX(-100%); }
+            .sidebar.open { transform: translateX(0); }
+            .main { margin-left: 0; padding: 16px; }
+            .menu-toggle { display: block; }
+            .overlay.open { display: block; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <div class="overlay" id="overlay"></div>
+
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">F</div>
+                <div class="brand-text">
+                    <h1>Finanzas+</h1>
+                    <p>Gestión compartida</p>
+                </div>
+            </div>
+
+            <div class="profile-selector" id="profileSelector">
+                <div class="avatar" id="activeAvatar">A</div>
+                <div class="profile-info">
+                    <strong id="activeName">Ana</strong>
+                    <small>Perfil activo</small>
+                </div>
+                <i class="fas fa-chevron-down" style="color: var(--text-muted); font-size: 11px;"></i>
+            </div>
+
+            <nav class="nav" id="mainNav">
+                <div class="nav-section">Principal</div>
+                <a class="nav-item" data-section="inicio">
+                    <i class="fas fa-home"></i><span>Inicio</span>
+                </a>
+                <a class="nav-item" data-section="presupuesto-comun">
+                    <i class="fas fa-chart-pie"></i><span>Presupuesto común</span>
+                </a>
+                <a class="nav-item" data-section="calendario">
+                    <i class="fas fa-calendar"></i><span>Calendario</span>
+                </a>
+                <a class="nav-item" data-section="mi-dinero">
+                    <i class="fas fa-user"></i><span>Ingresos personales</span>
+                </a>
+
+                <div class="nav-section">Gestión</div>
+                <a class="nav-item" data-section="cuentas">
+                    <i class="fas fa-university"></i><span>Cuentas</span>
+                </a>
+                
+                <a class="nav-item" data-section="analisis">
+                    <i class="fas fa-chart-line"></i><span>Análisis</span>
+                </a>
+
+                <div class="nav-section">Planificación</div>
+                <a class="nav-item" data-section="viajes">
+                    <i class="fas fa-plane"></i><span>Viajes</span>
+                </a>
+                <a class="nav-item" data-section="analisis">
+                    <i class="fas fa-chart-line"></i><span>Comidas</span>
+                </a>
+
+                <div class="nav-section">Sistema</div>
+                <a class="nav-item" data-section="configuracion">
+                    <i class="fas fa-cog"></i><span>Configuración</span>
+                </a>
+
+                
+            </nav>
+
+            <div class="sidebar-footer">
+                <span>Modo demo</span>
+                <span class="demo-badge">DEMO</span>
+            </div>
+        </aside>
+
+        <main class="main">
+            <div class="topbar">
+                <div class="topbar-left">
+                    <button class="menu-toggle" id="menuToggle"><i class="fas fa-bars"></i></button>
+                    <div>
+                        <h1 class="page-title" id="pageTitle">Inicio</h1>
+                        <p class="page-subtitle" id="pageSubtitle">Viernes, 30 de octubre de 2026</p>
+                    </div>
+                </div>
+                <div class="topbar-actions">
+                    <button class="theme-toggle" id="themeToggle" title="Cambiar tema">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="sectionContainer"></div>
+        </main>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="0_app.js"></script>
+    <script src="1_inicio.js"></script>
+    <script src="2_presupuesto-comun.js"></script>
+    <script src="3_calendario.js"></script>
+    <script src="4_ingresos-personales.js"></script>
+    <script src="6_viajes.js"></script>
+    <script src="analisis.js"></script>
+    <script src="cuentas.js"></script>
+    <script src="configuracion.js"></script>
+
+    <script>
+        // =========================================================
+        // CONEXIONES ENTRE MÓDULOS (centralizadas en App)
+        // Cada módulo publica aquí la API que expone al resto;
+        // ningún módulo llama directamente a otro módulo.
+        // =========================================================
+        App.registerModule('presupuesto-comun', {
+            openExpenseModal: (id) => BudgetApp.openExpenseModal(id),
+            openCategoryModal: (id) => BudgetApp.openCategoryModal(id)
+        });
+        App.registerModule('viajes', {
+            openTripDetail: (tripId, tab) => TripsApp.openTripDetail(tripId, tab || 'resumen'),
+            openTripModal: (id) => TripsApp.openTripModal(id)
+        });
+        App.registerModule('cuentas', {
+            openMovementModal: (movementId, accountId) => AccountsApp.openMovementModal(movementId, accountId)
+        });
+        App.registerModule('mi-dinero', {
+            getSavings: () => MyMoneyApp.getSavings()
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            App.init();
+        });
+    </script>
+
+    <script>
+    console.log('App cargado:', typeof App);
+    console.log('BudgetApp cargado:', typeof BudgetApp);
+    console.log('Secciones registradas:', Object.keys(App.sections || {}));
+</script>
+
+</body>
+</html>
