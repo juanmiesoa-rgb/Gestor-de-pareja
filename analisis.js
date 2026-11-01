@@ -726,8 +726,14 @@ const AnalysisApp = (function () {
     function renderPatrimonio() {
         const view = containerEl.querySelector('#anaView-patrimonio');
         
-        // Calcular totales de ahorro de la sección Mi dinero (si existe la API)
-        const savingsData = window.MyMoneyApp ? window.MyMoneyApp.getSavings() : { mortgage: { ana: 8500, carlos: 7200, goal: 40000 }, trips: { ana: 1200, carlos: 1100 } };
+        // Obtener totales de ahorro del módulo Mi dinero a través del puente de App
+        // (sin acoplamiento directo entre módulos)
+        const DEFAULT_SAVINGS = { mortgage: { ana: 8500, carlos: 7200, goal: 40000 }, trips: { ana: 1200, carlos: 1100 } };
+        let savingsData = DEFAULT_SAVINGS;
+        try {
+            const s = App.getSavings ? App.getSavings() : null;
+            if (s && s.mortgage && s.trips) savingsData = s;
+        } catch (e) { /* usa valores por defecto */ }
         const totalMortgage = (savingsData.mortgage.ana || 0) + (savingsData.mortgage.carlos || 0);
         const totalTrips = (savingsData.trips.ana || 0) + (savingsData.trips.carlos || 0);
         const mortgagePct = savingsData.mortgage.goal ? (totalMortgage / savingsData.mortgage.goal) * 100 : 0;
