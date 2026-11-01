@@ -352,39 +352,31 @@
                 <a class="nav-item" data-section="inicio">
                     <i class="fas fa-home"></i><span>Inicio</span>
                 </a>
-                <a class="nav-item" data-section="presupuesto-comun">
-                    <i class="fas fa-chart-pie"></i><span>Presupuesto común</span>
-                </a>
                 <a class="nav-item" data-section="calendario">
                     <i class="fas fa-calendar"></i><span>Calendario</span>
                 </a>
                 <a class="nav-item" data-section="mi-dinero">
-                    <i class="fas fa-user"></i><span>Ingresos personales</span>
+                    <i class="fas fa-user"></i><span>Mi dinero</span>
+                </a>
+                <a class="nav-item" data-section="presupuesto-comun">
+                    <i class="fas fa-chart-pie"></i><span>Presupuesto común</span>
                 </a>
 
                 <div class="nav-section">Gestión</div>
                 <a class="nav-item" data-section="cuentas">
                     <i class="fas fa-university"></i><span>Cuentas</span>
                 </a>
-                
-                <a class="nav-item" data-section="analisis">
-                    <i class="fas fa-chart-line"></i><span>Análisis</span>
-                </a>
-
-                <div class="nav-section">Planificación</div>
                 <a class="nav-item" data-section="viajes">
                     <i class="fas fa-plane"></i><span>Viajes</span>
                 </a>
                 <a class="nav-item" data-section="analisis">
-                    <i class="fas fa-chart-line"></i><span>Comidas</span>
+                    <i class="fas fa-chart-line"></i><span>Análisis</span>
                 </a>
 
                 <div class="nav-section">Sistema</div>
                 <a class="nav-item" data-section="configuracion">
                     <i class="fas fa-cog"></i><span>Configuración</span>
                 </a>
-
-                
             </nav>
 
             <div class="sidebar-footer">
@@ -418,22 +410,11 @@
     <script src="0_app.js"></script>
     <script src="1_inicio.js"></script>
     <script src="2_presupuesto-comun.js"></script>
-    <script src="3_calendario.js"></script>
-    <script src="4_ingresos-personales.js"></script>
-    <script src="6_viajes.js"></script>
-    <script src="cuentas.js"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             App.init();
         });
     </script>
-
-    <script>
-    console.log('App cargado:', typeof App);
-    console.log('BudgetApp cargado:', typeof BudgetApp);
-    console.log('Secciones registradas:', Object.keys(App.sections || {}));
-</script>
-
 </body>
 </html>
