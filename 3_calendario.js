@@ -897,7 +897,7 @@ const CalendarApp = (function () {
                         App.goTo('viajes', 'openTripDetail', [ev.tripId || ev.originId, 'resumen']);
                         break;
                     case 'cuentas':
-                        App.goTo('cuentas', 'openMovementModal', [null, ev.originId]);
+                        App.navigateTo('mi-dinero');
                         break;
                     default:
                         App.navigateTo(ev.originSection);

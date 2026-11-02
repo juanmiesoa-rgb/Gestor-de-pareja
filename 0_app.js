@@ -169,7 +169,7 @@ const App = (function() {
     // ESTADO
     // =========================================================
     let data = loadData();
-    let currentSection = '1_inicio';
+    let currentSection = 'presupuesto-comun';
     const sections = {};
 
     function loadData() {
@@ -308,22 +308,18 @@ const App = (function() {
     // NAVEGACIÓN
     // =========================================================
     const SECTION_META = {
-        'inicio': { title: 'Inicio', subtitle: () => 'Viernes, 30 de octubre de 2026' },
+        'presupuesto-comun': { title: 'Presupuesto común', subtitle: () => 'Dashboard financiero compartido · pantalla única' },
         'calendario': { title: 'Calendario', subtitle: () => 'Planificación y vencimientos' },
         'mi-dinero': { title: 'Dinero', subtitle: () => 'Tu dinero en una sola pantalla · monederos, deudas, préstamos, objetivos y pagos' },
         'ingresos-personales': { title: 'Ingresos personales', subtitle: () => 'Tus finanzas personales (módulo legado)' },
-        'presupuesto-comun': { title: 'Presupuesto común', subtitle: () => 'Gestión compartida de gastos' },
-        'cuentas': { title: 'Cuentas', subtitle: () => 'Tus cuentas bancarias' },
-        'viajes': { title: 'Viajes', subtitle: () => 'Planifica tus escapadas' },
-        'analisis': { title: 'Análisis y planificación', subtitle: () => 'Visualiza tus tendencias' },
-        'configuracion': { title: 'Configuración', subtitle: () => 'Personaliza la aplicación' }
+        'viajes': { title: 'Viajes', subtitle: () => 'Planifica tus escapadas' }
     };
 
     // Alias de nombres de sección (soporta acentos y variantes en data-section)
     const SECTION_ALIASES = {
-        'configuración': 'configuracion',
-        'analisis': 'analisis',
-        'análisis': 'analisis'
+        'inicio': 'presupuesto-comun',
+        'home': 'presupuesto-comun',
+        'presupuesto': 'presupuesto-comun'
     };
 
     function normalizeSectionName(name) {
@@ -479,8 +475,8 @@ const App = (function() {
             });
         });
 
-        // Inicio siempre como sección por defecto, con nombre normalizado
-        navigateTo(normalizeSectionName('inicio'));
+        // Presupuesto común como pantalla de inicio de la aplicación
+        navigateTo(normalizeSectionName('presupuesto-comun'));
     }
 
     // =========================================================

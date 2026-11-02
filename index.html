@@ -456,8 +456,9 @@
 
         .pc-bottom { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; margin-bottom: 18px; }
         @media (max-width: 980px) { .pc-bottom { grid-template-columns: 1fr; } }
-        .pc-mov-row { display: grid; grid-template-columns: 70px 1fr 90px 70px; gap: 8px; align-items: center; padding: 8px 4px; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
+        .pc-mov-row { display: grid; grid-template-columns: 70px 1fr 90px 84px 92px 76px; gap: 8px; align-items: center; padding: 8px 4px; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
         .pc-mov-row:last-child { border-bottom: none; }
+        @media (max-width: 760px) { .pc-mov-row { grid-template-columns: 60px 1fr 84px; } .pc-mov-row > :nth-child(3), .pc-mov-row > :nth-child(5) { display: none; } }
         .pc-mov-date { color: var(--text-muted); font-size: 11.5px; }
         .pc-mov-amt { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; }
         .pc-sum-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
@@ -478,6 +479,44 @@
         .pc-btn-primary:hover { background: var(--primary-hover); }
         .pc-btn-ghost { background: var(--border-light); color: var(--text-secondary); }
         .pc-pop { position: fixed; z-index: 1001; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; width: 240px; box-shadow: var(--shadow-md); }
+
+        /* ===== v5 · Clean & Modern UI: armonización, alineación y badges ===== */
+        .pc-topbar-v5 { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+        .pc-period-pill { display: inline-flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px 4px 14px; box-shadow: var(--shadow-sm); }
+        .pc-period-pill select { border: none; background: transparent; color: var(--text); font-weight: 700; font-size: 13px; font-family: inherit; padding: 4px 6px; cursor: pointer; outline: none; }
+        .pc-panel--accent { border-top: 3px solid var(--panel-accent, var(--primary)); }
+        .pc-panel-title .pc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--panel-accent, var(--primary)); display: inline-block; flex: none; }
+        .pc-table thead th { text-align: right; padding: 13px 18px; vertical-align: middle; }
+        .pc-table thead th:nth-child(1), .pc-table thead th:nth-child(2) { text-align: left; }
+        .pc-table th.pc-th-num, .pc-table td.pc-td-num { text-align: right; font-variant-numeric: tabular-nums; }
+        .pc-table td { padding: 12px 18px; }
+        .pc-table td:first-child, .pc-table td:nth-child(2) { text-align: left; }
+        .pc-row-cat > td { border-bottom: 1px solid var(--border); }
+        .pc-row-sub > td { background: var(--bg-card); }
+        .pc-badge { border: 1px solid transparent; vertical-align: middle; }
+        .pc-badge-blue   { background: color-mix(in srgb, var(--primary) 12%, var(--bg-card)); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 22%, transparent); }
+        .pc-badge-green  { background: rgba(16,185,129,.13); color: #059669; border-color: rgba(16,185,129,.28); }
+        .pc-badge-amber  { background: rgba(245,158,11,.14); color: #b45309; border-color: rgba(245,158,11,.3); }
+        .pc-badge-red    { background: rgba(239,68,68,.12); color: #dc2626; border-color: rgba(239,68,68,.28); }
+        .pc-badge-gray   { background: color-mix(in srgb, var(--text-muted) 12%, var(--bg-card)); color: var(--text-secondary); border-color: var(--border); }
+        [data-theme="dark"] .pc-badge-green { color: #34d399; }
+        [data-theme="dark"] .pc-badge-amber { color: #fbbf24; }
+        [data-theme="dark"] .pc-badge-red   { color: #f87171; }
+        .pc-due { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 700; white-space: nowrap; border: 1px solid var(--border); background: var(--bg); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+        .pc-due.soon { border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.1); color: #b45309; }
+        .pc-due.over { border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.1); color: #dc2626; }
+        [data-theme="dark"] .pc-due.soon { color: #fbbf24; }
+        [data-theme="dark"] .pc-due.over { color: #f87171; }
+        .pc-state { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--text-secondary); }
+        .pc-state::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--state-color, var(--text-muted)); flex: none; }
+        .pc-empty { color: var(--text-muted); font-size: 12.5px; padding: 14px 4px; text-align: center; }
+        .pc-pop-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); }
+        .pc-pop-hint { font-size: 10.5px; color: var(--text-muted); margin-top: 8px; text-align: center; }
+        .pc-modal-actions .pc-btn-danger { background: var(--danger-light); color: var(--danger); margin-right: auto; }
+        @media (max-width: 760px) {
+            .pc-table thead th, .pc-table td { padding-left: 12px; padding-right: 12px; }
+            .pc-kpi-big { font-size: 20px; }
+        }
     </style>
 </head>
 <body>
@@ -504,9 +543,6 @@
 
             <nav class="nav" id="mainNav">
                 <div class="nav-section">Principal</div>
-                <a class="nav-item" data-section="inicio">
-                    <i class="fas fa-home"></i><span>Inicio</span>
-                </a>
                 <a class="nav-item" data-section="presupuesto-comun">
                     <i class="fas fa-chart-pie"></i><span>Presupuesto común</span>
                 </a>
@@ -520,29 +556,10 @@
                     <i class="fas fa-user"></i><span>Ingresos personales</span>
                 </a>
 
-                <div class="nav-section">Gestión</div>
-                <a class="nav-item" data-section="cuentas">
-                    <i class="fas fa-university"></i><span>Cuentas</span>
-                </a>
-                
-                <a class="nav-item" data-section="analisis">
-                    <i class="fas fa-chart-line"></i><span>Análisis</span>
-                </a>
-
                 <div class="nav-section">Planificación</div>
                 <a class="nav-item" data-section="viajes">
                     <i class="fas fa-plane"></i><span>Viajes</span>
                 </a>
-                <a class="nav-item" data-section="analisis">
-                    <i class="fas fa-chart-line"></i><span>Comidas</span>
-                </a>
-
-                <div class="nav-section">Sistema</div>
-                <a class="nav-item" data-section="configuracion">
-                    <i class="fas fa-cog"></i><span>Configuración</span>
-                </a>
-
-                
             </nav>
 
             <div class="sidebar-footer">
@@ -574,15 +591,11 @@
     <div class="toast-container" id="toastContainer"></div>
 
     <script src="0_app.js"></script>
-    <script src="1_inicio.js"></script>
     <script src="2_presupuesto-comun.js"></script>
     <script src="3_calendario.js"></script>
     <script src="4_ingresos-personales.js"></script>
     <script src="5_dinero.js"></script>
     <script src="6_viajes.js"></script>
-    <script src="analisis.js"></script>
-    <script src="cuentas.js"></script>
-    <script src="configuracion.js"></script>
 
     <script>
         // =========================================================
@@ -598,11 +611,8 @@
             openTripDetail: (tripId, tab) => TripsApp.openTripDetail(tripId, tab || 'resumen'),
             openTripModal: (id) => TripsApp.openTripModal(id)
         });
-        App.registerModule('cuentas', {
-            openMovementModal: (movementId, accountId) => AccountsApp.openMovementModal(movementId, accountId)
-        });
         App.registerModule('mi-dinero', {
-            getSavings: () => MyMoneyApp.getSavings()
+            getSavings: () => DineroApp.getSavings()
         });
 
         document.addEventListener('DOMContentLoaded', () => {
