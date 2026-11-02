@@ -695,4 +695,22 @@ const BudgetApp = (function () {
     };
 })();
 
-App.registerSection('presupuesto-comun', BudgetApp);
+// Publicar la referencia en window (igual que App, CalendarApp, DineroApp…)
+// y registrar la sección de forma tolerante: si 0_app.js aún no está presente,
+// se reintenta en DOMContentLoaded para no dejar la pestaña en blanco.
+window.BudgetApp = BudgetApp;
+
+(function ensureRegistered() {
+    const register = () => {
+        if (typeof App !== 'undefined' && App && typeof App.registerSection === 'function') {
+            App.registerSection('presupuesto-comun', BudgetApp);
+            return true;
+        }
+        return false;
+    };
+    if (!register()) {
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!register()) console.error('No se pudo registrar la sección presupuesto-comun: falta window.App');
+        });
+    }
+})();
