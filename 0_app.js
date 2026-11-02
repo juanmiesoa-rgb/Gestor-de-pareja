@@ -348,8 +348,8 @@ const App = (function() {
 
         const container = document.getElementById('sectionContainer');
         container.innerHTML = '';
+        if (sections[section].init) sections[section].init(container);
         sections[section].render(container);
-        if (sections[section].init) sections[section].init();
 
         document.getElementById('sidebar').classList.remove('open');
         document.getElementById('overlay').classList.remove('open');
