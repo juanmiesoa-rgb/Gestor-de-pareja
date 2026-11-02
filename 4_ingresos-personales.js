@@ -2280,8 +2280,9 @@ const MyMoneyApp = (function () {
     };
 })();
 
-// Registrar sección
-App.registerSection('mi-dinero', {
+// Registrar sección (LEGADO: la sección «mi-dinero» queda redefinida
+// por el rediseño v2 del módulo Dinero → ver 5_dinero.js / DineroApp)
+App.registerSection('ingresos-personales', {
     render: (container) => MyMoneyApp.render(container),
     init: () => MyMoneyApp.init(),
     onThemeChange: () => MyMoneyApp.onThemeChange()
