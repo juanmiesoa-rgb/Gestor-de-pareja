@@ -135,9 +135,12 @@ const App = (function() {
             { id: 'pcs-electricity', parentId: 'pc-utilities', name: 'Electricity (Luz)',        icon: '⚡', account: 'MyInvestor', budget: 90 },
             { id: 'pcs-water',       parentId: 'pc-utilities', name: 'Water (Agua)',             icon: '💧', account: 'MyInvestor', budget: 35 },
             { id: 'pcs-phone',       parentId: 'pc-utilities', name: 'Phone & Wifi (Lowi)',      icon: '📶', account: 'MyInvestor', budget: 50 },
-            { id: 'pcs-tr',          parentId: 'pc-savings',   name: 'TradeRepublic',            icon: '📈', destination: 'TradeRepublic' },
-            { id: 'pcs-mi',          parentId: 'pc-savings',   name: 'MyInvestor',               icon: '🏦', destination: 'MyInvestor' },
-            { id: 'pcs-general',     parentId: 'pc-savings',   name: 'Ahorro general',           icon: '🐷', destination: 'General' }
+            { id: 'pcs-tr',          parentId: 'pc-savings',   name: 'TradeRepublic',            icon: '📈', account: 'Trade Republic', destination: 'TradeRepublic' },
+            { id: 'pcs-funds',       parentId: 'pc-savings',   name: 'Funds',                    icon: '💼', account: 'Trade Republic', destination: 'Funds', budget: null },
+            { id: 'pcs-mi',          parentId: 'pc-savings',   name: 'MyInvestor',               icon: '🏦', account: 'MyInvestor', destination: 'MyInvestor' },
+            { id: 'pcs-general',     parentId: 'pc-savings',   name: 'General Savings (Ahorro)', icon: '🐷', account: 'MyInvestor', destination: 'General' },
+            { id: 'pcs-sofa',        parentId: 'pc-loans',     name: 'Sofá',                     icon: 'sofa', account: 'Trade Republic' },
+            { id: 'pcs-bed',         parentId: 'pc-loans',     name: 'Cama',                     icon: '🛏️', account: 'Trade Republic' }
         ],
         pcWeeks: [
             { id: 'wk-1', label: 'Semana 1', start: '2026-11-02', end: '2026-11-08', budget: 160 },
