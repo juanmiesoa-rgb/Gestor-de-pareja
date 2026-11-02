@@ -298,12 +298,12 @@ const BudgetApp = (function () {
 
         const cards = weeks.map(w => {
             const cur = today >= w.start && today <= w.end;
-            return `<div class="p-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/70 dark:border-slate-700 flex items-center justify-between text-xs ${cur ? 'ring-2 ring-emerald-500' : ''}">
+            return `<div class="pc-week-card ${cur ? 'current' : ''}" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px">
                 <div>
-                    <span class="font-bold text-slate-800 dark:text-slate-100 block text-[11px]">${esc(w.label)} ${cur ? '• actual' : ''}</span>
-                    <span class="text-[10px] text-slate-400 block">${shortDate(w.start)} - ${shortDate(w.end)}</span>
+                    <span class="pc-week-name" style="display:block">${esc(w.label)} ${cur ? '· actual' : ''}</span>
+                    <span class="pc-week-dates" style="display:block;margin:0">${shortDate(w.start)} → ${shortDate(w.end)}</span>
                 </div>
-                <span class="font-extrabold text-slate-900 dark:text-emerald-400 bg-white dark:bg-slate-900 px-2 py-1 rounded border border-slate-200/60 dark:border-slate-700 shadow-xs pc-num">${fmt(w.budget)}</span>
+                <span class="pc-week-amt pc-num" style="background:var(--bg-card);padding:4px 8px;border-radius:6px;border:1px solid var(--border)">${fmt(w.budget)}</span>
             </div>`;
         }).join('');
 
@@ -315,7 +315,7 @@ const BudgetApp = (function () {
                     <button class="pc-btn pc-btn-ghost" style="padding:2px 8px;font-size:11px" data-act="editWeeks">✏️ Editar</button>
                 </div>
             </div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">${cards || '<div class="pc-empty">Sin semanas definidas</div>'}</div></div>`;
+            <div class="pc-week-cards" style="margin-top:8px">${cards || '<div class="pc-empty">Sin semanas definidas</div>'}</div></div>`;
     }
 
     // ===== Componente 4: Estado de Cuentas y Saldos Objetivo =====
@@ -678,8 +678,11 @@ function getInitialData() {
     }
 
     // ===== Render Principal & Bindings =====
-    function render() {
+    function render(targetContainer) {
+        if (targetContainer) containerEl = targetContainer;
+        if (!containerEl) containerEl = document.getElementById('sectionContainer');
         if (!containerEl) return;
+        
         closePop();
         containerEl.innerHTML = headerHtml() + kpisHtml() +
             `<div class="pc-cols2">${weeksPanelHtml()}${accountsPanelHtml()}</div>` +
@@ -738,7 +741,11 @@ function getInitialData() {
     }
 
     // ===== API Pública =====
-    function init(container) { containerEl = container; render(); }
+    function init(container) {
+        if (container) containerEl = container;
+        if (!containerEl) containerEl = document.getElementById('sectionContainer');
+        render();
+    }
     function onThemeChange() { render(); }
     function openExpenseModal(expenseId) {
         const exp = (data().expenses || []).find(e => e.id === expenseId);
