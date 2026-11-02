@@ -13,7 +13,9 @@ const App = (function() {
         accounts: [
             { id: 'acc-1', name: 'Cuenta conjunta', type: 'conjunta', balance: 3450.80, owners: ['ana', 'carlos'], color: '#2563eb' },
             { id: 'acc-2', name: 'Cuenta Ana', type: 'personal', balance: 1820.50, owners: ['ana'], color: '#ec4899' },
-            { id: 'acc-3', name: 'Cuenta Carlos', type: 'personal', balance: 2460.00, owners: ['carlos'], color: '#10b981' }
+            { id: 'acc-3', name: 'Cuenta Carlos', type: 'personal', balance: 2460.00, owners: ['carlos'], color: '#10b981' },
+            { id: 'acc-tr', name: 'Trade Republic', type: 'inversion', balance: 781.15, owners: ['ana', 'carlos'], color: '#5b6cff' },
+            { id: 'acc-mi', name: 'MyInvestor', type: 'banco', balance: 1150.00, owners: ['ana', 'carlos'], color: '#0ea5e9' }
         ],
         categories: [
             { id: 'cat-1', name: 'Alimentación', icon: 'fas fa-utensils', color: '#f59e0b', parentId: null, status: 'active', order: 1, budget: 500, description: 'Supermercado, mercado y limpieza' },
@@ -124,22 +126,23 @@ const App = (function() {
 
         // ===== PRESUPUESTO COMÚN (pantalla única) — datos maestros =====
         pcCategories: [
-            { id: 'pc-rent',       name: 'Renta',                    icon: '🏠', account: 'MyInvestor', budget: 950,   order: 1 },
-            { id: 'pc-utilities',  name: 'Utilities',                icon: '💡', account: 'MyInvestor', budget: null,  order: 2 },
-            { id: 'pc-groceries',  name: 'Groceries & Leisure',      icon: '🛒', account: 'Junta',      budget: null,  order: 3 },
-            { id: 'pc-loans',      name: 'Préstamos y Financiaciones', icon: '💳', account: 'Junta',   budget: null,  order: 4 },
-            { id: 'pc-savings',    name: 'Savings',                  icon: '💰', account: null,         budget: null,  order: 5 },
-            { id: 'pc-others',     name: 'Others',                   icon: '📦', account: null,         budget: null,  order: 6 }
+            { id: 'pc-groceries',  name: 'Groceries and Liquor',           label: 'GROCERIES AND LIQUOR', icon: '🛒', account: 'Trade Republic', budget: null, order: 1 },
+            { id: 'pc-others',     name: 'Others',                         label: 'OTHERS',               icon: '📦', account: 'Trade Republic', budget: 200,  order: 2, dueDate: '2026-11-15' },
+            { id: 'pc-utilities',  name: 'Utilities',                      label: 'UTILITIES',            icon: '💡', account: 'MyInvestor',   budget: null, order: 3 },
+            { id: 'pc-rent',       name: 'Renta',                          label: 'RENT',                 icon: '🏠', account: 'MyInvestor',   budget: 950,  order: 4, dueDate: '2026-11-01' },
+            { id: 'pc-loans',      name: 'Préstamos y Financiaciones',     label: 'LOANS',                icon: '💳', account: 'Trade Republic', budget: null, order: 5 },
+            { id: 'pc-savings',    name: 'Savings',                        label: 'SAVINGS',              icon: '💰', account: 'MyInvestor',   budget: null, order: 6 }
         ],
         pcSubcategories: [
             { id: 'pcs-electricity', parentId: 'pc-utilities', name: 'Electricity (Luz)',        icon: '⚡', account: 'MyInvestor', budget: 90 },
-            { id: 'pcs-water',       parentId: 'pc-utilities', name: 'Water (Agua)',             icon: '💧', account: 'MyInvestor', budget: 35 },
-            { id: 'pcs-phone',       parentId: 'pc-utilities', name: 'Phone & Wifi (Lowi)',      icon: '📶', account: 'MyInvestor', budget: 50 },
-            { id: 'pcs-tr',          parentId: 'pc-savings',   name: 'TradeRepublic',            icon: '📈', account: 'Trade Republic', destination: 'TradeRepublic' },
+            { id: 'pcs-water',       parentId: 'pc-utilities', name: 'Water (Agua)',             icon: '💧', account: 'MyInvestor', budget: 35, dueDate: '2026-11-28' },
+            { id: 'pcs-phone',       parentId: 'pc-utilities', name: 'WiFi & Phone (Lowi)',      icon: '📶', account: 'MyInvestor', budget: 50, dueDate: '2026-11-15' },
+            { id: 'pcs-others-gen',  parentId: 'pc-others',    name: 'Gastos varios',              icon: '🧩', account: 'Trade Republic', budget: 200 },
+            { id: 'pcs-tr',          parentId: 'pc-savings',   name: 'Trade Republic',           icon: '📈', account: 'Trade Republic', destination: 'TradeRepublic', budget: 640 },
             { id: 'pcs-funds',       parentId: 'pc-savings',   name: 'Funds',                    icon: '💼', account: 'Trade Republic', destination: 'Funds', budget: null },
             { id: 'pcs-mi',          parentId: 'pc-savings',   name: 'MyInvestor',               icon: '🏦', account: 'MyInvestor', destination: 'MyInvestor' },
             { id: 'pcs-general',     parentId: 'pc-savings',   name: 'General Savings (Ahorro)', icon: '🐷', account: 'MyInvestor', destination: 'General' },
-            { id: 'pcs-sofa',        parentId: 'pc-loans',     name: 'Sofá',                     icon: 'sofa', account: 'Trade Republic' },
+            { id: 'pcs-sofa',        parentId: 'pc-loans',     name: 'Sofá',                     icon: '🛋️', account: 'Trade Republic' },
             { id: 'pcs-bed',         parentId: 'pc-loans',     name: 'Cama',                     icon: '🛏️', account: 'Trade Republic' }
         ],
         pcWeeks: [
@@ -156,6 +159,7 @@ const App = (function() {
             { id: 'inc-nena',   name: 'Nena',   salary: 2100, freePct: 35, contribution: 550 },
             { id: 'inc-bombon', name: 'Bombón', salary: 1750, freePct: 30, contribution: 550 }
         ],
+        pcMyInvestorTarget: 1125,
         // ===== Reconciliación Semanal Trade Republic =====
         pcReconciliation: {
             initialBalance: 845.15,   // Saldo Inicial TR al inicio del mes

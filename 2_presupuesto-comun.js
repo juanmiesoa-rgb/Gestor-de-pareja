@@ -1,5 +1,5 @@
 /* =============================================================
-   PRESUPUESTO-COMUN.JS — v5 · Clean & Modern UI
+   PRESUPUESTO-COMUN.JS — v6 · Clean & Modern UI (armonizado con el tema)
    Dashboard híbrido de presupuesto compartido (pantalla única):
    · 4 KPIs superiores · Groceries semanal + Estado de Cuentas
    · Tabla acordeón jerárquica perfectamente alineada (tabular-nums)
@@ -23,6 +23,11 @@ const BudgetApp = (function () {
         'pc-others':    { accent: '#64748b', label: 'OTHERS' }
     };
     const ACCOUNTS = ['Trade Republic', 'MyInvestor', 'Junta'];
+
+    function rowLabel(row) {
+        if (!row) return '';
+        return String(row.label || row.name || '').toUpperCase();
+    }
 
     // ===== estado =====
     function data() { return App.data; }
@@ -119,7 +124,7 @@ const BudgetApp = (function () {
         const today = new Date(); today.setHours(0, 0, 0, 0);
         const d = new Date(dueDate + 'T00:00:00');
         if (isNaN(d)) return '';
-        const dd = App.formatDate(dueDate).slice(0, 5); // dddd/mm
+        const dd = App.formatDate(dueDate).slice(0, 5); // dd/mm
         const days = Math.round((d - today) / 864e5);
         const cls = days < 0 ? 'over' : days <= 7 ? 'soon' : '';
         return `<span class="pc-due ${cls}" title="Vencimiento">📅 Vence: ${esc(dd)}</span>`;
@@ -141,6 +146,10 @@ const BudgetApp = (function () {
     function chip(label, val, cls) { return `<button class="pc-chip ${cls || 'gray'}" ${val}>${label}</button>`; }
     function muted(txt) { return `<span style="color:var(--text-muted);font-size:12px">${txt}</span>`; }
 
+    // ===== estado semántico (usa los tokens del tema, claro/oscuro) =====
+    function availCls(v) { return v === null ? '' : v >= 0 ? 'pc-pos' : 'pc-neg'; }
+    function diffCls(v, invert) { const good = invert ? v <= 0 : v >= 0; return good ? 'pc-pos' : 'pc-neg'; }
+
     // ===== registro de movimientos =====
     function addMovement(targetId, amount, opts) {
         opts = opts || {};
@@ -152,6 +161,7 @@ const BudgetApp = (function () {
             status: opts.status || 'registrado', type: 'individual', notes: opts.notes || '',
             aggPeriod: currentPeriod, pcAccount: opts.account || ''
         };
+        if (opts.pcWeekId) exp.pcWeekId = opts.pcWeekId;
         data().expenses.push(exp);
         App.saveData();
         App.addHistory('presupuesto-comun', `${opts.action || 'Movimiento'}: ${exp.concept} (${fmt(exp.amount)})`);
@@ -165,14 +175,16 @@ const BudgetApp = (function () {
         const diff = newValue - cur;
         if (Math.abs(diff) < 0.005) { App.showToast('Sin cambios', 'info'); return; }
         const fillers = data().expenses.filter(e => e.categoryId === rowId && e.pcAuto === 'ajuste');
-        if (fillers.length === 1 && diff !== 0) {
+        if (fillers.length >= 1) {
+            // mantiene un único movimiento de ajuste: actualiza el primero, archiva el resto
             fillers[0].amount = newValue;
-            App.saveData(); App.addHistory('presupuesto-comun', `Ajuste directo ${rowId}: ${fmt(newValue)}`); render(); return;
+            fillers.slice(1).forEach(f => f.status = 'archivado');
+            App.saveData(); App.addHistory('presupuesto-comun', `Ajuste directo «${(findRow(rowId) || {}).name || rowId}»: ${fmt(newValue)}`);
+            render(); return;
         }
-        if (fillers.length === 1 && diff === 0) { fillers[0].status = 'archivado'; App.saveData(); render(); return; }
-        addMovement(rowId, newValue, { concept: 'Ajuste de presupuesto', account: (findRow(rowId) || {}).account || '', action: 'Ajuste' });
+        addMovement(rowId, newValue, { concept: 'Ajuste de gasto real', account: (findRow(rowId) || {}).account || '', action: 'Ajuste' });
         const last = data().expenses[data().expenses.length - 1];
-        if (last && last.concept === 'Ajuste de presupuesto') last.pcAuto = 'ajuste';
+        if (last && last.concept === 'Ajuste de gasto real') last.pcAuto = 'ajuste';
         App.saveData(); render();
     }
 
@@ -196,18 +208,29 @@ const BudgetApp = (function () {
         const disponible = presup - gastos;
         const saldos = combinedRealBalance();
         const pctGlob = presup ? Math.min((gastos / presup) * 100, 100) : 0;
+        const desv = gastos - presup;
         return `<div class="pc-kpis-v4">
-            <div class="pc-kpi-card" style="--kpi-accent:#2563eb"><div class="pc-kpi-label">Presupuesto Total</div>
-                <div class="pc-kpi-big">${fmt(presup)}</div><div class="pc-kpi-note">Asignaciones del periodo</div></div>
-            <div class="pc-kpi-card" style="--kpi-accent:#f59e0b"><div class="pc-kpi-label">Gasto Ejecutado</div>
+            <div class="pc-kpi-card" style="--kpi-accent:var(--primary)">
+                <span class="pc-kpi-icon">🎯</span>
+                <div class="pc-kpi-label">Presupuesto Total</div>
+                <div class="pc-kpi-big">${fmt(presup)}</div>
+                <div class="pc-kpi-note">Asignaciones del periodo ${esc(App.formatPeriod(currentPeriod))}</div></div>
+            <div class="pc-kpi-card" style="--kpi-accent:var(--warning)">
+                <span class="pc-kpi-icon">💸</span>
+                <div class="pc-kpi-label">Gasto Ejecutado</div>
                 <div class="pc-kpi-big">${fmt(gastos)}</div>
-                <div class="pc-progress"><div style="width:${pctGlob}%;background:${pctGlob >= 85 ? '#ef4444' : '#f59e0b'}"></div></div>
-                <div class="pc-kpi-note">${presup ? pctGlob.toFixed(0) : 0}% del presupuesto consumido</div></div>
-            <div class="pc-kpi-card" style="--kpi-accent:${disponible >= 0 ? '#10b981' : '#ef4444'}"><div class="pc-kpi-label">Dinero Disponible</div>
-                <div class="pc-kpi-big" style="color:${disponible >= 0 ? '#10b981' : '#ef4444'}">${fmt(disponible)}</div>
-                <div class="pc-kpi-note">Desviación: <b style="color:${gastos - presup > 0 ? '#ef4444' : '#10b981'}">${gastos - presup > 0 ? '+' : ''}${fmt(gastos - presup)}</b></div></div>
-            <div class="pc-kpi-card" style="--kpi-accent:#8b5cf6"><div class="pc-kpi-label">Saldo Real Cuentas</div>
-                <div class="pc-kpi-big">${fmt(saldos)}</div><div class="pc-kpi-note">Bancos y tarjetas combinados</div></div>
+                <div class="pc-progress"><div style="width:${pctGlob}%;background:${pctGlob >= 100 ? 'var(--danger)' : 'var(--warning)'}"></div></div>
+                <div class="pc-kpi-note pc-num">${presup ? pctGlob.toFixed(0) : 0}% del presupuesto consumido</div></div>
+            <div class="pc-kpi-card" style="--kpi-accent:${disponible >= 0 ? 'var(--success)' : 'var(--danger)'}">
+                <span class="pc-kpi-icon">💶</span>
+                <div class="pc-kpi-label">Dinero Disponible</div>
+                <div class="pc-kpi-big ${availCls(disponible)}">${fmt(disponible)}</div>
+                <div class="pc-kpi-note">Desviación: <b class="pc-num ${diffCls(-desv)}">${desv > 0 ? '+' : ''}${fmt(desv)}</b></div></div>
+            <div class="pc-kpi-card" style="--kpi-accent:#8b5cf6">
+                <span class="pc-kpi-icon">🏦</span>
+                <div class="pc-kpi-label">Saldo Real Cuentas</div>
+                <div class="pc-kpi-big">${fmt(saldos)}</div>
+                <div class="pc-kpi-note">Bancos y tarjetas combinados</div></div>
         </div>`;
     }
 
@@ -216,17 +239,21 @@ const BudgetApp = (function () {
         const weeks = pcWeeks();
         const total = weeks.reduce((s, w) => s + Number(w.budget || 0), 0);
         const today = new Date().toISOString().slice(0, 10);
+        const wkExp = pcRealExpenses().filter(e => String(e.date || '').substring(0, 7) === currentPeriod);
         const cards = weeks.map(w => {
-            const spent = sum(pcRealExpenses().filter(e => e.pcWeekId === w.id));
+            const spent = sum(wkExp.filter(e => e.pcWeekId === w.id || (String(e.date) >= w.start && String(e.date) <= w.end)));
             const cur = today >= w.start && today <= w.end;
             return `<div class="pc-week-card ${cur ? 'current' : ''}">
                 <div class="pc-week-name">${esc(w.label)} ${cur ? '· actual' : ''}</div>
                 <div class="pc-week-dates">${shortDate(w.start)} → ${shortDate(w.end)}</div>
-                <div class="pc-week-amt">${fmt(w.budget)}</div>
-                <div class="pc-week-dates">Gastado: ${fmt(spent)}</div></div>`;
+                <div class="pc-week-amt pc-num">${fmt(w.budget)}</div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:4px">
+                    <span class="pc-week-dates" style="margin:0">Gastado: <b class="pc-num">${fmt(spent)}</b></span>
+                    ${badge(spent > w.budget ? 'Pasada' : spent >= w.budget * .85 && w.budget ? 'Al límite' : 'En curso', spent > w.budget ? 'pc-badge-red' : spent >= w.budget * .85 && w.budget ? 'pc-badge-amber' : 'pc-badge-green')}
+                </div></div>`;
         }).join('');
         return `<div class="pc-panel pc-panel--accent" style="--panel-accent:#10b981">
-            <div class="pc-panel-title"><span class="pc-dot"></span> 🛒 Groceries &amp; Liquor · distribución semanal
+            <div class="pc-panel-title"><span class="pc-dot"></span> 🛒 Groceries and Liquor · distribución semanal
                 <span style="margin-left:auto">${badge('Total ' + fmt(total), 'pc-badge-blue')}</span></div>
             <div class="pc-week-cards">${cards || '<div class="pc-empty">Sin semanas definidas</div>'}</div>
             <div style="margin-top:10px"><button class="pc-btn pc-btn-ghost" data-act="editWeeks">✏️ Editar semanas</button></div></div>`;
@@ -248,7 +275,7 @@ const BudgetApp = (function () {
                     <div class="pc-week-dates">Saldo objetivo: <b class="pc-num">${fmt(a.target)}</b></div></div>
                 <div style="text-align:right">
                     <div class="pc-num" style="font-weight:800">${fmt(a.realVal)}</div>
-                    <div class="pc-week-dates" style="margin:2px 0 4px">Saldo real banco</div>
+                    <div class="pc-week-dates" style="margin:2px 0 4px">Saldo real banco (€)</div>
                     ${badge('Desv. ' + (d >= 0 ? '+' : '') + fmt(d), d >= 0 ? 'pc-badge-green' : 'pc-badge-red')}
                 </div></div>`;
         }).join('');
@@ -259,9 +286,9 @@ const BudgetApp = (function () {
             ${html}
             <div class="pc-field" style="margin-top:12px"><label>Saldo Real Trade Republic (€)</label>
                 <input type="number" step="0.01" id="pcTrReal" class="pc-inline-input" value="${real || ''}" placeholder="Ej. 627,17"></div>
-            <div class="pc-week-dates">Saldo esperado fin de semana: <b class="pc-num">${fmt(expected)}</b> · Desviación:
-                <b style="color:${diff >= 0 ? '#10b981' : '#ef4444'}">${diff >= 0 ? '+' : ''}${fmt(diff)}</b>
-                ${diff >= 0 ? '(gastaste menos de lo previsto)' : '(descuadre negativo)'}</div></div>`;
+            <div class="pc-week-dates">Saldo esperado a cierre de mes: <b class="pc-num">${fmt(expected)}</b> · Desviación bancaria:
+                <b class="pc-num ${diffCls(diff)}">${diff >= 0 ? '+' : ''}${fmt(diff)}</b>
+                ${diff >= 0 ? '(por encima de lo previsto)' : '(descuadre negativo)'}</div></div>`;
     }
 
     // ===== bloque 3 · Tabla principal (acordeón jerárquico) =====
@@ -272,17 +299,17 @@ const BudgetApp = (function () {
             <th class="pc-th-num">PRESUPUESTO</th><th class="pc-th-num">GASTO REAL</th>
             <th class="pc-th-num">DISPONIBLE</th><th class="pc-th-num">CONSUMO / ESTADO</th></tr></thead><tbody>`;
         cats.forEach(c => {
-            const meta = CAT_META[c.id] || { accent: '#2563eb', label: String(c.name || '').toUpperCase() };
+            const meta = CAT_META[c.id] || { accent: '#2563eb' };
             const subs = pcSubs(c.id);
             const isOpen = !!openCats[c.id];
             const cb = catBudget(c.id), cs = catSpent(c.id);
             const avail = (cb === null ? null : cb - cs);
             html += `<tr class="pc-row-cat" data-toggle="${c.id}" style="--cat-accent:${meta.accent}">
-                <td><span class="pc-caret ${isOpen ? 'open' : ''}">▶</span> ${c.icon} <span class="pc-cat-name" data-editcat="${c.id}" title="Clic para editar">${esc(meta.label)}</span> ${dueBadge(c.dueDate)}</td>
+                <td><span class="pc-caret ${isOpen ? 'open' : ''}">▶</span> ${c.icon || '📁'} <span class="pc-cat-name" data-editcat="${c.id}" title="Clic para editar categoría">${esc(rowLabel(c))}</span> ${dueBadge(c.dueDate)}</td>
                 <td>${badge(esc(c.account || '—'), 'pc-badge-blue')}</td>
                 <td class="pc-td-num">${cb === null ? muted('No definido') : fmt(cb)}</td>
-                <td class="pc-td-num"><span class="pc-cell-edit" data-real="${c.id}" title="Clic para ajustar">${fmt(cs)}</span></td>
-                <td class="pc-td-num" style="color:${avail === null ? 'var(--text-muted)' : avail >= 0 ? '#10b981' : '#ef4444'}">${avail === null ? '—' : fmt(avail)}</td>
+                <td class="pc-td-num"><span class="pc-cell-edit" data-real="${c.id}" title="Clic para ajustar el gasto real">✏️ ${fmt(cs)}</span></td>
+                <td class="pc-td-num ${availCls(avail)}">${avail === null ? '—' : fmt(avail)}</td>
                 <td class="pc-td-num">${miniBar(cs, cb, meta.accent)}</td></tr>`;
             if (isOpen) {
                 subs.forEach(s => {
@@ -290,25 +317,25 @@ const BudgetApp = (function () {
                     const ss = subSpent(s.id);
                     const sa = sb === null ? null : sb - ss;
                     html += `<tr class="pc-row-sub" style="--cat-accent:${meta.accent}">
-                        <td>${s.icon || '·'} <span class="pc-cat-name" data-editsub="${s.id}" title="Clic para editar">${esc(s.name)}</span> ${dueBadge(s.dueDate)}</td>
+                        <td>${s.icon || '·'} <span class="pc-cat-name" data-editsub="${s.id}" title="Clic para editar subcategoría">${esc(s.name)}</span> ${dueBadge(s.dueDate)}</td>
                         <td>${badge(esc(s.account || c.account || '—'), 'pc-badge-gray')}</td>
                         <td class="pc-td-num">${sb === null ? muted('No definido') : fmt(sb)}</td>
-                        <td class="pc-td-num"><span class="pc-cell-edit" data-real="${s.id}" title="Clic para ajustar">${fmt(ss)}</span></td>
-                        <td class="pc-td-num" style="color:${sa === null ? 'var(--text-muted)' : sa >= 0 ? '#10b981' : '#ef4444'}">${sa === null ? '—' : fmt(sa)}</td>
+                        <td class="pc-td-num"><span class="pc-cell-edit" data-real="${s.id}" title="Clic para ajustar el gasto real">✏️ ${fmt(ss)}</span></td>
+                        <td class="pc-td-num ${availCls(sa)}">${sa === null ? '—' : fmt(sa)}</td>
                         <td class="pc-td-num">${miniBar(ss, sb, meta.accent)} ${pctBadge(sb, ss)}</td></tr>`;
                 });
                 if (c.id === 'pc-loans') pcLoans().forEach(l => {
                     const paid = !!recon().loansPaid[l.id];
                     html += `<tr class="pc-row-sub" style="--cat-accent:${meta.accent}">
-                        <td>💳 ${esc(l.name)} <span class="pc-num" style="color:var(--text-muted)">(${l.paidInstallments}/${l.totalInstallments})</span></td>
+                        <td>💳 ${esc(l.name)} <span class="pc-num" style="color:var(--text-muted)">(${l.paidInstallments}/${l.totalInstallments} cuotas)</span></td>
                         <td>${badge(esc(l.account || 'Trade Republic'), 'pc-badge-gray')}</td>
                         <td class="pc-td-num">${fmt(l.amountPerInstallment)}/cuota</td>
-                        <td class="pc-td-num"><span class="pc-cell-edit" data-real="pc-loans" title="Gasto acumulado de préstamos">${fmt(catSpent('pc-loans'))}</span></td>
+                        <td class="pc-td-num"><span class="pc-cell-edit" data-real="pc-loans" title="Gasto acumulado de préstamos">✏️ ${fmt(catSpent('pc-loans'))}</span></td>
                         <td class="pc-td-num">—</td>
                         <td class="pc-td-num"><span class="pc-toggle"><input type="checkbox" data-loanpaid="${l.id}" ${paid ? 'checked' : ''}><span class="pc-slider"></span></span> ${badge(paid ? 'Pagado' : 'Pendiente', paid ? 'pc-badge-green' : 'pc-badge-amber')}</td></tr>`;
                 });
                 if (!subs.length && c.id !== 'pc-loans') {
-                    html += `<tr class="pc-row-sub"><td colspan="6" style="text-align:left;color:var(--text-muted)">Sin subcategorías · pulsa ⚙️ para añadir o editar</td></tr>`;
+                    html += `<tr class="pc-row-sub"><td colspan="6" style="text-align:left;color:var(--text-muted)">Sin subcategorías · clic en el nombre de la fila ⚙️ para añadir o editar</td></tr>`;
                 }
             }
         });
@@ -326,12 +353,12 @@ const BudgetApp = (function () {
         const rows = movs.map(m => {
             const cat = findRow(m.categoryId) || {};
             const acc = m.pcAccount || cat.account || '—';
-            const st = m.pcAuto === 'ajuste' ? stateDot('#f59e0b', 'Ajuste') : m.status === 'pendiente' ? stateDot('#f59e0b', 'Pendiente') : stateDot('#10b981', 'Registrado');
+            const st = m.pcAuto === 'ajuste' ? stateDot('var(--warning)', 'Ajuste') : m.status === 'pendiente' ? stateDot('var(--warning)', 'Pendiente') : stateDot('var(--success)', 'Registrado');
             return `<div class="pc-mov-row">
                 <div class="pc-mov-date">${shortDate(m.date)}</div>
-                <div><b>${esc(m.concept)}</b><div class="pc-mov-date">${esc(CAT_META[m.categoryId] ? CAT_META[m.categoryId].label : (cat.name || ''))}</div></div>
+                <div><b>${esc(m.concept)}</b><div class="pc-mov-date">${esc(rowLabel(cat) || CAT_META[m.categoryId]?.label || 'Sin categoría')}</div></div>
                 <div>${badge(esc(acc), 'pc-badge-gray')}</div>
-                <div class="pc-mov-amt">${fmt(m.amount)}</div>
+                <div class="pc-mov-amt">${m.status === 'pendiente' ? '<s style="color:var(--text-muted)">' + fmt(m.amount) + '</s>' : fmt(m.amount)}</div>
                 <div>${st}</div>
                 <div style="text-align:right;display:flex;gap:4px;justify-content:flex-end">
                     <button class="pc-btn pc-btn-ghost" style="padding:4px 8px;font-size:11px" data-editmov="${m.id}" title="Editar movimiento">✏️</button>
@@ -351,7 +378,8 @@ const BudgetApp = (function () {
                 <div class="pc-sum-row"><span>Presupuesto asignado</span><b class="pc-num">${fmt(presup)}</b></div>
                 <div class="pc-sum-row"><span>Ejecutado real</span><b class="pc-num">${fmt(ejec)}</b></div>
                 <div class="pc-sum-row"><span>Pagos pendientes (cuotas)</span><b class="pc-num">${fmt(pend)}</b></div>
-                <div class="pc-sum-row"><span>Remanente estimado</span><b class="pc-num" style="color:${rem >= 0 ? '#10b981' : '#ef4444'}">${fmt(rem)}</b></div></div>
+                <div class="pc-sum-row"><span>Remanente estimado</span><b class="pc-num ${availCls(rem)}">${fmt(rem)}</b></div>
+                <div class="pc-week-dates" style="margin-top:8px">${rem >= 0 ? 'Cierre proyectado con superávit · sin acciones urgentes.' : 'Proyección de descuadre: revisa los pagos pendientes antes del cierre.'}</div></div>
         </div>`;
     }
 
@@ -374,11 +402,13 @@ const BudgetApp = (function () {
             <div class="pc-field"><label>Fecha de vencimiento</label><input id="mDue" type="date" value="${esc(item.dueDate || '')}"></div>
             <div class="pc-modal-actions">
                 <button class="pc-btn pc-btn-danger" id="mDelete">🗑 Eliminar</button>
+                <button class="pc-btn pc-btn-ghost" id="mMoves" title="Registrar movimientos en esta categoría">🧾 Movimientos</button>
                 <button class="pc-btn pc-btn-ghost" id="mCancel">Cancelar</button>
                 <button class="pc-btn pc-btn-primary" id="mSave">Guardar</button></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         div.querySelector('#mCancel').onclick = closeModal;
+        div.querySelector('#mMoves').onclick = () => { closeModal(); openNewMovModal(id); };
         div.querySelector('#mSave').onclick = () => {
             item.name = div.querySelector('#mName').value.trim() || item.name;
             item.icon = div.querySelector('#mIcon').value.trim() || item.icon;
@@ -409,11 +439,16 @@ const BudgetApp = (function () {
         const row = findRow(rowId);
         popEl = document.createElement('div');
         popEl.className = 'pc-pop';
-        popEl.innerHTML = `<div class="pc-pop-head"><span>Gasto Real (€) · ${esc(row ? row.name : rowId)}</span></div>
+        const items = pcRealExpenses().filter(e => e.categoryId === rowId);
+        const listHtml = items.length
+            ? items.slice(-4).reverse().map(m => `<div class="pc-sum-row" style="padding:5px 0;font-size:11.5px"><span>${shortDate(m.date)} · ${esc(m.concept)}</span><b class="pc-num">${fmt(m.amount)}</b></div>`).join('')
+            : '<div class="pc-pop-hint" style="margin:4px 0 0">Sin movimientos registrados todavía</div>';
+        popEl.innerHTML = `<div class="pc-pop-head"><span>Gasto Real (€) · ${esc((row ? (row.label || row.name) : rowId))}</span><button class="pc-btn pc-btn-ghost" id="qpMore" title="Registrar un movimiento" style="padding:2px 8px;font-size:11px">＋ mov.</button></div>
             <input type="number" step="0.01" id="qpVal" class="pc-inline-input" value="${Number(currentValue).toFixed(2)}">
-            <div class="pc-modal-actions" style="margin-top:10px">
-                <button class="pc-btn pc-btn-ghost" id="qpCancel">×</button>
-                <button class="pc-btn pc-btn-primary" id="qpSave">Guardar</button></div>
+            ${listHtml}
+            <div class="pc-pop-actions">
+                <button class="pc-btn pc-btn-ghost" id="qpCancel" title="Cerrar (Esc)">×</button>
+                <button class="pc-btn pc-btn-primary" id="qpSave">💾 Guardar</button></div>
             <div class="pc-pop-hint">Enter guarda · Esc cierra</div>`;
         document.body.appendChild(popEl);
         const rect = anchorEl.getBoundingClientRect();
@@ -423,6 +458,7 @@ const BudgetApp = (function () {
         const save = () => { setRowReal(rowId, inp.value); closePop(); App.showToast('Gasto real actualizado', 'success'); };
         popEl.querySelector('#qpSave').onclick = save;
         popEl.querySelector('#qpCancel').onclick = closePop;
+        popEl.querySelector('#qpMore').onclick = (ev) => { ev.stopPropagation(); closePop(); openNewMovModal(rowId); };
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') closePop(); });
         setTimeout(() => document.addEventListener('click', function outside(ev) {
             if (popEl && !popEl.contains(ev.target) && ev.target !== anchorEl) { closePop(); document.removeEventListener('click', outside); }
@@ -445,20 +481,27 @@ const BudgetApp = (function () {
             <div class="pc-field"><label>Fecha</label><input id="nDate" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
             <div class="pc-field"><label>Cuenta</label><select id="nAcc"><option value="">Heredar de la categoría</option>${ACCOUNTS.map(a => `<option>${a}</option>`).join('')}</select></div>
             <div class="pc-field"><label>¿Quién pagó?</label><select id="nWho"><option value="conjunto">Conjunto</option><option value="ana">Nena</option><option value="carlos">Bombón</option></select></div>
+            <div class="pc-field" id="nWeekWrap"><label>Semana (Groceries)</label><select id="nWeek"><option value="">— sin asignar —</option>${pcWeeks().map(w => `<option value="${w.id}">${esc(w.label)} (${shortDate(w.start)}→${shortDate(w.end)})</option>`).join('')}</select></div>
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="nCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="nSave">Registrar</button></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const nCatSel = div.querySelector('#nCat'), nWeekWrap = div.querySelector('#nWeekWrap');
+        const syncWeek = () => { nWeekWrap.style.display = String(nCatSel.value).startsWith('pc-groceries') || String(nCatSel.value).startsWith('pcs-gl') ? '' : 'none'; };
+        nCatSel.onchange = syncWeek; syncWeek();
         div.querySelector('#nCancel').onclick = closeModal;
         div.querySelector('#nSave').onclick = () => {
             const amt = Number(div.querySelector('#nAmt').value);
             if (!amt || amt <= 0) { App.showToast('Importe no válido', 'error'); return; }
             const catId = div.querySelector('#nCat').value;
+            const weekSel = div.querySelector('#nWeek');
+            const extra = {};
+            if (weekSel && weekSel.value) extra.pcWeekId = weekSel.value;
             addMovement(catId, amt, {
                 concept: div.querySelector('#nConcept').value.trim() || 'Movimiento',
                 date: div.querySelector('#nDate').value, person: div.querySelector('#nWho').value,
                 account: div.querySelector('#nAcc').value || (findRow(catId) || {}).account || '',
-                action: 'Movimiento'
+                action: 'Movimiento', ...extra
             });
             closeModal(); App.showToast('Movimiento registrado', 'success');
         };
@@ -570,8 +613,7 @@ const BudgetApp = (function () {
     }
 
     // ===== render principal =====
-    function render(c) {
-        ensureContainer(c);
+    function render() {
         if (!containerEl) return;
         closePop();
         containerEl.innerHTML = headerHtml() + kpisHtml() +
@@ -634,20 +676,7 @@ const BudgetApp = (function () {
     }
 
     // ===== API pública =====
-    // FIX "pantalla en blanco": App.navigateTo() llama render(container) ANTES
-    // que init(), por lo que el contenedor debe capturarse también en render().
-    // Se toleran además las firmas antiguas init() / render() sin argumento.
-    function ensureContainer(c) {
-        if (c && typeof c.appendChild === 'function') {
-            containerEl = c;
-            return true;
-        }
-        if (!containerEl) containerEl = document.getElementById('sectionContainer');
-        return !!containerEl;
-    }
-    function init(container) {
-        if (ensureContainer(container) || !container) render();
-    }
+    function init(container) { containerEl = container; render(); }
     function onThemeChange() { render(); }
     function openExpenseModal(expenseId) {
         const exp = (data().expenses || []).find(e => e.id === expenseId);
@@ -656,7 +685,7 @@ const BudgetApp = (function () {
     }
     function openCategoryModal(catId) { openCatModal(catId, String(catId || '').startsWith('pcs-')); }
 
-    const api = {
+    return {
         init, render, onThemeChange,
         openExpenseModal, openCategoryModal,
         // nuevos para el puente de App / otros módulos
@@ -664,17 +693,6 @@ const BudgetApp = (function () {
         quickEditRealSpend: (rowId, value) => { setRowReal(rowId, value); },
         addMovement
     };
-
-    // Exposición explícita: los `const` de un <script> NO viven en window.
-    // Sin esto, el bloque inline de index.html (App.registerModule) y otros
-    // módulos no pueden referenciar BudgetApp de forma fiable.
-    window.BudgetApp = api;
-
-    if (typeof App !== 'undefined' && App && typeof App.registerSection === 'function') {
-        App.registerSection('presupuesto-comun', api);
-    } else {
-        console.error('[presupuesto-comun] App no está disponible: registra el script de 0_app.js ANTES que este módulo.');
-    }
-
-    return api;
 })();
+
+App.registerSection('presupuesto-comun', BudgetApp);
