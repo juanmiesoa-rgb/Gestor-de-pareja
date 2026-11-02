@@ -570,7 +570,8 @@ const BudgetApp = (function () {
     }
 
     // ===== render principal =====
-    function render() {
+    function render(c) {
+        ensureContainer(c);
         if (!containerEl) return;
         closePop();
         containerEl.innerHTML = headerHtml() + kpisHtml() +
@@ -633,7 +634,20 @@ const BudgetApp = (function () {
     }
 
     // ===== API pública =====
-    function init(container) { containerEl = container; render(); }
+    // FIX "pantalla en blanco": App.navigateTo() llama render(container) ANTES
+    // que init(), por lo que el contenedor debe capturarse también en render().
+    // Se toleran además las firmas antiguas init() / render() sin argumento.
+    function ensureContainer(c) {
+        if (c && typeof c.appendChild === 'function') {
+            containerEl = c;
+            return true;
+        }
+        if (!containerEl) containerEl = document.getElementById('sectionContainer');
+        return !!containerEl;
+    }
+    function init(container) {
+        if (ensureContainer(container) || !container) render();
+    }
     function onThemeChange() { render(); }
     function openExpenseModal(expenseId) {
         const exp = (data().expenses || []).find(e => e.id === expenseId);
@@ -642,7 +656,7 @@ const BudgetApp = (function () {
     }
     function openCategoryModal(catId) { openCatModal(catId, String(catId || '').startsWith('pcs-')); }
 
-    return {
+    const api = {
         init, render, onThemeChange,
         openExpenseModal, openCategoryModal,
         // nuevos para el puente de App / otros módulos
@@ -650,6 +664,17 @@ const BudgetApp = (function () {
         quickEditRealSpend: (rowId, value) => { setRowReal(rowId, value); },
         addMovement
     };
-})();
 
-App.registerSection('presupuesto-comun', BudgetApp);
+    // Exposición explícita: los `const` de un <script> NO viven en window.
+    // Sin esto, el bloque inline de index.html (App.registerModule) y otros
+    // módulos no pueden referenciar BudgetApp de forma fiable.
+    window.BudgetApp = api;
+
+    if (typeof App !== 'undefined' && App && typeof App.registerSection === 'function') {
+        App.registerSection('presupuesto-comun', api);
+    } else {
+        console.error('[presupuesto-comun] App no está disponible: registra el script de 0_app.js ANTES que este módulo.');
+    }
+
+    return api;
+})();
