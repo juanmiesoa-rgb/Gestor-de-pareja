@@ -152,7 +152,14 @@ const App = (function() {
         pcIncomes: [
             { id: 'inc-nena',   name: 'Nena',   salary: 2100, freePct: 35, contribution: 550 },
             { id: 'inc-bombon', name: 'Bombón', salary: 1750, freePct: 30, contribution: 550 }
-        ]
+        ],
+        // ===== Reconciliación Semanal Trade Republic =====
+        pcReconciliation: {
+            initialBalance: 845.15,   // Saldo Inicial TR al inicio del mes
+            weeksClosed: {},          // { weekId: true } → descuenta presupuesto semanal
+            loansPaid: {},            // { loanId: true } → descuenta cuota del préstamo
+            realBalances: {}          // { weekId: saldoRealIntroducido }
+        }
     };
 
     // =========================================================
@@ -168,7 +175,7 @@ const App = (function() {
             if (saved) {
                 const parsed = JSON.parse(saved);
                 // Migración: inyectar claves nuevas del presupuesto común sin perder datos guardados
-                ['pcCategories','pcSubcategories','pcWeeks','pcLoans','pcIncomes'].forEach(k => {
+                ['pcCategories','pcSubcategories','pcWeeks','pcLoans','pcIncomes','pcReconciliation'].forEach(k => {
                     if (!(k in parsed)) parsed[k] = JSON.parse(JSON.stringify(DEFAULT_DATA[k]));
                 });
                 return parsed;

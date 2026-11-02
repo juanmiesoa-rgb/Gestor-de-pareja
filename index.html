@@ -323,6 +323,85 @@
             .menu-toggle { display: block; }
             .overlay.open { display: block; }
         }
+
+        /* =====================================================
+           PRESUPUESTO COMÚN — Panel minimalista de tarjetas uniformes
+           ===================================================== */
+        .pc-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+        .pc-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
+        .pc-kpi { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
+        .pc-kpi-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+        .pc-kpi-value { font-size: 22px; font-weight: 800; margin-top: 6px; }
+        .pc-kpi-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+
+        /* Grid principal: TODAS las tarjetas del mismo tamaño exacto */
+        .pc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-bottom: 20px; }
+        .pc-tile { height: 190px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; position: relative; overflow: hidden; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; box-shadow: var(--shadow-sm); user-select: none; }
+        .pc-tile::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--tile-accent, var(--primary)); opacity: .85; }
+        .pc-tile:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+        .pc-tile.selected { border-color: var(--tile-accent, var(--primary)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--tile-accent, #2563eb) 35%, transparent), var(--shadow-md); }
+        .pc-tile-head { display: flex; align-items: center; justify-content: space-between; }
+        .pc-tile-icon { font-size: 22px; line-height: 1; }
+        .pc-tile-name { font-size: 14px; font-weight: 700; }
+        .pc-tile-sub { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pc-tile-amounts { margin-top: auto; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+        .pc-tile-spent { font-size: 18px; font-weight: 800; }
+        .pc-tile-limit { font-size: 12px; color: var(--text-secondary); }
+        .pc-bar { height: 8px; border-radius: 6px; background: var(--border-light); overflow: hidden; }
+        .pc-bar > div { height: 100%; border-radius: 6px; transition: width .35s ease; }
+        .pc-bar .ok   { background: linear-gradient(90deg, var(--tile-accent, #2563eb), color-mix(in srgb, var(--tile-accent, #2563eb) 60%, #22d3ee)); }
+        .pc-bar .warn { background: #f59e0b; }
+        .pc-bar .over { background: #ef4444; }
+        .pc-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+        .pc-chip.green { background: rgba(16,185,129,.14); color: #10b981; }
+        .pc-chip.amber { background: rgba(245,158,11,.15); color: #d97706; }
+        .pc-chip.red   { background: rgba(239,68,68,.14); color: #ef4444; }
+        .pc-chip.gray  { background: var(--border-light); color: var(--text-muted); }
+
+        /* Panel drill-down con transición suave */
+        .pc-detail { max-height: 0; opacity: 0; overflow: hidden; transition: max-height .35s ease, opacity .3s ease, margin .3s ease; margin: 0; }
+        .pc-detail.open { max-height: 1400px; opacity: 1; margin: 4px 0 20px; }
+        .pc-detail-inner { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; box-shadow: var(--shadow-sm); }
+        .pc-detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .pc-detail-title { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .pc-close-btn { background: var(--border-light); border: none; width: 28px; height: 28px; border-radius: 8px; cursor: pointer; color: var(--text-secondary); font-size: 14px; }
+        .pc-close-btn:hover { background: var(--border); color: var(--text); }
+
+        /* Filas de subcategoría con entrada directa de gasto acumulativo */
+        .pc-sub-row { display: grid; grid-template-columns: 34px 1fr 110px 150px 120px; gap: 10px; align-items: center; padding: 10px 8px; border-radius: 12px; }
+        .pc-sub-row:hover { background: var(--border-light); }
+        .pc-sub-icon { font-size: 18px; text-align: center; }
+        .pc-sub-name { font-size: 13px; font-weight: 600; }
+        .pc-sub-meta { font-size: 11px; color: var(--text-muted); }
+        .pc-inline-input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 12.5px; font-family: inherit; }
+        .pc-add-wrap { display: flex; gap: 6px; }
+        .pc-add-btn { border: none; background: var(--tile-accent, var(--primary)); color: #fff; width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; transition: filter .15s; }
+        .pc-add-btn:hover { filter: brightness(1.12); }
+        @media (max-width: 760px) { .pc-sub-row { grid-template-columns: 30px 1fr; } .pc-sub-row > .pc-skip { display: none; } }
+
+        /* Widget Reconciliación Trade Republic */
+        .pc-recon { background: linear-gradient(135deg, color-mix(in srgb, #5b6cff 12%, var(--bg-card)), var(--bg-card)); border: 1px solid var(--border); border-radius: 16px; padding: 18px; box-shadow: var(--shadow-sm); margin-bottom: 20px; }
+        .pc-recon-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+        .pc-recon-title { font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+        .pc-recon-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px; }
+        .pc-recon-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+        .pc-recon-box label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); display: block; margin-bottom: 6px; }
+        .pc-recon-val { font-size: 18px; font-weight: 800; }
+        .pc-diff-pos { color: #10b981; }
+        .pc-diff-neg { color: #ef4444; }
+        .pc-week-checks { display: flex; gap: 8px; flex-wrap: wrap; }
+        .pc-wchk { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 5px 10px; font-size: 12px; cursor: pointer; background: var(--bg-card); transition: all .15s; }
+        .pc-wchk input { accent-color: var(--primary); cursor: pointer; }
+        .pc-wchk.on { border-color: var(--primary); background: var(--primary-light); font-weight: 700; }
+        .pc-loan-row { display: grid; grid-template-columns: 1fr 90px 110px 130px; gap: 10px; align-items: center; padding: 8px; border-radius: 10px; }
+        .pc-loan-row:hover { background: var(--border-light); }
+        .pc-toggle { position: relative; width: 40px; height: 22px; flex: none; }
+        .pc-toggle input { opacity: 0; width: 0; height: 0; }
+        .pc-slider { position: absolute; inset: 0; background: var(--border); border-radius: 999px; cursor: pointer; transition: .2s; }
+        .pc-slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+        .pc-toggle input:checked + .pc-slider { background: #10b981; }
+        .pc-toggle input:checked + .pc-slider::before { transform: translateX(18px); }
+        @media (max-width: 760px) { .pc-loan-row { grid-template-columns: 1fr 80px; } }
     </style>
 </head>
 <body>
