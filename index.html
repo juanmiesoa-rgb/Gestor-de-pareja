@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Finanzas+ | Gestión Compartida</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
     <style>
         :root {
             --primary: #2563eb;
@@ -324,257 +324,7 @@
             .overlay.open { display: block; }
         }
 
-        /* =====================================================
-           PRESUPUESTO COMÚN — Panel minimalista de tarjetas uniformes
-           ===================================================== */
-        .pc-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
-        .pc-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
-        .pc-kpi { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
-        .pc-kpi-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
-        .pc-kpi-value { font-size: 22px; font-weight: 800; margin-top: 6px; }
-        .pc-kpi-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
-
-        /* Grid principal: TODAS las tarjetas del mismo tamaño exacto */
-        .pc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-bottom: 20px; }
-        .pc-tile { height: 190px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; position: relative; overflow: hidden; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; box-shadow: var(--shadow-sm); user-select: none; }
-        .pc-tile::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--tile-accent, var(--primary)); opacity: .85; }
-        .pc-tile:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
-        .pc-tile.selected { border-color: var(--tile-accent, var(--primary)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--tile-accent, #2563eb) 35%, transparent), var(--shadow-md); }
-        .pc-tile-head { display: flex; align-items: center; justify-content: space-between; }
-        .pc-tile-icon { font-size: 22px; line-height: 1; }
-        .pc-tile-name { font-size: 14px; font-weight: 700; }
-        .pc-tile-sub { font-size: 11.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .pc-tile-amounts { margin-top: auto; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-        .pc-tile-spent { font-size: 18px; font-weight: 800; }
-        .pc-tile-limit { font-size: 12px; color: var(--text-secondary); }
-        .pc-bar { height: 8px; border-radius: 6px; background: var(--border-light); overflow: hidden; }
-        .pc-bar > div { height: 100%; border-radius: 6px; transition: width .35s ease; }
-        .pc-bar .ok   { background: linear-gradient(90deg, var(--tile-accent, #2563eb), color-mix(in srgb, var(--tile-accent, #2563eb) 60%, #22d3ee)); }
-        .pc-bar .warn { background: #f59e0b; }
-        .pc-bar .over { background: #ef4444; }
-        .pc-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
-        .pc-chip.green { background: rgba(16,185,129,.14); color: #10b981; }
-        .pc-chip.amber { background: rgba(245,158,11,.15); color: #d97706; }
-        .pc-chip.red   { background: rgba(239,68,68,.14); color: #ef4444; }
-        .pc-chip.gray  { background: var(--border-light); color: var(--text-muted); }
-
-        /* Panel drill-down con transición suave */
-        .pc-detail { max-height: 0; opacity: 0; overflow: hidden; transition: max-height .35s ease, opacity .3s ease, margin .3s ease; margin: 0; }
-        .pc-detail.open { max-height: 1400px; opacity: 1; margin: 4px 0 20px; }
-        .pc-detail-inner { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 18px; box-shadow: var(--shadow-sm); }
-        .pc-detail-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-        .pc-detail-title { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
-        .pc-close-btn { background: var(--border-light); border: none; width: 28px; height: 28px; border-radius: 8px; cursor: pointer; color: var(--text-secondary); font-size: 14px; }
-        .pc-close-btn:hover { background: var(--border); color: var(--text); }
-
-        /* Filas de subcategoría con entrada directa de gasto acumulativo */
-        .pc-sub-row { display: grid; grid-template-columns: 34px 1fr 110px 150px 120px; gap: 10px; align-items: center; padding: 10px 8px; border-radius: 12px; }
-        .pc-sub-row:hover { background: var(--border-light); }
-        .pc-sub-icon { font-size: 18px; text-align: center; }
-        .pc-sub-name { font-size: 13px; font-weight: 600; }
-        .pc-sub-meta { font-size: 11px; color: var(--text-muted); }
-        .pc-inline-input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 12.5px; font-family: inherit; }
-        .pc-add-wrap { display: flex; gap: 6px; }
-        .pc-add-btn { border: none; background: var(--tile-accent, var(--primary)); color: #fff; width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 700; flex: none; transition: filter .15s; }
-        .pc-add-btn:hover { filter: brightness(1.12); }
-        @media (max-width: 760px) { .pc-sub-row { grid-template-columns: 30px 1fr; } .pc-sub-row > .pc-skip { display: none; } }
-
-        /* Widget Reconciliación Trade Republic */
-        .pc-recon { background: linear-gradient(135deg, color-mix(in srgb, #5b6cff 12%, var(--bg-card)), var(--bg-card)); border: 1px solid var(--border); border-radius: 16px; padding: 18px; box-shadow: var(--shadow-sm); margin-bottom: 20px; }
-        .pc-recon-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
-        .pc-recon-title { font-size: 15px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
-        .pc-recon-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 14px; }
-        .pc-recon-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
-        .pc-recon-box label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); display: block; margin-bottom: 6px; }
-        .pc-recon-val { font-size: 18px; font-weight: 800; }
-        .pc-diff-pos { color: #10b981; }
-        .pc-diff-neg { color: #ef4444; }
-        .pc-week-checks { display: flex; gap: 8px; flex-wrap: wrap; }
-        .pc-wchk { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 5px 10px; font-size: 12px; cursor: pointer; background: var(--bg-card); transition: all .15s; }
-        .pc-wchk input { accent-color: var(--primary); cursor: pointer; }
-        .pc-wchk.on { border-color: var(--primary); background: var(--primary-light); font-weight: 700; }
-        .pc-loan-row { display: grid; grid-template-columns: 1fr 90px 110px 130px; gap: 10px; align-items: center; padding: 8px; border-radius: 10px; }
-        .pc-loan-row:hover { background: var(--border-light); }
-        .pc-toggle { position: relative; width: 40px; height: 22px; flex: none; }
-        .pc-toggle input { opacity: 0; width: 0; height: 0; }
-        .pc-slider { position: absolute; inset: 0; background: var(--border); border-radius: 999px; cursor: pointer; transition: .2s; }
-        .pc-slider::before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
-        .pc-toggle input:checked + .pc-slider { background: #10b981; }
-        .pc-toggle input:checked + .pc-slider::before { transform: translateX(18px); }
-        @media (max-width: 760px) { .pc-loan-row { grid-template-columns: 1fr 80px; } }
-
-        /* ===== v4 · Dashboard híbrido: KPIs, 2 columnas, tabla acordeón, movimientos, modales ===== */
-        .pc-num { font-variant-numeric: tabular-nums; }
-        .pc-kpis-v4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 18px; }
-        .pc-kpi-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow-sm); position: relative; overflow: hidden; }
-        .pc-kpi-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background: var(--kpi-accent, var(--primary)); border-radius: 4px 0 0 4px; }
-        .pc-kpi-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 6px; }
-        .pc-kpi-big { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; }
-        .pc-kpi-note { font-size: 11.5px; color: var(--text-secondary); margin-top: 4px; }
-        .pc-progress { height: 6px; background: var(--border-light); border-radius: 999px; margin-top: 10px; overflow: hidden; }
-        .pc-progress > div { height: 100%; border-radius: 999px; transition: width .3s ease; }
-
-        .pc-cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
-        @media (max-width: 980px) { .pc-cols2 { grid-template-columns: 1fr; } }
-        .pc-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
-        .pc-panel-title { font-size: 14px; font-weight: 800; display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-        .pc-week-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
-        .pc-week-card { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
-        .pc-week-card.current { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
-        .pc-week-name { font-size: 11px; font-weight: 800; color: var(--text-secondary); }
-        .pc-week-dates { font-size: 10.5px; color: var(--text-muted); margin: 2px 0 6px; }
-        .pc-week-amt { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
-        .pc-account-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px dashed var(--border); }
-        .pc-account-row:last-child { border-bottom: none; }
-
-        .pc-badge { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 700; white-space: nowrap; line-height: 1.4; }
-        .pc-badge-blue { background: var(--primary-light); color: var(--primary); }
-        .pc-badge-green { background: var(--success-light); color: var(--success); }
-        .pc-badge-amber { background: var(--warning-light); color: #b45309; }
-        .pc-badge-red { background: var(--danger-light); color: var(--danger); }
-        .pc-badge-gray { background: var(--border-light); color: var(--text-muted); }
-
-        .pc-table-wrap { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-sm); margin-bottom: 18px; overflow-x: auto; }
-        table.pc-table { width: 100%; border-collapse: collapse; min-width: 720px; }
-        .pc-table thead th { background: var(--bg); color: var(--text-muted); font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; padding: 12px 16px; text-align: right; border-bottom: 1px solid var(--border); }
-        .pc-table thead th:first-child, .pc-table thead th:nth-child(2) { text-align: left; }
-        .pc-table td { padding: 11px 16px; font-size: 13px; border-bottom: 1px solid var(--border-light); text-align: right; font-variant-numeric: tabular-nums; vertical-align: middle; }
-        .pc-table td:first-child, .pc-table td:nth-child(2) { text-align: left; }
-        .pc-row-cat { cursor: pointer; }
-        .pc-row-cat:hover td, .pc-row-sub:hover td { background: var(--border-light); }
-        .pc-row-cat td { background: color-mix(in srgb, var(--cat-accent, var(--primary)) 6%, var(--bg-card)); font-weight: 800; }
-        .pc-row-sub td:first-child { padding-left: 40px; }
-        .pc-cat-name { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; border-radius: 8px; padding: 2px 6px; }
-        .pc-cat-name:hover { outline: 2px solid var(--cat-accent, var(--primary)); outline-offset: 1px; }
-        .pc-caret { font-size: 10px; color: var(--text-muted); transition: transform .2s; display: inline-block; }
-        .pc-caret.open { transform: rotate(90deg); }
-        .pc-cell-edit { cursor: pointer; border-radius: 8px; padding: 4px 8px; border: 1px dashed transparent; }
-        .pc-cell-edit:hover { border-color: var(--primary); background: var(--primary-light); }
-        .pc-mini-bar { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
-        .pc-mini-track { width: 60px; height: 5px; background: var(--border-light); border-radius: 999px; overflow: hidden; }
-        .pc-mini-fill { height: 100%; border-radius: 999px; }
-
-        .pc-bottom { display: grid; grid-template-columns: 1.6fr 1fr; gap: 14px; margin-bottom: 18px; }
-        @media (max-width: 980px) { .pc-bottom { grid-template-columns: 1fr; } }
-        .pc-mov-row { display: grid; grid-template-columns: 70px 1fr 90px 84px 92px 76px; gap: 8px; align-items: center; padding: 8px 4px; border-bottom: 1px dashed var(--border); font-size: 12.5px; }
-        .pc-mov-row:last-child { border-bottom: none; }
-        @media (max-width: 760px) { .pc-mov-row { grid-template-columns: 60px 1fr 84px; } .pc-mov-row > :nth-child(3), .pc-mov-row > :nth-child(5) { display: none; } }
-        .pc-mov-date { color: var(--text-muted); font-size: 11.5px; }
-        .pc-mov-amt { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; }
-        .pc-sum-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
-        .pc-sum-row:last-child { border-bottom: none; font-weight: 800; }
-
-        .pc-modal-backdrop { position: fixed; inset: 0; background: rgba(2,6,23,.6); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity .2s; }
-        .pc-modal-backdrop.show { opacity: 1; pointer-events: auto; }
-        .pc-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; width: min(420px, 92vw); box-shadow: var(--shadow-md); transform: translateY(8px); transition: transform .2s; }
-        .pc-modal-backdrop.show .pc-modal { transform: translateY(0); }
-        .pc-modal h3 { font-size: 15px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-        .pc-field { margin-bottom: 12px; }
-        .pc-field label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); margin-bottom: 5px; }
-        .pc-field input, .pc-field select { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font-size: 13.5px; font-family: inherit; }
-        .pc-field input:focus, .pc-field select:focus { outline: 2px solid var(--primary); border-color: transparent; }
-        .pc-modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-        .pc-btn { border: none; border-radius: 10px; padding: 9px 16px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
-        .pc-btn-primary { background: var(--primary); color: #fff; }
-        .pc-btn-primary:hover { background: var(--primary-hover); }
-        .pc-btn-ghost { background: var(--border-light); color: var(--text-secondary); }
-        .pc-pop { position: fixed; z-index: 1001; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; width: 240px; box-shadow: var(--shadow-md); }
-
-        /* ===== v5 · Clean & Modern UI: armonización, alineación y badges ===== */
-        .pc-topbar-v5 { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-        .pc-period-pill { display: inline-flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 4px 6px 4px 14px; box-shadow: var(--shadow-sm); }
-        .pc-period-pill select { border: none; background: transparent; color: var(--text); font-weight: 700; font-size: 13px; font-family: inherit; padding: 4px 6px; cursor: pointer; outline: none; }
-        .pc-panel--accent { border-top: 3px solid var(--panel-accent, var(--primary)); }
-        .pc-panel-title .pc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--panel-accent, var(--primary)); display: inline-block; flex: none; }
-        .pc-table thead th { text-align: right; padding: 13px 18px; vertical-align: middle; }
-        .pc-table thead th:nth-child(1), .pc-table thead th:nth-child(2) { text-align: left; }
-        .pc-table th.pc-th-num, .pc-table td.pc-td-num { text-align: right; font-variant-numeric: tabular-nums; }
-        .pc-table td { padding: 12px 18px; }
-        .pc-table td:first-child, .pc-table td:nth-child(2) { text-align: left; }
-        .pc-row-cat > td { border-bottom: 1px solid var(--border); }
-        .pc-row-sub > td { background: var(--bg-card); }
-        .pc-badge { border: 1px solid transparent; vertical-align: middle; }
-        .pc-badge-blue   { background: color-mix(in srgb, var(--primary) 12%, var(--bg-card)); color: var(--primary); border-color: color-mix(in srgb, var(--primary) 22%, transparent); }
-        .pc-badge-green  { background: rgba(16,185,129,.13); color: #059669; border-color: rgba(16,185,129,.28); }
-        .pc-badge-amber  { background: rgba(245,158,11,.14); color: #b45309; border-color: rgba(245,158,11,.3); }
-        .pc-badge-red    { background: rgba(239,68,68,.12); color: #dc2626; border-color: rgba(239,68,68,.28); }
-        .pc-badge-gray   { background: color-mix(in srgb, var(--text-muted) 12%, var(--bg-card)); color: var(--text-secondary); border-color: var(--border); }
-        [data-theme="dark"] .pc-badge-green { color: #34d399; }
-        [data-theme="dark"] .pc-badge-amber { color: #fbbf24; }
-        [data-theme="dark"] .pc-badge-red   { color: #f87171; }
-        .pc-due { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 700; white-space: nowrap; border: 1px solid var(--border); background: var(--bg); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-        .pc-due.soon { border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.1); color: #b45309; }
-        .pc-due.over { border-color: rgba(239,68,68,.45); background: rgba(239,68,68,.1); color: #dc2626; }
-        [data-theme="dark"] .pc-due.soon { color: #fbbf24; }
-        [data-theme="dark"] .pc-due.over { color: #f87171; }
-        .pc-state { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--text-secondary); }
-        .pc-state::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--state-color, var(--text-muted)); flex: none; }
-        .pc-empty { color: var(--text-muted); font-size: 12.5px; padding: 14px 4px; text-align: center; }
-        .pc-pop-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); }
-        .pc-pop-hint { font-size: 10.5px; color: var(--text-muted); margin-top: 8px; text-align: center; }
-        .pc-modal-actions .pc-btn-danger { background: var(--danger-light); color: var(--danger); margin-right: auto; }
-        @media (max-width: 760px) {
-            .pc-table thead th, .pc-table td { padding-left: 12px; padding-right: 12px; }
-            .pc-kpi-big { font-size: 20px; }
-        }
-
-        /* =====================================================
-           v6 · Clean Slate Dashboard — armonización final
-           Todo el color se apoya en los tokens del tema
-           (claro "Slate Clean" / oscuro #0f172a). Sin bloques
-           azul marino estridentes ni mezclas de contraste.
-           ===================================================== */
-        :root { --pc-pos: #059669; --pc-neg: #dc2626; --pc-warn: #b45309; }
-        [data-theme="dark"] { --pc-pos: #34d399; --pc-neg: #f87171; --pc-warn: #fbbf24; }
-        .pc-pos { color: var(--pc-pos) !important; }
-        .pc-neg { color: var(--pc-neg) !important; }
-        .pc-warn { color: var(--pc-warn) !important; }
-
-        /* KPIs: misma jerarquía visual, acento sutil + número tabular */
-        .pc-kpi-card { border-radius: var(--radius-lg); transition: box-shadow .18s ease, transform .18s ease; }
-        .pc-kpi-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-        .pc-kpi-card::before { width: 4px; opacity: .9; }
-        .pc-kpi-icon { float: right; width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; background: color-mix(in srgb, var(--kpi-accent, var(--primary)) 14%, var(--bg-card)); color: var(--kpi-accent, var(--primary)); border: 1px solid color-mix(in srgb, var(--kpi-accent, var(--primary)) 24%, transparent); }
-
-        /* Tabla principal: cabecera y filas comparten la jerarquía del tema */
-        .pc-table-wrap { border-radius: var(--radius-lg); overflow: hidden; }
-        .pc-table thead th { background: var(--bg); position: sticky; top: 0; z-index: 2; }
-        .pc-table tbody tr:last-child td { border-bottom: none; }
-        .pc-row-cat > td:first-child { box-shadow: inset 3px 0 0 var(--cat-accent, var(--primary)); }
-        .pc-row-sub > td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--cat-accent, var(--primary)) 35%, transparent); }
-        .pc-row-cat td, .pc-row-sub td { font-variant-numeric: tabular-nums; }
-        .pc-th-num { min-width: 96px; }
-        .pc-cell-edit { border: 1px dashed var(--border); }
-        .pc-cell-edit:hover { background: color-mix(in srgb, var(--primary) 10%, var(--bg-card)); border-color: var(--primary); }
-
-        /* Badges y píldoras: bordes suaves, texto calibrado */
-        .pc-badge, .pc-due { vertical-align: middle; letter-spacing: .1px; }
-        .pc-badge-green { background: color-mix(in srgb, #10b981 13%, var(--bg-card)); color: var(--pc-pos); border-color: color-mix(in srgb, #10b981 30%, transparent); }
-        .pc-badge-red   { background: color-mix(in srgb, #ef4444 12%, var(--bg-card)); color: var(--pc-neg); border-color: color-mix(in srgb, #ef4444 28%, transparent); }
-        .pc-badge-amber { background: color-mix(in srgb, #f59e0b 14%, var(--bg-card)); color: var(--pc-warn); border-color: color-mix(in srgb, #f59e0b 30%, transparent); }
-        .pc-due.soon { background: color-mix(in srgb, #f59e0b 10%, var(--bg-card)); color: var(--pc-warn); }
-        .pc-due.over { background: color-mix(in srgb, #ef4444 10%, var(--bg-card)); color: var(--pc-neg); }
-
-        /* Paneles intermedios */
-        .pc-panel--accent { border-top: 3px solid color-mix(in srgb, var(--panel-accent, var(--primary)) 55%, var(--border)); }
-        .pc-week-card { transition: transform .15s ease, box-shadow .15s ease; }
-        .pc-week-card.current { border-color: color-mix(in srgb, var(--primary) 55%, var(--border)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent); }
-
-        /* Pop-up flotante de edición rápida de Gasto Real */
-        .pc-pop { animation: pcPopIn .16s ease; max-width: calc(100vw - 16px); }
-        .pc-pop input[type="number"] { font-size: 17px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
-        .pc-pop-actions { display: flex; gap: 8px; margin-top: 10px; }
-        .pc-pop-actions .pc-btn-primary { flex: 1; }
-        @keyframes pcPopIn { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
-
-        /* Modal general: sombra y campos coherentes con el tema */
-        .pc-modal { box-shadow: 0 20px 50px -12px rgba(2, 6, 23, .35); }
-        .pc-modal h3 { font-size: 16px; }
-        .pc-field input:focus, .pc-field select:focus { outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent); outline-offset: 1px; border-color: var(--primary); }
-
-        /* Movimientos: importe alineado y estado legible */
-        .pc-mov-amt { font-variant-numeric: tabular-nums; }
-        .pc-state { font-variant-numeric: tabular-nums; }
+        /* Estilos del módulo Presupuesto común (pc-*) → ver styles.css */
     </style>
 </head>
 <body>
@@ -642,55 +392,24 @@
                 </div>
             </div>
 
-            <div id="sectionContainer"></div>
-
-            <!-- Contenedor del módulo de Planificación de Viajes (TripManager).
-                 Se muestra cuando la sección activa es 'viajes'; app.js monta aquí
-                 el componente y trip-manager.js inyecta sus propios estilos. -->
-            <div id="trip-manager-app" hidden></div>
+            <!-- El contenedor de Viajes vive DENTRO del área de secciones:
+                 app.js lo vacía/rellena al navegar, por lo que ya no aparece
+                 "colado" al pie de las demás pantallas (Dinero, Calendario…). -->
+            <div id="sectionContainer"><div id="trip-manager-app" hidden></div></div>
         </main>
     </div>
 
     <div class="toast-container" id="toastContainer"></div>
 
-    <!-- Librerías base / shell -->
-    <script src="0_app.js"></script>
-    <script src="2_presupuesto-comun.js"></script>
-    <script src="3_calendario.js"></script>
-    <script src="4_ingresos-personales.js"></script>
-    <script src="5_dinero.js"></script>
-
-    <!-- Módulo de viajes reescrito: primero el gestor, después su conexión con el DOM -->
-    <script src="trip-manager.js"></script>
+    <!-- Orden de carga: 1º app.js (shell App + arranque), 2º los módulos, que se
+         autorregistran al existir ya window.App. viajes.js exporta window.TripManager
+         y lo monta el propio app.js en #trip-manager-app. -->
     <script src="app.js"></script>
-
-    <script>
-        // =========================================================
-        // CONEXIONES ENTRE MÓDULOS (centralizadas en App)
-        // Cada módulo publica aquí la API que expone al resto;
-        // ningún módulo llama directamente a otro módulo.
-        // La API de 'viajes' la registra app.js sobre window.TripManager,
-        // por lo que ya NO se repite aquí (única fuente de verdad).
-        // =========================================================
-        App.registerModule('presupuesto-comun', {
-            openExpenseModal: (id) => BudgetApp.openExpenseModal(id),
-            openCategoryModal: (id) => BudgetApp.openCategoryModal(id)
-        });
-        App.registerModule('mi-dinero', {
-            getSavings: () => DineroApp.getSavings()
-        });
-
-        document.addEventListener('DOMContentLoaded', () => {
-            App.init();          // Shell + navegación principal
-            initTripManager();   // Monta TripManager en #trip-manager-app
-        });
-    </script>
-
-    <script>
-    console.log('App cargado:', typeof App);
-    console.log('BudgetApp cargado:', typeof BudgetApp);
-    console.log('Secciones registradas:', Object.keys(App.sections || {}));
-</script>
+    <script src="presupuesto-comun.js"></script>
+    <script src="calendario.js"></script>
+    <script src="ingresos-personales.js"></script>
+    <script src="dinero.js"></script>
+    <script src="viajes.js"></script>
 
 </body>
 </html>
