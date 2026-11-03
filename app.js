@@ -359,11 +359,37 @@ const App = (function() {
         });
 
         const container = document.getElementById('sectionContainer');
-        // Solo se vacía el contenido propio de cada módulo: #trip-manager-app
-        // permanece intacto dentro del contenedor y simplemente se oculta.
-        container.querySelectorAll(':scope > :not(#trip-manager-app)').forEach(n => n.remove());
-        if (sections[section].init) sections[section].init(container);
-        sections[section].render(container);
+        // Cada sección renderiza en su PROPIO subcontenedor estable (#sec-<id>).
+        // Así, al navegar a otra sección solo se oculta ese subcontenedor y el
+        // DOM ya montado de TripManager (#trip-manager-app) permanece intacto.
+        // (Antes se vaciaba #sectionContainer con querySelectorAll(...).remove(),
+        // lo que eliminaba #trip-manager-app del DOM → pantalla en blanco en Viajes.)
+        const mountForSection = () => {
+            let el = document.getElementById('sec-' + section);
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'sec-' + section;
+                container.appendChild(el);
+            }
+            return el;
+        };
+        // Ocultar el resto de secciones (incluido el gestor de viajes)
+        Array.from(container.children).forEach(ch => { ch.hidden = ch.id !== 'sec-' + section; });
+
+        if (section === 'viajes') {
+            // Asegurar montaje (idempotente) y visibilidad del gestor.
+            // Se accede vía window.* porque estas funciones se definen más abajo
+            // en el archivo, dentro de un IIFE que se ejecuta tras la shell App.
+            if (typeof window.initTripManager === 'function' && !window.getTripManager()) {
+                window.initTripManager();
+            }
+            const tm = window.getTripManager ? window.getTripManager() : null;
+            if (tm && typeof tm.syncVisibility === 'function') tm.syncVisibility();
+        } else {
+            const secEl = mountForSection();
+            if (sections[section].init) sections[section].init(secEl);
+            sections[section].render(secEl);
+        }
 
         document.getElementById('sidebar').classList.remove('open');
         document.getElementById('overlay').classList.remove('open');
@@ -599,6 +625,8 @@ document.addEventListener('DOMContentLoaded', () => {
             onChange: (trip) => syncTripIntoGlobalState(trip)
         });
         tripManagerInstance.mountApp();
+        // Expuesta para que navigateTo('viajes') pueda mostrar/ocultar el contenedor
+        tripManagerInstance.syncVisibility = syncVisibility;
 
         // Registro en el puente de módulos de la aplicación (si la shell App existe)
         registerWithShell(tripManagerInstance);
