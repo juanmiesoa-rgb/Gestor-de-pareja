@@ -816,6 +816,11 @@
         static daysBetween(a, b) {
             return Math.round((TripManager.parseDate(b) - TripManager.parseDate(a)) / 86400000);
         }
+        static addDays(isoStr, n) {
+            const d = TripManager.parseDate(isoStr);
+            d.setDate(d.getDate() + n);
+            return TripManager.iso(d);
+        }
         static uid(prefix) { return prefix + '-' + Math.random().toString(36).slice(2, 8); }
 
         get today() { return TripManager.iso(new Date()); }
@@ -1314,12 +1319,12 @@
                     ${this._rulesSectionHTML(trip, st)}`,
                 diario: `
                     <section class="tm-detail-section">
-                        <h3>📅 Planificación diaria</h3>
+                        <h3>💰 Presupuesto diario</h3>
                         ${this._carouselHTML('day', this._daysCarouselInner(trip), `Total del viaje: ${TripManager.fmt(this.dailyBudgetedOf(trip))} planificado · ${TripManager.fmt(this.dailyRealOf(trip))} real`)}
                     </section>`,
                 actividades: `
                     <section class="tm-detail-section">
-                        <h3>🎯 Actividades</h3>
+                        <h3>🎯 Planificación Diaria</h3>
                         ${this._carouselHTML('act', this._activitiesCarouselInner(trip))}
                     </section>`,
                 ahorro: `
@@ -1351,8 +1356,8 @@
 
                 <nav class="tm-subtabs" role="tablist">
                     <button type="button" class="tm-subtab ${dt === 'config' ? 'active' : ''}" data-action="detail-tab" data-tab="config">⚙️ Configuración y categorías</button>
-                    <button type="button" class="tm-subtab ${dt === 'diario' ? 'active' : ''}" data-action="detail-tab" data-tab="diario">📅 Planificación diaria</button>
-                    <button type="button" class="tm-subtab ${dt === 'actividades' ? 'active' : ''}" data-action="detail-tab" data-tab="actividades">🎯 Actividades</button>
+                    <button type="button" class="tm-subtab ${dt === 'diario' ? 'active' : ''}" data-action="detail-tab" data-tab="diario">💰 Presupuesto diario</button>
+                    <button type="button" class="tm-subtab ${dt === 'actividades' ? 'active' : ''}" data-action="detail-tab" data-tab="actividades">🎯 Planificación Diaria</button>
                     <button type="button" class="tm-subtab ${dt === 'ahorro' ? 'active' : ''}" data-action="detail-tab" data-tab="ahorro">💶 Ahorro y financiación</button>
                 </nav>
 
@@ -1911,6 +1916,17 @@
                     // Alternar la clase sobre el DOM existente: mantiene vivo el
                     // botón pulsado y no rompe la delegación de eventos.
                     el.closest('.tm-acc-item').classList.toggle('open', this.state.openCategories[key]);
+                    break;
+                }
+                case 'detail-tab': {
+                    // Pestañas internas del detalle: config | diario | actividades | ahorro
+                    const tab = el.dataset.tab || 'config';
+                    if (['config', 'diario', 'actividades', 'ahorro'].includes(tab)) {
+                        this.state.detailTab = tab;
+                        this._render_detail();
+                        this._applyScroll('day');
+                        this._applyScroll('act');
+                    }
                     break;
                 }
                 case 'payments-modal':
