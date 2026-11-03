@@ -217,7 +217,9 @@
         .pc-kpi-icon { float: right; width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; background: color-mix(in srgb, var(--kpi-accent, var(--primary)) 14%, var(--bg-card)); color: var(--kpi-accent, var(--primary)); border: 1px solid color-mix(in srgb, var(--kpi-accent, var(--primary)) 24%, transparent); }
 
         /* Tabla principal: cabecera y filas comparten la jerarquía del tema */
-        .pc-table-wrap { border-radius: var(--radius-lg); overflow: hidden; }
+        /* OJO: overflow:hidden impedía el scroll horizontal en móvil (tabla cortada).
+           Se cambia a overflow-x:auto conservando el redondeo de esquinas. */
+        .pc-table-wrap { border-radius: var(--radius-lg); overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: thin; touch-action: pan-x pan-y; }
         .pc-table thead th { background: var(--bg); position: sticky; top: 0; z-index: 2; }
         .pc-table tbody tr:last-child td { border-bottom: none; }
         .pc-row-cat > td:first-child { box-shadow: inset 3px 0 0 var(--cat-accent, var(--primary)); }
@@ -292,9 +294,10 @@
             /* Pop-up rápido de gasto real: anclado al pie, ancho total */
             .pc-pop { position: fixed !important; left: 8px !important; right: 8px !important; top: auto !important; bottom: calc(8px + env(safe-area-inset-bottom)) !important; width: auto !important; }
 
-            /* Tablas con scroll horizontal suave */
-            .pc-table-wrap { -webkit-overflow-scrolling: touch; }
-            table.pc-table { min-width: 640px; }
+            /* Tablas con scroll horizontal suave (la tabla conserva su min-width
+               para que el contenedor .pc-table-wrap genere scroll real) */
+            .pc-table-wrap { -webkit-overflow-scrolling: touch; overflow-x: auto !important; }
+            table.pc-table { min-width: 640px; width: max-content; }
 
             /* Área de contenido sin solapes con la barra inferior del navegador */
             #sectionContainer { padding-bottom: 24px; }
