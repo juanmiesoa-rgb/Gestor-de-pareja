@@ -299,3 +299,81 @@
             /* Área de contenido sin solapes con la barra inferior del navegador */
             #sectionContainer { padding-bottom: 24px; }
         }
+
+/* =============================================================
+   V6 · PRESUPUESTO COMÚN — interactividad, estados de semana,
+   barra de consumo en el título, ⓘ de cuenta y modal de semana
+   ============================================================= */
+/* Cursores "manita" en elementos pinchables */
+.pc-week-card { cursor: pointer; transition: transform .15s ease, box-shadow .18s ease, border-color .18s ease; }
+.pc-week-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.pc-week-card:active { transform: translateY(0) scale(.98); }
+.pc-account-row { cursor: pointer; border-radius: 10px; transition: background .15s ease; }
+.pc-account-row:hover { background: var(--bg); }
+.pc-gro-title { cursor: pointer; border-radius: 8px; padding: 2px 6px; transition: background .15s ease; }
+.pc-gro-title:hover { background: var(--border-light); }
+tr[data-moves] { cursor: pointer; }
+tr[data-moves]:hover td { background: color-mix(in srgb, var(--primary) 4%, transparent); }
+
+/* Estados semánticos de las tarjetas de semana (En curso / Pasada / Vacía) */
+.pc-week-card.week-en-curso { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, var(--bg-card)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent); }
+.pc-week-card.week-pasada   { border-left: 4px solid var(--success); background: color-mix(in srgb, var(--success) 5%, var(--bg-card)); opacity: .93; }
+.pc-week-card.week-vacia    { border-style: dashed; background: transparent; opacity: .62; }
+.pc-week-card.week-vacia:hover { opacity: 1; }
+
+/* Título de fila con barra de consumo integrada + porcentaje a la derecha */
+.pc-title-bar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 150px; border-radius: 8px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--cat-accent, var(--primary)) 22%, transparent); }
+.pc-title-bar::before { content: ""; position: absolute; inset: 0; width: clamp(0%, var(--fill), 100%); background: var(--fill-col, var(--border-light)); transition: width .35s ease; pointer-events: none; }
+.pc-title-inner { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; font-weight: 700; font-size: 12.5px; min-width: 0; }
+.pc-title-pct { position: relative; z-index: 1; padding-right: 9px; font-size: 11.5px; color: var(--text-secondary); flex: none; }
+.pc-cat-name { cursor: pointer; }
+.pc-cat-name:hover { text-decoration: underline; }
+
+/* Botón de información (ⓘ) junto al título: tooltip al hover Y al clic */
+.pc-info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); font-size: 10.5px; font-weight: 800; cursor: help; flex: none; transition: all .15s ease; vertical-align: middle; }
+.pc-info:hover, .pc-info.pinned { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+.pc-info-tip { position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%) scale(.96); background: #0f172a; color: #f8fafc; font-size: 11.5px; font-weight: 500; line-height: 1.35; padding: 6px 10px; border-radius: 8px; white-space: nowrap; box-shadow: 0 8px 20px rgba(2,6,23,.25); opacity: 0; pointer-events: none; transition: opacity .15s ease, transform .15s ease; z-index: 60; }
+.pc-info-tip::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #0f172a; }
+.pc-info:hover .pc-info-tip, .pc-info:focus .pc-info-tip, .pc-info.pinned .pc-info-tip { opacity: 1; transform: translateX(-50%) scale(1); }
+
+/* Modal de semana mejorado */
+.pc-week-modal { padding: 0 !important; overflow: hidden; }
+.pc-week-modal #wkBody { padding: 16px 20px 20px; }
+.pc-wk-hero { background: linear-gradient(135deg, color-mix(in srgb, var(--wk-accent, #10b981) 16%, var(--bg-card)), color-mix(in srgb, var(--wk-accent, #10b981) 6%, var(--bg-card))); border-bottom: 1px solid var(--border); padding: 14px 20px 16px; }
+.pc-wk-hero-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+.pc-wk-kicker { font-size: 11px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--wk-accent, #10b981); }
+.pc-wk-hero h3 { margin: 2px 0 4px; font-size: 19px; }
+.pc-wk-range { margin: 0; font-size: 12.5px; color: var(--text-secondary); }
+.pc-wk-x { width: 30px; height: 30px; border-radius: 9px; padding: 0 !important; font-size: 17px; line-height: 1; }
+.pc-week-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; margin-bottom: 10px; }
+.pc-week-state-pill { padding-bottom: 9px; }
+.pc-week-summary { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 12px; }
+.pc-mov-head { display: grid; grid-template-columns: 84px 1fr 92px 64px; gap: 8px; font-size: 10.5px; font-weight: 800; letter-spacing: .5px; color: var(--text-muted); padding: 0 4px 6px; border-bottom: 1px solid var(--border); }
+.pc-mov-line { display: grid; grid-template-columns: 84px 1fr 92px 64px; gap: 8px; align-items: center; padding: 8px 4px; border-bottom: 1px dashed var(--border-light); font-size: 12.5px; }
+.pc-mov-line:last-of-type { border-bottom: none; }
+.pc-mov-line:hover { background: var(--bg); }
+.pc-mov-date { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.pc-mov-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-mov-amt { text-align: right; font-variant-numeric: tabular-nums; }
+.pc-mov-acts { display: flex; gap: 4px; justify-content: flex-end; }
+.pc-sum-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; font-size: 12.5px; }
+
+/* Estado de cuentas: pista visual de edición (manita ya definida arriba) */
+.pc-acc-hint { opacity: 0; font-size: 11px; color: var(--text-muted); transition: opacity .15s ease; }
+.pc-account-row:hover .pc-acc-hint { opacity: 1; }
+.pc-acc-real { font-size: 15px; font-weight: 800; }
+
+@media (max-width: 640px) {
+    .pc-week-grid { grid-template-columns: 1fr 1fr; }
+    .pc-week-state-pill { grid-column: 1 / -1; padding-bottom: 0; }
+    .pc-mov-head, .pc-mov-line { grid-template-columns: 72px 1fr 84px 52px; }
+    .pc-info-tip { white-space: normal; width: max-content; max-width: 180px; }
+}
+
+/* Ajustes de modal ancho y bottom-sheet móvil para el modal de semana */
+.pc-modal-wide { width: min(560px, 94vw); }
+@media (max-width: 640px) {
+    .pc-week-modal { border-radius: 18px 18px 0 0 !important; }
+    .pc-week-modal #wkBody { padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); }
+    .pc-wk-hero { padding: 12px 16px 14px; }
+}

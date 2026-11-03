@@ -359,7 +359,7 @@ const BudgetApp = (function () {
             const spent = sum(wkExp.filter(e => e.pcWeekId === w.id));
             const st = weekState(w);
             const meta = WEEK_STATE_META[st];
-            return `<div class="pc-week-card ${meta.cls}" data-week="${w.id}" title="Clic para ver/editar los movimientos de esta semana">
+            return `<div class="pc-week-card week-${st} ${meta.cls}" data-week="${w.id}" title="Clic para ver/editar los movimientos de esta semana">
                 <div class="pc-week-head"><span class="pc-week-name">${esc(w.label)}</span><span class="pc-badge ${meta.badge}">${meta.label}</span></div>
                 <div class="pc-week-dates">${shortDate(w.start)} → ${shortDate(w.end)}</div>
                 <div class="pc-week-amt pc-num">${fmt(w.budget)}</div>
@@ -814,10 +814,19 @@ const BudgetApp = (function () {
         closeModal();
         const div = document.createElement('div');
         div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
-        div.innerHTML = `<div class="pc-modal pc-modal-wide"><h3>🛒 ${esc(w.label)} · ${shortDate(w.start)} → ${shortDate(w.end)}</h3>
+        div.innerHTML = `<div class="pc-modal pc-modal-wide pc-week-modal">
+            <div class="pc-wk-hero" style="--wk-accent:#10b981">
+                <div class="pc-wk-hero-top">
+                    <span class="pc-wk-kicker">🛒 Groceries &amp; Leisure</span>
+                    <button class="pc-btn pc-btn-ghost pc-wk-x" id="wkX" title="Cerrar">×</button>
+                </div>
+                <h3>${esc(w.label)}</h3>
+                <p class="pc-wk-range">📅 ${shortDate(w.start)} → ${shortDate(w.end)}</p>
+            </div>
             <div id="wkBody"></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        div.querySelector('#wkX').onclick = closeModal;
 
         const wkExpOf = () => pcRealExpenses().filter(e => e.pcWeekId === weekId);
         const renderBody = () => {
