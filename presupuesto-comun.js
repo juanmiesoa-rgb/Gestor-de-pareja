@@ -55,6 +55,14 @@ const BudgetApp = (function () {
         }
     }
 
+    // Quita la subcategoría "Gastos varios" de Others (también en datos guardados).
+    function removeOthersGenSub() {
+        const subs = data().pcSubcategories;
+        if (!Array.isArray(subs)) return;
+        const clean = subs.filter(s => s.id !== 'pcs-others-gen' && !(s.parentId === 'pc-others' && /gastos varios/i.test(String(s.name || ''))));
+        if (clean.length !== subs.length) { data().pcSubcategories = clean; App.saveData(); }
+    }
+
     // Estado semántico de las semanas (se AUTOMATIZA al renderizar):
     //   · 'vacia'     → mes futuro sin empezar aún, o semana sin presupuesto asignado
     //   · 'en-curso'  → hoy cae dentro del rango de la semana
@@ -460,12 +468,35 @@ const BudgetApp = (function () {
             `<span class="pc-title-inner">${icon} ${nameHtml}${o.suffixHtml || ''}</span>` +
             `<b class="pc-title-pct pc-num">${pctLabel}</b></span>`;
     }
+    // Botón-tick a la izquierda: iguala el gasto real al presupuesto añadiendo
+    // un movimiento con el valor DISPONIBLE.
+    function tickBtn(rowId, budget, spent) {
+        if (budget === null || budget === undefined) return '';
+        const diff = budget - spent;
+        const done = Math.abs(diff) < 0.005;
+        return `<button class="pc-tick-btn ${done ? 'done' : ''}" data-tick="${rowId}"
+            title="${done ? 'Gasto real = presupuesto' : `Igualar gasto real al presupuesto (+${fmt(diff)})`}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.8 8.6 6.4 11.2 12.2 5.4"/></svg></button>`;
+    }
+    function equalizeRow(rowId) {
+        const row = findRow(rowId);
+        if (!row) return;
+        const budget = String(rowId).startsWith('pcs-') ? subBudget(rowId) : catBudget(rowId);
+        const spent = rowSpent(rowId);
+        if (budget === null || budget === undefined) { App.showToast('Esta fila no tiene presupuesto definido', 'warn'); return; }
+        const diff = budget - spent;
+        if (Math.abs(diff) < 0.005) { App.showToast('Ya está igualado ✓', 'success'); return; }
+        addMovement(rowId, diff, {
+            concept: `Ajuste hasta presupuesto · ${row.name || rowId}`,
+            account: row.account || '', action: 'Igualación'
+        });
+        App.showToast(`Gasto real igualado al presupuesto (${diff > 0 ? '+' : ''}${fmt(diff)})`, 'success');
+    }
     function tableHtml() {
         const cats = pcCats();
         let html = `<div class="pc-table-wrap"><table class="pc-table pc-table-compact"><thead><tr>
             <th>CATEGORÍA / SUBCATEGORÍA</th>
             <th class="pc-th-num">PRESUPUESTO</th><th class="pc-th-num">GASTO REAL</th>
-            <th class="pc-th-num">DISPONIBLE</th><th class="pc-th-cons">CONSUMO</th></tr></thead><tbody>`;
+            <th class="pc-th-num">DISPONIBLE</th></tr></thead><tbody>`;
         cats.forEach(c => {
             const meta = CAT_META[c.id] || { accent: '#2563eb' };
             const subs = pcSubs(c.id);
@@ -473,22 +504,20 @@ const BudgetApp = (function () {
             const derived = subs.length > 0;
             const catSuffix = `${infoBadge(c.account)}${dueBadge(c.dueDate)}${derived ? '<span class="pc-derived-tag" title="Importes calculados como suma de sus subcategorías">Σ</span>' : ''}`;
             html += `<tr class="pc-row-cat" data-moves="${c.id}" style="--cat-accent:${meta.accent}">
-                <td>${titleWithBar(c.icon || '📁', rowLabel(c), cs, cb, meta.accent, { editAttr: 'editcat', editId: c.id, suffixHtml: catSuffix })}</td>
+                <td class="pc-td-cat">${tickBtn(c.id, cb, cs)}${titleWithBar(c.icon || '📁', rowLabel(c), cs, cb, meta.accent, { editAttr: 'editcat', editId: c.id, suffixHtml: catSuffix })}</td>
                 <td class="pc-td-num">${cb === null ? muted('No definido') : fmt(cb)}</td>
                 <td class="pc-td-num"><span class="pc-cell-edit" data-real="${c.id}" title="Clic para ajustar el gasto real">✏️ ${fmt(cs)}</span></td>
-                <td class="pc-td-num">${availCell(cb, cs).replace(/^<td[^>]*>|<\/td>$/g, '')}</td>
-                <td class="pc-td-cons">${consumptionCell(cs, cb)}</td></tr>`;
+                <td class="pc-td-num">${availCell(cb, cs).replace(/^<td[^>]*>|<\/td>$/g, '')}</td></tr>`;
             // Subcategorías siempre visibles (sin filas de relleno ni textos "sin subcategorías")
             subs.forEach(s => {
                 const sb = subBudget(s.id);
                 const ss = subSpent(s.id);
                 const subSuffix = `${infoBadge(s.account || c.account)}${dueBadge(s.dueDate)}`;
                 html += `<tr class="pc-row-sub" data-moves="${s.id}" style="--cat-accent:${meta.accent}">
-                    <td>${titleWithBar(s.icon || '·', s.name, ss, sb, meta.accent, { editAttr: 'editsub', editId: s.id, isSub: true, suffixHtml: subSuffix })}</td>
+                    <td class="pc-td-cat">${tickBtn(s.id, sb, ss)}${titleWithBar(s.icon || '·', s.name, ss, sb, meta.accent, { editAttr: 'editsub', editId: s.id, isSub: true, suffixHtml: subSuffix })}</td>
                     <td class="pc-td-num">${sb === null ? muted('No definido') : fmt(sb)}</td>
                     <td class="pc-td-num"><span class="pc-cell-edit" data-real="${s.id}" title="Clic para ajustar el gasto real">✏️ ${fmt(ss)}</span></td>
-                    <td class="pc-td-num">${availCell(sb, ss).replace(/^<td[^>]*>|<\/td>$/g, '')}</td>
-                    <td class="pc-td-cons">${consumptionCell(ss, sb)}</td></tr>`;
+                    <td class="pc-td-num">${availCell(sb, ss).replace(/^<td[^>]*>|<\/td>$/g, '')}</td></tr>`;
             });
             if (c.id === 'pc-loans') pcLoans().forEach(l => {
                 const paid = !!recon().loansPaid[l.id];
@@ -496,8 +525,7 @@ const BudgetApp = (function () {
                     <td>💳 ${esc(l.name)} <span class="pc-num" style="color:var(--text-muted)">(${l.paidInstallments}/${l.totalInstallments} cuotas)</span> ${infoBadge(l.account || 'Trade Republic')}</td>
                     <td class="pc-td-num">${fmt(l.amountPerInstallment)}/cuota</td>
                     <td class="pc-td-num">—</td>
-                    <td class="pc-td-num">—</td>
-                    <td class="pc-td-cons"><span class="pc-toggle"><input type="checkbox" data-loanpaid="${l.id}" ${paid ? 'checked' : ''}><span class="pc-slider"></span></span> ${badge(paid ? 'Pagado' : 'Cuota', paid ? 'pc-badge-green' : 'pc-badge-gray')}</td></tr>`;
+                    <td class="pc-td-num"><span class="pc-toggle"><input type="checkbox" data-loanpaid="${l.id}" ${paid ? 'checked' : ''}><span class="pc-slider"></span></span> ${badge(paid ? 'Pagado' : 'Cuota', paid ? 'pc-badge-green' : 'pc-badge-gray')}</td></tr>`;
             });
         });
         html += '</tbody></table></div>';
@@ -912,8 +940,13 @@ const BudgetApp = (function () {
         containerEl.querySelectorAll('[data-editacc]').forEach(row => row.onclick = () => openEditAccountModal(row.getAttribute('data-editacc')));
         // Tabla: clic en la fila → modal de movimientos de ESA categoría/subcategoría
         containerEl.querySelectorAll('[data-moves]').forEach(tr => tr.onclick = e => {
-            if (e.target.closest('[data-editcat]') || e.target.closest('[data-editsub]') || e.target.closest('[data-real]') || e.target.closest('[data-loanpaid]') || e.target.closest('.pc-info')) return;
+            if (e.target.closest('[data-editcat]') || e.target.closest('[data-editsub]') || e.target.closest('[data-real]') || e.target.closest('[data-loanpaid]') || e.target.closest('[data-tick]') || e.target.closest('.pc-info')) return;
             openMovesModal(tr.getAttribute('data-moves'));
+        });
+        // Botón-tick: iguala el gasto real al presupuesto (añade movimiento con el disponible)
+        containerEl.querySelectorAll('[data-tick]').forEach(btn => btn.onclick = e => {
+            e.stopPropagation();
+            equalizeRow(btn.getAttribute('data-tick'));
         });
         containerEl.querySelectorAll('[data-editcat]').forEach(el => el.onclick = e => { e.stopPropagation(); openCatModal(el.getAttribute('data-editcat'), false); });
         containerEl.querySelectorAll('[data-editsub]').forEach(el => el.onclick = e => { e.stopPropagation(); openCatModal(el.getAttribute('data-editsub'), true); });
@@ -958,7 +991,7 @@ const BudgetApp = (function () {
     }
 
     // ===== API pública =====
-    function init(container) { containerEl = container; fixGroceriesName(); dedupeLoans(); ensureWeeks(); render(); }
+    function init(container) { containerEl = container; fixGroceriesName(); dedupeLoans(); removeOthersGenSub(); ensureWeeks(); render(); }
     function onThemeChange() { render(); }
     function openExpenseModal(expenseId) {
         const exp = (data().expenses || []).find(e => e.id === expenseId);

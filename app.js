@@ -137,7 +137,6 @@ const App = (function() {
             { id: 'pcs-electricity', parentId: 'pc-utilities', name: 'Electricity (Luz)',        icon: '⚡', account: 'MyInvestor', budget: 90 },
             { id: 'pcs-water',       parentId: 'pc-utilities', name: 'Water (Agua)',             icon: '💧', account: 'MyInvestor', budget: 35, dueDate: '2026-11-28' },
             { id: 'pcs-phone',       parentId: 'pc-utilities', name: 'WiFi & Phone (Lowi)',      icon: '📶', account: 'MyInvestor', budget: 50, dueDate: '2026-11-15' },
-            { id: 'pcs-others-gen',  parentId: 'pc-others',    name: 'Gastos varios',              icon: '🧩', account: 'Trade Republic', budget: 200 },
             { id: 'pcs-tr',          parentId: 'pc-savings',   name: 'Trade Republic',           icon: '📈', account: 'Trade Republic', destination: 'TradeRepublic', budget: 640 },
             { id: 'pcs-funds',       parentId: 'pc-savings',   name: 'Funds',                    icon: '💼', account: 'Trade Republic', destination: 'Funds', budget: null },
             { id: 'pcs-mi',          parentId: 'pc-savings',   name: 'MyInvestor',               icon: '🏦', account: 'MyInvestor', destination: 'MyInvestor' },
