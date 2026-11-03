@@ -58,6 +58,11 @@ const DineroApp = (function () {
     function fmtMoney(n) {
         return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(n == null ? 0 : n);
     }
+    // Formato de divisa según moneda (USD con locale en-US para el "$")
+    function fmtAmount(n, currency) {
+        const cur = currency === 'USD' ? 'USD' : 'EUR';
+        return new Intl.NumberFormat(cur === 'USD' ? 'en-US' : 'es-ES', { style: 'currency', currency: cur }).format(n == null ? 0 : n);
+    }
     function escapeHtml(str) {
         if (str === null || str === undefined) return '';
         return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -72,6 +77,10 @@ const DineroApp = (function () {
     // Regla de cálculo obligatoria de la demo:
     //   Saldo Real = 500 € | Pago A = 100 € (mañana) | Pago B = 300 € (en 8 días)
     //   Horizonte 7 días  → Disponible Ahora = 400 € | Disponible Global = 100 €
+    // Tipo de cambio EUR→USD de referencia (se actualiza en vivo desde la API
+    // open.er-api.com al cargar el módulo; si no hay red se usa este fallback).
+    const FALLBACK_EUR_USD = 1.16;
+
     const DEFAULT_MOCK = {
         version: 2,
         settings: { horizonDays: 7 },
@@ -219,6 +228,48 @@ const DineroApp = (function () {
     let containerEl = null;
     const expanded = { loans: new Set(), goals: new Set(), recurring: new Set(), wallets: new Set() };
 
+    // ---- Filtros de vista (no persisten entre sesiones) ----
+    const viewFilters = {
+        loanStatus: 'active',   // active (Pendientes, predeterminado) | completed | all
+        debtStatus: 'pending',  // pending (Pendientes, predeterminado) | done | all
+        recurringStatus: 'active', // active (Activo, predeterminado) | paused | all
+        goalStatus: 'dateActive'   // dateActive (Fecha activa, predeterminado) | done | all
+    };
+    /** Objetivo "activo por fecha": tiene próxima aportación programada y no está completado */
+    function goalIsDateActive(g) {
+        if (g.target != null && g.target > 0 && g.saved >= g.target) return false; // completado
+        return !!(g.nextDate && g.frequency !== 'none');
+    }
+    function goalMatchesFilter(g) {
+        const done = g.target != null && g.target > 0 && g.saved >= g.target;
+        if (viewFilters.goalStatus === 'dateActive') return goalIsDateActive(g);
+        if (viewFilters.goalStatus === 'done') return done;
+        return true;
+    }
+    function recurringMatchesFilter(r) {
+        if (viewFilters.recurringStatus === 'active') return !!r.active;
+        if (viewFilters.recurringStatus === 'paused') return !r.active;
+        return true;
+    }
+
+    // ---- Tipo de cambio EUR→USD (se refresca desde la API al cargar) ----
+    let eurUsdRate = FALLBACK_EUR_USD;
+    let fxUpdatedAt = null;
+    function loadFxRate() {
+        try {
+            fetch('https://open.er-api.com/v6/latest/EUR')
+                .then(r => r.ok ? r.json() : Promise.reject(new Error('http')))
+                .then(j => {
+                    if (j && j.rates && typeof j.rates.USD === 'number') {
+                        eurUsdRate = j.rates.USD;
+                        fxUpdatedAt = j.date || toISO(new Date());
+                        if (containerEl) renderAll();
+                    }
+                })
+                .catch(() => { /* sin red: se mantiene el fallback */ });
+        } catch (e) { /* fetch no disponible: fallback */ }
+    }
+
     function loadData() {
         try {
             const saved = localStorage.getItem('finanzas_dinero_v2');
@@ -326,14 +377,30 @@ const DineroApp = (function () {
         .dv2-col-right { position: sticky; top: 14px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
         @media (max-width: 1100px) { .dv2-col-right { position: static; } }
 
-        /* ===== Secciones con título en color distintivo ===== */
+        /* ===== Secciones con título en BANDA DE COLOR distintiva (fondo acentuado) ===== */
         .dv2-section { min-width: 0; }
-        .dv2-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid var(--dv2-accent, var(--border)); }
-        .dv2-section-title { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 800; letter-spacing: .2px; color: var(--text); }
+        .dv2-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--dv2-accent, var(--primary)) 16%, var(--bg-card)); border: 1px solid color-mix(in srgb, var(--dv2-accent, var(--primary)) 35%, transparent); box-shadow: inset 4px 0 0 var(--dv2-accent, var(--primary)); }
+        .dv2-section-title { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 800; letter-spacing: .2px; color: var(--dv2-accent, var(--text)); }
         .dv2-badge { width: 30px; height: 30px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; color: #fff; background: var(--dv2-accent, var(--primary)); box-shadow: 0 2px 6px color-mix(in srgb, var(--dv2-accent, var(--primary)) 40%, transparent); }
         .dv2-section-sub { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
-        .dv2-add-btn { border: 1.5px dashed var(--dv2-accent, var(--primary)); color: var(--dv2-accent, var(--primary)); background: transparent; border-radius: 9px; padding: 7px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; transition: all .15s; white-space: nowrap; }
+        .dv2-add-btn { border: 1.5px dashed var(--dv2-accent, var(--primary)); color: var(--dv2-accent, var(--primary)); background: var(--bg-card); border-radius: 9px; padding: 7px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; transition: all .15s; white-space: nowrap; }
         .dv2-add-btn:hover { background: color-mix(in srgb, var(--dv2-accent, var(--primary)) 12%, transparent); }
+
+        /* Chips de filtro por estado (préstamos / deudas) */
+        .dv2-filter-chips { display: inline-flex; gap: 6px; align-items: center; }
+        .dv2-fchip { border: 1px solid color-mix(in srgb, var(--dv2-accent, var(--primary)) 40%, transparent); background: var(--bg-card); color: var(--text-secondary); border-radius: 999px; padding: 5px 12px; font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; }
+        .dv2-fchip.sel { background: var(--dv2-accent, var(--primary)); color: #fff; border-color: var(--dv2-accent, var(--primary)); }
+
+        /* Fila compacta de acciones dentro del modal de detalle */
+        .dv2-actions-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .dv2-data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin: 10px 0 4px; }
+        .dv2-data-item { background: var(--bg); border: 1px solid var(--border-light); border-radius: 10px; padding: 7px 10px; font-size: 12px; }
+        .dv2-data-item span { display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); margin-bottom: 1px; }
+        .dv2-data-item strong { font-size: 12.5px; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+        .dv2-act-btn { border: 1px solid var(--border); background: var(--bg); color: var(--text-secondary); border-radius: 10px; padding: 9px 10px; font-size: 12px; font-weight: 700; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 7px; transition: all .15s; }
+        .dv2-act-btn:hover { border-color: var(--dv2-accent, var(--primary)); color: var(--dv2-accent, var(--primary)); background: color-mix(in srgb, var(--dv2-accent, var(--primary)) 8%, var(--bg)); }
+        .dv2-act-btn.pos { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, var(--border)); }
+        .dv2-act-btn.neg { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
 
         /* ===== Tarjetas genéricas ===== */
         .dv2-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: var(--shadow-sm); position: relative; overflow: hidden; transition: box-shadow .2s, transform .2s; }
@@ -358,6 +425,25 @@ const DineroApp = (function () {
         .dv2-horizon { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; }
         .dv2-horizon input { width: 46px; border: none; background: transparent; color: var(--text); font-weight: 800; font-size: 13px; text-align: center; outline: none; font-family: inherit; }
         .dv2-horizon span { font-size: 11.5px; color: var(--text-muted); font-weight: 600; }
+
+        /* ===== Resumen del dinero (bloque destacado, estilo diferenciado) ===== */
+        .dv2-summary-banner { position: relative; overflow: hidden; border-radius: 18px; padding: 18px 18px 20px; margin-bottom: 16px;
+            background: linear-gradient(135deg, color-mix(in srgb, #2563eb 15%, var(--bg-card)) 0%, color-mix(in srgb, #8b5cf6 13%, var(--bg-card)) 55%, color-mix(in srgb, #0ea5e9 11%, var(--bg-card)) 100%);
+            border: 1px solid color-mix(in srgb, #2563eb 30%, var(--border)); box-shadow: var(--shadow-md); }
+        .dv2-summary-banner::before { content: ''; position: absolute; inset: 0; pointer-events: none;
+            background: radial-gradient(520px 130px at 8% -20%, color-mix(in srgb, #2563eb 22%, transparent), transparent 70%),
+                        radial-gradient(420px 120px at 95% 130%, color-mix(in srgb, #8b5cf6 18%, transparent), transparent 70%); }
+        .dv2-summary-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+        .dv2-summary-title { display: inline-flex; align-items: center; gap: 10px; font-size: 15.5px; font-weight: 800; letter-spacing: .2px; color: var(--text); }
+        .dv2-summary-chip { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: #fff; background: linear-gradient(135deg, #2563eb, #8b5cf6); border-radius: 999px; padding: 4px 11px; box-shadow: 0 2px 8px rgba(37,99,235,.35); }
+        .dv2-kpis-v3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; position: relative; }
+        @media (max-width: 900px) { .dv2-kpis-v3 { grid-template-columns: 1fr; } }
+        .dv2-kpi3 { background: color-mix(in srgb, var(--bg-card) 88%, transparent); backdrop-filter: blur(4px); border: 1px solid color-mix(in srgb, var(--dv2-accent, var(--primary)) 28%, var(--border)); border-radius: 14px; padding: 16px 16px 14px; box-shadow: var(--shadow-sm); }
+        .dv2-kpi3-label { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: var(--dv2-accent, var(--text-muted)); display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+        .dv2-kpi3-value { font-size: 26px; font-weight: 800; line-height: 1.1; margin-bottom: 4px; color: var(--text); font-variant-numeric: tabular-nums; }
+        .dv2-kpi3-value.negative { color: var(--danger); }
+        .dv2-pill-select { appearance: none; -webkit-appearance: none; border: 1px solid color-mix(in srgb, var(--dv2-accent, var(--primary)) 45%, var(--border)); background: color-mix(in srgb, var(--dv2-accent, var(--primary)) 10%, var(--bg)); color: var(--dv2-accent, var(--primary)); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 800; font-family: inherit; cursor: pointer; outline: none; transition: all .15s; }
+        .dv2-pill-select:hover { background: color-mix(in srgb, var(--dv2-accent, var(--primary)) 18%, var(--bg)); }
 
         /* ===== Grids de tarjetas ===== */
         .dv2-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
@@ -494,7 +580,19 @@ const DineroApp = (function () {
         bindLeft(left);
     }
 
-    // ---------- Bloque 1 · Resumen ----------
+    // ---------- Bloque 1 · Resumen (estilo propio: banner degradado, NO banda de sección) ----------
+    const HORIZON_OPTIONS = [
+        { v: 1, l: '1 día' },
+        { v: 3, l: '3 días' },
+        { v: 7, l: '1 semana' },
+        { v: 14, l: '2 semanas' },
+        { v: 30, l: '1 mes' }
+    ];
+    function horizonLabel(days) {
+        const opt = HORIZON_OPTIONS.find(o => o.v === Number(days));
+        return opt ? opt.l : `${days} días`;
+    }
+
     function renderSummary() {
         const real = realBalance();
         const now = availableNow();
@@ -504,72 +602,63 @@ const DineroApp = (function () {
         const totalPend = pendingCommitments().reduce((s, c) => s + c.amount, 0);
 
         const accOptions = data.accounts.map(a => `<option value="${a.id}">${escapeHtml(a.name)} · ${fmtMoney(a.balance)}</option>`).join('');
+        const horizonOptions = HORIZON_OPTIONS.map(o => `<option value="${o.v}" ${Number(o.v) === Number(h) ? 'selected' : ''}>${o.l}</option>`).join('');
 
         return `
-        <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.summary}">
-            ${sectionHead('summary', 'Resumen del dinero', 'Indicadores clave', 'Nuevo compromiso', 'dv2AddCommitment')}
-            <div class="dv2-kpis">
-                <div class="dv2-card dv2-kpi" style="--dv2-accent:#2563eb">
-                    <div class="dv2-kpi-label"><span class="dv2-kpi-dot"></span> Saldo Real en Cuentas</div>
-                    <div class="dv2-kpi-value">${fmtMoney(real)}</div>
-                    <div class="dv2-kpi-meta">${data.accounts.length} cuentas físicas · dinero bancario real</div>
-                    <div class="dv2-kpi-control">
-                        <select class="dv2-select" id="dv2AccSelect" style="flex:1"><option value="">Consultar cuenta…</option>${accOptions}</select>
-                        <button class="dv2-mini-btn" id="dv2EditAccountsBtn"><i class="fas fa-pen"></i> Editar saldos</button>
+        <section class="dv2-section dv2-summary-section" style="--dv2-accent:${SECTION_COLORS.summary}">
+            <div class="dv2-summary-banner">
+                <div class="dv2-summary-head">
+                    <div class="dv2-summary-title"><span class="dv2-badge" style="background:linear-gradient(135deg,#2563eb,#8b5cf6)">💶</span> Resumen del dinero</div>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                        <span class="dv2-summary-chip">Indicadores clave</span>
+                        <button class="dv2-add-btn" id="dv2AddCommitment" style="--dv2-accent:#2563eb;background:color-mix(in srgb, var(--bg-card) 80%, transparent)"><i class="fas fa-plus"></i> Nuevo compromiso</button>
                     </div>
                 </div>
-                <div class="dv2-card dv2-kpi" style="--dv2-accent:#f59e0b">
-                    <div class="dv2-kpi-label"><span class="dv2-kpi-dot" style="background:#f59e0b"></span> Disponible Ahora</div>
-                    <div class="dv2-kpi-value ${now < 0 ? 'negative' : ''}">${fmtMoney(now)}</div>
-                    <div class="dv2-kpi-meta">${fmtMoney(within.reduce((s,c)=>s+c.amount,0))} comprometidos en ${h} días (${within.length})</div>
-                    <div class="dv2-kpi-control">
-                        <span class="dv2-horizon"><i class="fas fa-calendar-day" style="font-size:11px;color:var(--text-muted)"></i><input type="number" id="dv2Horizon" min="0" max="365" value="${h}"><span>días</span></span>
-                        <span class="dv2-section-sub">horizonte editable</span>
+                <div class="dv2-kpis-v3">
+                    <div class="dv2-kpi3" style="--dv2-accent:#2563eb">
+                        <div class="dv2-kpi3-label"><span class="dv2-kpi-dot" style="background:#2563eb"></span> Saldo Real en Cuentas</div>
+                        <div class="dv2-kpi3-value">${fmtMoney(real)}</div>
+                        <div class="dv2-kpi-meta">${data.accounts.length} cuentas físicas · dinero bancario real</div>
+                        <div class="dv2-kpi-control">
+                            <select class="dv2-select" id="dv2AccSelect" style="flex:1"><option value="">Consultar cuenta…</option>${accOptions}</select>
+                            <button class="dv2-mini-btn" id="dv2EditAccountsBtn"><i class="fas fa-pen"></i> Editar saldos</button>
+                        </div>
                     </div>
-                </div>
-                <div class="dv2-card dv2-kpi" style="--dv2-accent:#8b5cf6">
-                    <div class="dv2-kpi-label"><span class="dv2-kpi-dot" style="background:#8b5cf6"></span> Disponible Global</div>
-                    <div class="dv2-kpi-value ${glob < 0 ? 'negative' : ''}">${fmtMoney(glob)}</div>
-                    <div class="dv2-kpi-meta">Tras restar todos los compromisos futuros (${fmtMoney(totalPend)})</div>
-                    <div class="dv2-kpi-control">
-                        <button class="dv2-mini-btn" id="dv2ShowCommitments"><i class="fas fa-list-check"></i> Ver compromisos (${pendingCommitments().length})</button>
+                    <div class="dv2-kpi3" style="--dv2-accent:#f59e0b">
+                        <div class="dv2-kpi3-label"><span class="dv2-kpi-dot" style="background:#f59e0b"></span> Disponible Ahora</div>
+                        <div class="dv2-kpi3-value ${now < 0 ? 'negative' : ''}">${fmtMoney(now)}</div>
+                        <div class="dv2-kpi-meta">${fmtMoney(within.reduce((s,c)=>s+c.amount,0))} comprometidos en ${horizonLabel(h)} (${within.length})</div>
+                        <div class="dv2-kpi-control">
+                            <span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)">Horizonte:</span>
+                            <select class="dv2-pill-select" id="dv2Horizon" style="--dv2-accent:#f59e0b" title="Ventana temporal de compromisos">${horizonOptions}</select>
+                        </div>
+                    </div>
+                    <div class="dv2-kpi3" style="--dv2-accent:#8b5cf6">
+                        <div class="dv2-kpi3-label"><span class="dv2-kpi-dot" style="background:#8b5cf6"></span> Disponible Global</div>
+                        <div class="dv2-kpi3-value ${glob < 0 ? 'negative' : ''}">${fmtMoney(glob)}</div>
+                        <div class="dv2-kpi-meta">Tras restar todos los compromisos futuros (${fmtMoney(totalPend)})</div>
+                        <div class="dv2-kpi-control">
+                            <button class="dv2-mini-btn" id="dv2ShowCommitments"><i class="fas fa-list-check"></i> Ver compromisos (${pendingCommitments().length})</button>
+                        </div>
                     </div>
                 </div>
             </div>
         </section>`;
     }
 
-    // ---------- Bloque 2 · Monederos ----------
+    // ---------- Bloque 2 · Monederos (tarjeta limpia: icono, nombre, color y dinero) ----------
     function renderWallets() {
-        const cards = data.wallets.map(w => {
-            const bal = walletBalance(w);
-            const isOpen = expanded.wallets.has(w.id);
-            const movs = [...w.movements].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6);
-            return `
-            <div class="dv2-card dv2-wallet ${isOpen ? 'open' : ''}" style="--dv2-accent:${w.color}" data-wallet="${w.id}">
+        const cards = data.wallets.map(w => `
+            <div class="dv2-card dv2-wallet" style="--dv2-accent:${w.color};cursor:pointer" data-wallet="${w.id}" title="Clic para ver movimientos y editar">
                 <div class="dv2-wallet-top">
                     <span class="dv2-emoji">${w.emoji}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(w.name)}</div>
-                        <div style="font-size:10.5px;color:var(--text-muted)">Monedero virtual · sin límite</div>
                     </div>
-                    <button class="dv2-expand-btn" data-wedit="${w.id}" title="Editar / gestionar"><i class="fas fa-ellipsis-h"></i></button>
+                    <span style="width:14px;height:14px;border-radius:5px;background:${w.color};box-shadow:0 0 0 3px color-mix(in srgb, ${w.color} 22%, transparent);flex-shrink:0" title="Color de la subcategoría"></span>
                 </div>
-                <div class="dv2-wallet-amt">${fmtMoney(bal)}</div>
-                <div class="dv2-wallet-foot">
-                    <span>${w.movements.length} movimientos</span>
-                    <span style="display:inline-flex;gap:6px;align-items:center">Ver detalle <i class="fas fa-chevron-down" style="font-size:10px;transition:transform .2s;${isOpen ? 'transform:rotate(180deg)' : ''}"></i></span>
-                </div>
-                <div class="dv2-wallet-detail">
-                    ${movs.length ? movs.map(m => `
-                        <div class="dv2-mov-line">
-                            <span class="dv2-mov-date">${fmtDate(m.date)}</span>
-                            <span style="flex:1">${escapeHtml(m.concept)}</span>
-                            <span class="${m.type === 'out' ? 'dv2-neg' : 'dv2-pos'}">${m.type === 'out' ? '−' : '+'}${fmtMoney(m.amount)}</span>
-                        </div>`).join('') : '<div class="dv2-empty">Sin movimientos internos</div>'}
-                </div>
-            </div>`;
-        }).join('');
+                <div class="dv2-wallet-amt">${fmtMoney(walletBalance(w))}</div>
+            </div>`).join('');
 
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.wallets}">
@@ -578,125 +667,130 @@ const DineroApp = (function () {
         </section>`;
     }
 
-    // ---------- Bloque 3 · Deudas y devoluciones ----------
+    // ---------- Bloque 3 · Deudas y devoluciones (tarjeta limpia: icono, subcategoría, color,
+    // dinero, barrita de cubierto, restante, % y fecha estimada si la hay) ----------
+    function debtMatchesFilter(d) {
+        const st = debtStatus(d);
+        if (viewFilters.debtStatus === 'pending') return st !== 'done';
+        if (viewFilters.debtStatus === 'done') return st === 'done';
+        return true;
+    }
     function renderDebts() {
         const groups = [
             { kind: 'pay', label: 'Dinero a devolver', hint: 'gastado hoy, se repone' },
             { kind: 'receive', label: 'Dinero a cobrar / recuperar', hint: 'préstamos o ingresos temporales' }
         ];
+        const chipRow = (filterKey, opts, accentVar) => `<span class="dv2-filter-chips">${opts.map(o =>
+            `<button class="dv2-fchip ${viewFilters[filterKey] === o.v ? 'sel' : ''}" data-${filterKey}="${o.v}">${o.l}</button>`).join('')}</span>`;
         const card = (d) => {
             const s = debtStatus(d);
             const pct = d.total ? Math.min(100, Math.round(d.returned / d.total * 100)) : 0;
             const col = d.kind === 'pay' ? '#ef4444' : '#0ea5e9';
             return `
-            <div class="dv2-card" style="--dv2-accent:${col}">
+            <div class="dv2-card" style="--dv2-accent:${col};cursor:pointer" data-debt="${d.id}" title="Clic para ver movimientos y editar">
                 <div class="dv2-wallet-top">
                     <span class="dv2-emoji">${d.emoji}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(d.name)}</div>
-                        <div style="font-size:10.5px;color:var(--text-muted)">${escapeHtml(d.counterparty || '')}</div>
                     </div>
-                    <button class="dv2-expand-btn" data-dedit="${d.id}" title="Editar"><i class="fas fa-pen"></i></button>
+                    <span style="width:14px;height:14px;border-radius:5px;background:${col};box-shadow:0 0 0 3px color-mix(in srgb, ${col} 22%, transparent);flex-shrink:0" title="Color"></span>
                 </div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
                     <div class="dv2-wallet-amt">${fmtMoney(d.total)}</div>
-                    ${s === 'done' ? '<span class="dv2-debt-status dv2-st-done">Completado</span>' : s === 'partial' ? '<span class="dv2-debt-status dv2-st-partial">Devuelto parcialmente</span>' : '<span class="dv2-debt-status dv2-st-pending">Pendiente</span>'}
+                    <span class="dv2-chip">${pct}%</span>
                 </div>
-                ${pct > 0 ? `
                 <div class="dv2-progress" style="--dv2-accent:${col}"><div class="dv2-progress-fill" style="width:${pct}%"></div></div>
-                <div class="dv2-progress-meta"><span>Cubierto: ${fmtMoney(d.returned)}</span><span>Restante: ${fmtMoney(Math.max(0, d.total - d.returned))}</span></div>` : ''}
-                <div class="dv2-wallet-foot" style="margin-top:10px">
-                    <span>${d.dueDate ? `<i class="fas fa-calendar" style="font-size:10px"></i> ${fmtDate(d.dueDate)}` : '<span class="dv2-note-flag">Sin fecha estimada</span>'}</span>
-                    ${s !== 'done' ? `<button class="dv2-mini-btn" data-dpay="${d.id}"><i class="fas fa-hand-holding-dollar"></i> Registrar devolución</button>` : ''}
-                </div>
+                <div class="dv2-progress-meta"><span>Cubierto: ${fmtMoney(d.returned)}</span><span>Restante: ${fmtMoney(Math.max(0, d.total - d.returned))}</span></div>
+                ${d.dueDate ? `<div class="dv2-wallet-foot" style="margin-top:8px"><span><i class="fas fa-calendar" style="font-size:10px"></i> ${fmtDate(d.dueDate)}</span>${s === 'done' ? '<span class="dv2-debt-status dv2-st-done">Completado</span>' : ''}</div>` : ''}
             </div>`;
         };
         const blocks = groups.map(g => {
-            const list = data.debts.filter(d => d.kind === g.kind);
+            const list = data.debts.filter(d => d.kind === g.kind && debtMatchesFilter(d));
             return `
             <div style="margin-bottom:14px">
                 <div style="font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${g.kind === 'pay' ? '#ef4444' : '#0ea5e9'};margin-bottom:8px">
                     <i class="fas ${g.kind === 'pay' ? 'fa-arrow-up' : 'fa-arrow-down'}"></i> ${g.label} <span style="color:var(--text-muted);font-weight:500;text-transform:none">(${g.hint})</span>
                 </div>
-                <div class="dv2-grid">${list.map(card).join('') || '<div class="dv2-empty">Nada registrado aquí</div>'}</div>
+                <div class="dv2-grid">${list.map(card).join('') || '<div class="dv2-empty">Nada registrado con este filtro</div>'}</div>
             </div>`;
         }).join('');
 
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.debts}">
             ${sectionHead('debts', 'Deudas y devoluciones', 'Dinero temporalmente fuera de su sitio', '+ Nueva deuda', 'dv2AddDebt')}
+            ${filterRowHtml('debtStatus', [{ v: 'pending', l: 'Pendientes' }, { v: 'done', l: 'Completadas' }, { v: 'all', l: 'Todas' }])}
             ${blocks}
         </section>`;
     }
 
-    // ---------- Bloque 4 · Préstamos ----------
+    // ---------- Bloque 4 · Préstamos (ocultos si completados; filtro activos/completados) ----------
+    function loanMatchesFilter(l) {
+        const done = l.paidCount >= l.installments;
+        if (viewFilters.loanStatus === 'active') return !done;
+        if (viewFilters.loanStatus === 'completed') return done;
+        return true;
+    }
     function renderLoans() {
-        const cards = data.loans.map(l => {
+        const cards = data.loans.filter(loanMatchesFilter).map(l => {
             const pending = loanPending(l);
             const pct = l.installments ? Math.round(l.paidCount / l.installments * 100) : 0;
-            const isOpen = expanded.loans.has(l.id);
-            const pays = [...l.payments].sort((a, b) => b.date.localeCompare(a.date));
+            const done = l.paidCount >= l.installments;
             return `
-            <div class="dv2-card" style="--dv2-accent:#8b5cf6">
+            <div class="dv2-card" style="--dv2-accent:#8b5cf6;cursor:pointer" data-loan="${l.id}" title="Clic para ver cuotas y editar">
                 <div class="dv2-wallet-top">
                     <span class="dv2-emoji">${l.emoji}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(l.name)}</div>
                         <div style="font-size:10.5px;color:var(--text-muted)">Financiado: ${fmtMoney(l.financed)} · ${fmtMoney(l.installmentAmount)}/cuota</div>
                     </div>
-                    <button class="dv2-expand-btn ${isOpen ? 'open' : ''}" data-loanexp="${l.id}" title="Ver cuotas"><i class="fas fa-chevron-down"></i></button>
+                    <span style="width:14px;height:14px;border-radius:5px;background:#8b5cf6;box-shadow:0 0 0 3px color-mix(in srgb, #8b5cf6 22%, transparent);flex-shrink:0" title="Color"></span>
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
-                    <div class="dv2-wallet-amt" style="color:var(--danger)">${fmtMoney(pending)}</div>
-                    <span class="dv2-chip">${l.paidCount}/${l.installments} cuotas</span>
+                    <div class="dv2-wallet-amt" style="color:${done ? 'var(--success)' : 'var(--danger)'}">${done ? '✅ Completado' : fmtMoney(pending)}</div>
+                    <span class="dv2-chip">${pct}%</span>
                 </div>
-                <div style="font-size:11px;color:var(--text-muted)">pendiente por pagar</div>
+                <div style="font-size:11px;color:var(--text-muted)">${done ? `${l.paidCount}/${l.installments} cuotas pagadas` : 'pendiente por pagar'}</div>
                 <div class="dv2-progress" style="--dv2-accent:#8b5cf6"><div class="dv2-progress-fill" style="width:${pct}%"></div></div>
-                <div class="dv2-progress-meta"><span>Pagado: ${fmtMoney(l.financed - pending)} (${pct}%)</span><span>Último pago: ${loanLastDate(l)}</span></div>
-                <div class="dv2-wallet-foot" style="margin-top:10px">
-                    <span>${l.nextDate && l.paidCount < l.installments ? `<i class="fas fa-file-invoice-dollar" style="font-size:10px"></i> Próximo recibo: ${fmtDate(l.nextDate)}` : '✅ Completado'}</span>
-                    <span style="font-size:10.5px;color:var(--text-muted)">${escapeHtml(l.accountName || '')}</span>
-                </div>
-                <div class="dv2-collapse ${isOpen ? 'open' : ''}" id="dv2LoanCol-${l.id}">
-                    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:6px">Historial de cuotas</div>
-                    ${pays.map(p => `
-                        <div class="dv2-mov-line">
-                            <span class="dv2-mov-date">${fmtDate(p.date)}</span>
-                            <span style="flex:1">Cuota #${p.n}${p.planned ? ' <span class="dv2-note-flag">(programada)</span>' : ''}</span>
-                            <span class="dv2-neg">−${fmtMoney(p.amount)}</span>
-                        </div>`).join('') || '<div class="dv2-empty">Sin cuotas registradas</div>'}
-                    ${l.paidCount < l.installments ? `<button class="dv2-mini-btn" style="margin-top:8px;width:100%;justify-content:center" data-loanpay="${l.id}"><i class="fas fa-check"></i> Marcar cuota pagada</button>` : ''}
-                </div>
+                <div class="dv2-progress-meta"><span>Pagado: ${fmtMoney(l.financed - pending)}</span><span>Cubiertas: ${l.paidCount}/${l.installments}</span></div>
+                ${!done && l.nextDate ? `<div class="dv2-wallet-foot" style="margin-top:8px"><span><i class="fas fa-file-invoice-dollar" style="font-size:10px"></i> Próximo recibo: ${fmtDate(l.nextDate)}</span><span style="font-size:10.5px;color:var(--text-muted)">${escapeHtml(l.accountName || '')}</span></div>` : ''}
             </div>`;
         }).join('');
 
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.loans}">
-            ${sectionHead('loans', 'Préstamos y financiaciones', 'Cuotas activas', '+ Nuevo préstamo', 'dv2AddLoan')}
-            <div class="dv2-grid dv2-grid-wide">${cards || '<div class="dv2-empty">Sin préstamos activos</div>'}</div>
+            ${sectionHead('loans', 'Préstamos y financiaciones', viewFilters.loanStatus === 'completed' ? 'Historial cerrado' : 'Cuotas activas', '+ Nuevo préstamo', 'dv2AddLoan')}
+            ${filterRowHtml('loanStatus', [{ v: 'active', l: 'Pendientes' }, { v: 'completed', l: 'Completados' }, { v: 'all', l: 'Todos' }])}
+            <div class="dv2-grid dv2-grid-wide">${cards || '<div class="dv2-empty">' + (viewFilters.loanStatus === 'active' ? 'Sin préstamos activos 🎉' : 'Nada con este filtro') + '</div>'}</div>
         </section>`;
     }
 
-    // ---------- Bloque 5 · Objetivos de ahorro ----------
+    // ---------- Chips de filtro reutilizables ----------
+    function filterRowHtml(key, opts, label) {
+        return `<div style="margin:-6px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)">Mostrar:</span>
+            <span class="dv2-filter-chips">${opts.map(o =>
+                `<button class="dv2-fchip ${viewFilters[key] === o.v ? 'sel' : ''}" data-${key}="${o.v}">${o.l}</button>`).join('')}</span>
+        </div>`;
+    }
+
+    // ---------- Bloque 5 · Objetivos de ahorro (tarjeta limpia; clic → modal; se conserva + Aportar) ----------
     function renderGoals() {
-        const cards = data.goals.map(g => {
+        const cards = data.goals.filter(goalMatchesFilter).map(g => {
             const pct = g.target ? Math.min(100, Math.round(g.saved / g.target * 100)) : null;
             const rem = goalRemaining(g);
-            const isOpen = expanded.goals.has(g.id);
-            const contribs = [...g.contributions].sort((a, b) => b.date.localeCompare(a.date));
             return `
-            <div class="dv2-card" style="--dv2-accent:#10b981">
+            <div class="dv2-card" style="--dv2-accent:#10b981;cursor:pointer" data-goal="${g.id}" title="Clic para ver aportaciones y editar">
                 <div class="dv2-wallet-top">
                     <span class="dv2-emoji">${g.emoji}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(g.name)}</div>
-                        <div style="font-size:10.5px;color:var(--text-muted)">${g.target != null ? `Meta: ${fmtMoney(g.target)}` : 'Sin meta fija'} · ${g.frequency !== 'none' ? periodLabel(g.frequency) : 'Sin frecuencia'}</div>
+                        <div style="font-size:10.5px;color:var(--text-muted)">${g.target != null ? `Meta: ${fmtMoney(g.target)}` : 'Sin meta fija'}</div>
                     </div>
-                    <button class="dv2-expand-btn ${isOpen ? 'open' : ''}" data-goalexp="${g.id}" title="Ver aportaciones"><i class="fas fa-chevron-down"></i></button>
+                    <span style="width:14px;height:14px;border-radius:5px;background:#10b981;box-shadow:0 0 0 3px color-mix(in srgb, #10b981 22%, transparent);flex-shrink:0" title="Color"></span>
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:baseline">
                     <div class="dv2-wallet-amt" style="color:#10b981">${fmtMoney(g.saved)}</div>
-                    ${g.target != null ? `<span class="dv2-chip">${pct}%</span>` : ''}
+                    ${pct != null ? `<span class="dv2-chip">${pct}%</span>` : ''}
                 </div>
                 ${g.target != null ? `
                 <div class="dv2-progress" style="--dv2-accent:#10b981"><div class="dv2-progress-fill" style="width:${pct}%"></div></div>
@@ -704,17 +798,8 @@ const DineroApp = (function () {
                 <div class="dv2-progress" style="--dv2-accent:#10b981"><div class="dv2-progress-fill" style="width:100%"></div></div>
                 <div class="dv2-progress-meta"><span>Ahorro libre</span><span>Fecha fin: —</span></div>`}
                 <div class="dv2-wallet-foot" style="margin-top:10px">
-                    <span>${g.frequency !== 'none' && g.nextDate ? `<i class="fas fa-clock" style="font-size:10px"></i> Próxima aportación: ${fmtDate(g.nextDate)} · ${fmtMoney(g.contribution)}` : '<span class="dv2-note-flag">Sin aportación programada</span>'}</span>
+                    <span>${g.frequency !== 'none' && g.nextDate ? `<i class="fas fa-clock" style="font-size:10px"></i> Próxima: ${fmtDate(g.nextDate)} · ${fmtMoney(g.contribution)}` : '<span class="dv2-note-flag">Sin aportación programada</span>'}</span>
                     <button class="dv2-mini-btn" data-goalcontrib="${g.id}"><i class="fas fa-plus"></i> Aportar</button>
-                </div>
-                <div class="dv2-collapse ${isOpen ? 'open' : ''}" id="dv2GoalCol-${g.id}">
-                    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:6px">Historial de aportaciones</div>
-                    ${contribs.map(c => `
-                        <div class="dv2-mov-line">
-                            <span class="dv2-mov-date">${fmtDate(c.date)}</span>
-                            <span style="flex:1">Aportación${c.planned ? ' <span class="dv2-note-flag">(programada)</span>' : ''}</span>
-                            <span class="dv2-pos">+${fmtMoney(c.amount)}</span>
-                        </div>`).join('') || '<div class="dv2-empty">Sin aportaciones todavía</div>'}
                 </div>
             </div>`;
         }).join('');
@@ -722,24 +807,22 @@ const DineroApp = (function () {
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.goals}">
             ${sectionHead('goals', 'Objetivos de ahorro', 'Metas con seguimiento', '+ Nuevo objetivo', 'dv2AddGoal')}
-            <div class="dv2-grid dv2-grid-wide">${cards || '<div class="dv2-empty">Sin objetivos creados</div>'}</div>
+            ${filterRowHtml('goalStatus', [{ v: 'dateActive', l: '📅 Fecha activa' }, { v: 'done', l: 'Completados' }, { v: 'all', l: 'Todos' }])}
+            <div class="dv2-grid dv2-grid-wide">${cards || '<div class="dv2-empty">' + (viewFilters.goalStatus === 'dateActive' ? 'Ningún objetivo con aportación programada (cambia el filtro para ver todos)' : 'Sin objetivos con este filtro') + '</div>'}</div>
         </section>`;
     }
 
-    // ---------- Bloque 6 · Pagos recurrentes ----------
+    // ---------- Bloque 6 · Pagos recurrentes (tarjeta limpia; clic → modal) ----------
     function renderRecurring() {
-        const cards = data.recurring.map(r => {
-            const isOpen = expanded.recurring.has(r.id);
-            const hist = [...r.history].sort((a, b) => b.date.localeCompare(a.date));
-            return `
-            <div class="dv2-card" style="--dv2-accent:#0ea5e9">
+        const cards = data.recurring.filter(recurringMatchesFilter).map(r => `
+            <div class="dv2-card" style="--dv2-accent:#0ea5e9;cursor:pointer" data-recurring="${r.id}" title="Clic para ver historial y editar">
                 <div class="dv2-wallet-top">
                     <span class="dv2-emoji">${r.emoji}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(r.name)}</div>
                         <div style="font-size:10.5px;color:var(--text-muted)">${periodLabel(r.period)} · ${escapeHtml(r.accountName || 'Sin cuenta')}</div>
                     </div>
-                    <button class="dv2-expand-btn ${isOpen ? 'open' : ''}" data-recexp="${r.id}" title="Ver historial"><i class="fas fa-chevron-down"></i></button>
+                    <span style="width:14px;height:14px;border-radius:5px;background:#0ea5e9;box-shadow:0 0 0 3px color-mix(in srgb, #0ea5e9 22%, transparent);flex-shrink:0" title="Color"></span>
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:center">
                     <div class="dv2-wallet-amt">${fmtMoney(r.amount)}</div>
@@ -747,24 +830,14 @@ const DineroApp = (function () {
                 </div>
                 <div class="dv2-wallet-foot" style="margin-top:8px">
                     <span>${r.active && r.nextDate ? `<i class="fas fa-calendar-check" style="font-size:10px"></i> Próximo cobro: ${fmtDate(r.nextDate)}` : r.active ? 'Sin fecha próxima' : '⏸ En pausa'}</span>
-                    <button class="dv2-mini-btn" data-recedit="${r.id}"><i class="fas fa-pen"></i> Editar</button>
                 </div>
-                <div class="dv2-collapse ${isOpen ? 'open' : ''}" id="dv2RecCol-${r.id}">
-                    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:6px">Pagos realizados</div>
-                    ${hist.map(h => `
-                        <div class="dv2-mov-line">
-                            <span class="dv2-mov-date">${fmtDate(h.date)}</span>
-                            <span style="flex:1">Cobro aplicado</span>
-                            <span class="dv2-neg">−${fmtMoney(h.amount)}</span>
-                        </div>`).join('') || '<div class="dv2-empty">Sin pagos pasados registrados</div>'}
-                </div>
-            </div>`;
-        }).join('');
+            </div>`).join('');
 
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.recurring}">
             ${sectionHead('recurring', 'Pagos recurrentes y suscripciones', 'Compromisos periódicos', '+ Nuevo pago', 'dv2AddRecurring')}
-            <div class="dv2-grid">${cards || '<div class="dv2-empty">Sin pagos recurrentes</div>'}</div>
+            ${filterRowHtml('recurringStatus', [{ v: 'active', l: '🟢 Activo' }, { v: 'paused', l: '⏸ Pausados' }, { v: 'all', l: 'Todos' }])}
+            <div class="dv2-grid">${cards || '<div class="dv2-empty">' + (viewFilters.recurringStatus === 'active' ? 'Sin pagos activos con este filtro' : 'Nada con este filtro') + '</div>'}</div>
         </section>`;
     }
 
@@ -815,18 +888,6 @@ const DineroApp = (function () {
                     }).join('') : '<div class="dv2-empty">No hay movimientos con estos filtros</div>'}
                 </div>
             </div>
-            <div class="dv2-card" style="--dv2-accent:${SECTION_COLORS.summary};padding:14px">
-                <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:8px"><i class="fas fa-bolt" style="color:var(--warning)"></i> Registro rápido</div>
-                <div style="display:flex;flex-direction:column;gap:8px">
-                    <input class="dv2-input" id="dv2QConcept" placeholder="Concepto (ej. Compra semanal)" maxlength="60">
-                    <div class="dv2-row2">
-                        <input class="dv2-input" id="dv2QAmount" type="number" step="0.01" min="0" placeholder="Importe €">
-                        <select class="dv2-select" id="dv2QType"><option value="out">Salida</option><option value="in">Entrada</option></select>
-                    </div>
-                    <select class="dv2-select" id="dv2QAccount">${data.accounts.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('')}</select>
-                    <button class="btn btn-primary" id="dv2QSave" style="justify-content:center"><i class="fas fa-plus"></i> Registrar movimiento</button>
-                </div>
-            </div>
         </section>`;
         bindRight(right);
     }
@@ -874,41 +935,52 @@ const DineroApp = (function () {
             saveData(); renderAll();
         });
 
-        // Monederos
+        // Monederos: clic en tarjeta → pantalla emergente (movimientos + datos a editar)
         left.querySelector('#dv2AddWallet')?.addEventListener('click', () => openWalletModal());
         left.querySelectorAll('[data-wallet]').forEach(el => {
+            el.addEventListener('click', () => openWalletDetailModal(el.dataset.wallet));
+        });
+
+        // Deudas: clic en tarjeta → emergente; filtro por estado
+        left.querySelector('#dv2AddDebt')?.addEventListener('click', () => openDebtModal());
+        left.querySelectorAll('[data-debt]').forEach(el => {
+            el.addEventListener('click', () => openDebtDetailModal(el.dataset.debt));
+        });
+        left.querySelectorAll('[data-debtstatus]').forEach(el => {
+            el.addEventListener('click', () => { viewFilters.debtStatus = el.dataset.debtstatus; renderLeft(); });
+        });
+        // Préstamos: clic en tarjeta → emergente; filtro pendientes/completados
+        left.querySelector('#dv2AddLoan')?.addEventListener('click', () => openLoanModal());
+        left.querySelectorAll('[data-loan]').forEach(el => {
+            el.addEventListener('click', () => openLoanDetailModal(el.dataset.loan));
+        });
+        left.querySelectorAll('[data-loanstatus]').forEach(el => {
+            el.addEventListener('click', () => { viewFilters.loanStatus = el.dataset.loanstatus; renderLeft(); });
+        });
+
+        // Objetivos: clic en tarjeta → emergente; se conserva "+ Aportar" directo
+        left.querySelector('#dv2AddGoal')?.addEventListener('click', () => openGoalModal());
+        left.querySelectorAll('[data-goalstatus]').forEach(el => {
+            el.addEventListener('click', () => { viewFilters.goalStatus = el.dataset.goalstatus; renderLeft(); });
+        });
+        left.querySelectorAll('[data-goal]').forEach(el => {
             el.addEventListener('click', (e) => {
-                if (e.target.closest('[data-wedit]')) return;
-                const id = el.dataset.wallet;
-                expanded.wallets.has(id) ? expanded.wallets.delete(id) : expanded.wallets.add(id);
-                el.classList.toggle('open', expanded.wallets.has(id));
-                const chev = el.querySelector('.dv2-wallet-foot i');
-                if (chev) chev.style.transform = expanded.wallets.has(id) ? 'rotate(180deg)' : '';
+                if (e.target.closest('[data-goalcontrib]')) return;
+                openGoalDetailModal(el.dataset.goal);
             });
         });
-        left.querySelectorAll('[data-wedit]').forEach(el => {
-            el.addEventListener('click', (e) => { e.stopPropagation(); openWalletModal(el.dataset.wedit); });
+        left.querySelectorAll('[data-goalcontrib]').forEach(el => {
+            el.addEventListener('click', (e) => { e.stopPropagation(); openContributionModal(el.dataset.goalcontrib); });
         });
 
-        // Deudas
-        left.querySelector('#dv2AddDebt')?.addEventListener('click', () => openDebtModal());
-        left.querySelectorAll('[data-dedit]').forEach(el => el.addEventListener('click', () => openDebtModal(el.dataset.dedit)));
-        left.querySelectorAll('[data-dpay]').forEach(el => el.addEventListener('click', () => openDebtPaymentModal(el.dataset.dpay)));
-
-        // Préstamos
-        left.querySelector('#dv2AddLoan')?.addEventListener('click', () => openLoanModal());
-        left.querySelectorAll('[data-loanexp]').forEach(el => el.addEventListener('click', () => toggleCollapse(el, 'loans', el.dataset.loanexp, `dv2LoanCol-${el.dataset.loanexp}`)));
-        left.querySelectorAll('[data-loanpay]').forEach(el => el.addEventListener('click', () => payLoanInstallment(el.dataset.loanpay)));
-
-        // Objetivos
-        left.querySelector('#dv2AddGoal')?.addEventListener('click', () => openGoalModal());
-        left.querySelectorAll('[data-goalexp]').forEach(el => el.addEventListener('click', () => toggleCollapse(el, 'goals', el.dataset.goalexp, `dv2GoalCol-${el.dataset.goalexp}`)));
-        left.querySelectorAll('[data-goalcontrib]').forEach(el => el.addEventListener('click', () => openContributionModal(el.dataset.goalcontrib)));
-
-        // Recurrentes
+        // Recurrentes: clic en tarjeta → emergente; filtro activo/pausado
         left.querySelector('#dv2AddRecurring')?.addEventListener('click', () => openRecurringModal());
-        left.querySelectorAll('[data-recexp]').forEach(el => el.addEventListener('click', () => toggleCollapse(el, 'recurring', el.dataset.recexp, `dv2RecCol-${el.dataset.recexp}`)));
-        left.querySelectorAll('[data-recedit]').forEach(el => el.addEventListener('click', () => openRecurringModal(el.dataset.recedit)));
+        left.querySelectorAll('[data-recurringstatus]').forEach(el => {
+            el.addEventListener('click', () => { viewFilters.recurringStatus = el.dataset.recurringstatus; renderLeft(); });
+        });
+        left.querySelectorAll('[data-recurring]').forEach(el => {
+            el.addEventListener('click', () => openRecurringDetailModal(el.dataset.recurring));
+        });
     }
 
     function toggleCollapse(btn, setKey, id, collapseId) {
@@ -925,17 +997,6 @@ const DineroApp = (function () {
         right.querySelector('#dv2HFType')?.addEventListener('change', (e) => { histFilter.type = e.target.value; renderRight(); });
         right.querySelector('#dv2HFFrom')?.addEventListener('change', (e) => { histFilter.from = e.target.value; renderRight(); });
         right.querySelector('#dv2HFTo')?.addEventListener('change', (e) => { histFilter.to = e.target.value; renderRight(); });
-        right.querySelector('#dv2QSave')?.addEventListener('click', () => {
-            const concept = right.querySelector('#dv2QConcept').value.trim();
-            const amount = parseFloat(right.querySelector('#dv2QAmount').value);
-            const type = right.querySelector('#dv2QType').value;
-            const accountId = right.querySelector('#dv2QAccount').value;
-            if (!concept || isNaN(amount) || amount <= 0) { toast('Introduce un concepto y un importe válido', 'error'); return; }
-            registerMovement({ date: TODAY_ISO, concept, amount: type === 'out' ? -amount : amount, type, accountId, link: null });
-            right.querySelector('#dv2QConcept').value = '';
-            right.querySelector('#dv2QAmount').value = '';
-            toast('Movimiento registrado');
-        });
     }
 
     // =========================================================
@@ -945,6 +1006,7 @@ const DineroApp = (function () {
     // =========================================================
     function registerMovement(m) {
         const mv = { id: uid('mv'), date: m.date || TODAY_ISO, concept: m.concept, amount: m.amount, type: m.type, accountId: m.accountId || null, link: m.link || null };
+        if (m.currency === 'USD') { mv.currency = 'USD'; mv.eurEquivalent = round2(m.amount / eurUsdRate); }
         data.movements.unshift(mv);
         // Efecto sobre el saldo real (no en transferencias dobles: cada lado ajusta su cuenta)
         const acc = data.accounts.find(a => a.id === mv.accountId);
@@ -1126,6 +1188,27 @@ const DineroApp = (function () {
         });
     }
 
+    // ---------- Helpers para pantallas emergentes de detalle ----------
+    function entityActionsRow(items) {
+        return `<div class="dv2-actions-row">${items.map(a =>
+            `<button class="dv2-act-btn ${a.cls || ''}" data-act="${a.id}"><i class="fas ${a.icon}"></i> ${a.label}</button>`).join('')}</div>`;
+    }
+    function bindEntityActions(body, handlers) {
+        body.querySelectorAll('[data-act]').forEach(btn => {
+            const fn = handlers[btn.dataset.act];
+            if (fn) btn.addEventListener('click', () => fn(btn));
+        });
+    }
+    function detailMovList(movs, opts = {}) {
+        if (!movs.length) return '<div class="dv2-empty">Todavía no hay movimientos registrados</div>';
+        return movs.map(m => `
+            <div class="dv2-mov-line">
+                <span class="dv2-mov-date">${fmtDate(m.date)}</span>
+                <span style="flex:1">${escapeHtml(m.concept || m.note || opts.defaultConcept || '—')}${m.planned ? ' <span class="dv2-note-flag">(programada)</span>' : ''}</span>
+                <span class="${(m.type === 'out' || (opts.negAll && m.amount > 0)) ? 'dv2-neg' : 'dv2-pos'}">${(m.type === 'out' || (opts.negAll && m.amount > 0)) ? '−' : '+'}${fmtAmount(Math.abs(m.amount), m.currency)}</span>
+            </div>`).join('');
+    }
+
     // ---------- Monederos ----------
     function openWalletModal(editId) {
         const w = editId ? data.wallets.find(x => x.id === editId) : null;
@@ -1187,6 +1270,271 @@ const DineroApp = (function () {
             body.querySelector('#dv2WIn').onclick = () => apply('in');
             body.querySelector('#dv2WOut').onclick = () => apply('out');
         }
+    }
+
+    // =========================================================
+    // PANTALLAS EMERGENTES DE DETALLE (deudas, préstamos, objetivos, recurrentes)
+    // Mismo patrón que openWalletDetailModal: datos editables + movimientos.
+    // =========================================================
+
+    // ---------- Deuda / devolución ----------
+    function openDebtDetailModal(id) {
+        const d = data.debts.find(x => x.id === id); if (!d) return;
+        const col = d.kind === 'pay' ? '#ef4444' : '#0ea5e9';
+        const st = debtStatus(d);
+        const pct = d.total ? Math.min(100, Math.round(d.returned / d.total * 100)) : 0;
+        const remaining = Math.max(0, d.total - d.returned);
+        const kindLabel = d.kind === 'pay' ? 'a devolver' : 'a cobrar';
+        const movs = [...(d.history || [])].sort((a, b) => b.date.localeCompare(a.date));
+        const body = openModal(
+            `<span class="dv2-badge" style="background:${col}">${d.emoji}</span> ${escapeHtml(d.name)} · deuda ${kindLabel}`,
+            col,
+            `
+            <div class="dv2-wallet-amt" style="color:${col};margin-bottom:6px">${fmtMoney(d.total)}</div>
+            <div class="dv2-progress" style="--dv2-accent:${col}"><div class="dv2-progress-fill" style="width:${pct}%"></div></div>
+            <div class="dv2-progress-meta"><span>Cubierto: ${fmtMoney(d.returned)} (${pct}%)</span><span>Restante: ${fmtMoney(remaining)}</span></div>
+            <div class="dv2-data-grid">
+                <div class="dv2-data-item"><span>Tipo</span><strong>${kindLabel}</strong></div>
+                <div class="dv2-data-item"><span>Contraparte</span><strong>${escapeHtml(d.counterparty || '—')}</strong></div>
+                <div class="dv2-data-item"><span>Fecha estimada</span><strong>${d.dueDate ? fmtDate(d.dueDate) : 'Sin fecha'}</strong></div>
+                <div class="dv2-data-item"><span>Estado</span><strong>${st === 'done' ? '✅ Completado' : st === 'partial' ? '🟡 Parcial' : '🔴 Pendiente'}</strong></div>
+            </div>
+            ${d.note ? `<div style="font-size:12px;color:var(--text-secondary);margin:2px 0 8px">📝 ${escapeHtml(d.note)}</div>` : ''}
+            ${entityActionsRow([
+                { id: 'pay', icon: 'fa-hand-holding-dollar', label: 'Registrar devolución', cls: remaining > 0 ? '' : '' },
+                { id: 'edit', icon: 'fa-pen', label: 'Editar subcategoría' }
+            ])}
+            <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin:12px 0 6px">Movimientos (${movs.length})</div>
+            ${detailMovList(movs.map(h => ({ date: h.date, concept: h.note || 'Devolución', amount: h.amount, type: d.kind === 'pay' ? 'in' : 'out' })), { defaultConcept: 'Devolución' })}`,
+            `<button class="dv2-danger-link" id="dv2DDLDel">Eliminar deuda</button><button class="btn btn-secondary" id="dv2DDLClose">Cerrar</button>`
+        );
+        bindEntityActions(body, {
+            pay: () => openDebtPaymentModal(d.id),
+            edit: () => openDebtModal(d.id)
+        });
+        body.parentElement.querySelector('#dv2DDLClose').onclick = closeModal;
+        body.parentElement.querySelector('#dv2DDLDel').onclick = () => confirmDelete(`¿Eliminar «${d.name}»? Su historial de devoluciones se borra.`, () => {
+            data.debts = data.debts.filter(x => x.id !== d.id);
+            saveData(); closeModal(); renderAll(); toast('Deuda eliminada');
+        });
+    }
+
+    // ---------- Préstamo / financiación ----------
+    function openLoanDetailModal(id) {
+        const l = data.loans.find(x => x.id === id); if (!l) return;
+        const pending = loanPending(l);
+        const done = l.paidCount >= l.installments;
+        const pct = l.installments ? Math.round(l.paidCount / l.installments * 100) : 0;
+        const movs = [...(l.payments || [])].sort((a, b) => b.date.localeCompare(a.date));
+        const body = openModal(
+            `<span class="dv2-badge" style="background:#8b5cf6">${l.emoji}</span> ${escapeHtml(l.name)} · préstamo`,
+            '#8b5cf6',
+            `
+            <div class="dv2-wallet-amt" style="color:${done ? 'var(--success)' : 'var(--danger)'};margin-bottom:6px">${done ? '✅ Completado' : fmtMoney(pending) + ' pendientes'}</div>
+            <div class="dv2-progress" style="--dv2-accent:#8b5cf6"><div class="dv2-progress-fill" style="width:${pct}%"></div></div>
+            <div class="dv2-progress-meta"><span>Pagado: ${fmtMoney(l.financed - pending)}</span><span>Cubiertas: ${l.paidCount}/${l.installments} (${pct}%)</span></div>
+            <div class="dv2-data-grid">
+                <div class="dv2-data-item"><span>Total financiado</span><strong>${fmtMoney(l.financed)}</strong></div>
+                <div class="dv2-data-item"><span>Por cuota</span><strong>${fmtMoney(l.installmentAmount)}</strong></div>
+                <div class="dv2-data-item"><span>Próximo recibo</span><strong>${l.nextDate && !done ? fmtDate(l.nextDate) : '—'}</strong></div>
+                <div class="dv2-data-item"><span>Cuenta asociada</span><strong>${escapeHtml(l.accountName || '—')}</strong></div>
+            </div>
+            ${entityActionsRow([
+                ...(done ? [] : [{ id: 'pay', icon: 'fa-check', label: `Pagar cuota #${l.paidCount + 1} (${fmtMoney(l.installmentAmount)})`, cls: 'neg' }]),
+                { id: 'edit', icon: 'fa-pen', label: 'Editar préstamo' }
+            ])}
+            <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin:12px 0 6px">Cuotas registradas (${movs.length})</div>
+            ${detailMovList(movs.map(p => ({ date: p.date, concept: `Cuota #${p.n}`, amount: p.amount, type: 'out', planned: p.planned })), { negAll: true, defaultConcept: 'Cuota' })}`,
+            `<button class="dv2-danger-link" id="dv2LDLDel">Eliminar préstamo</button><button class="btn btn-secondary" id="dv2LDLClose">Cerrar</button>`
+        );
+        bindEntityActions(body, {
+            pay: () => { payLoanInstallment(l.id); openLoanDetailModal(l.id); },
+            edit: () => openLoanModal(l.id)
+        });
+        body.parentElement.querySelector('#dv2LDLClose').onclick = closeModal;
+        body.parentElement.querySelector('#dv2LDLDel').onclick = () => confirmDelete(`¿Eliminar el préstamo «${l.name}»?`, () => {
+            data.loans = data.loans.filter(x => x.id !== l.id);
+            saveData(); closeModal(); renderAll(); toast('Préstamo eliminado');
+        });
+    }
+
+    // ---------- Objetivo de ahorro ----------
+    function openGoalDetailModal(id) {
+        const g = data.goals.find(x => x.id === id); if (!g) return;
+        const pct = g.target ? Math.min(100, Math.round(g.saved / g.target * 100)) : null;
+        const rem = goalRemaining(g);
+        const movs = [...(g.contributions || [])].sort((a, b) => b.date.localeCompare(a.date));
+        const body = openModal(
+            `<span class="dv2-badge" style="background:#10b981">${g.emoji}</span> ${escapeHtml(g.name)} · objetivo de ahorro`,
+            '#10b981',
+            `
+            <div class="dv2-wallet-amt" style="color:#10b981;margin-bottom:6px">${fmtMoney(g.saved)}</div>
+            ${g.target != null ? `
+            <div class="dv2-progress" style="--dv2-accent:#10b981"><div class="dv2-progress-fill" style="width:${pct}%"></div></div>
+            <div class="dv2-progress-meta"><span>Faltan: ${fmtMoney(rem)}</span><span>Progreso: ${pct}%</span></div>` : ''}
+            <div class="dv2-data-grid">
+                <div class="dv2-data-item"><span>Meta</span><strong>${g.target != null ? fmtMoney(g.target) : 'Sin meta fija'}</strong></div>
+                <div class="dv2-data-item"><span>Aportación</span><strong>${g.frequency !== 'none' && g.contribution ? `${fmtMoney(g.contribution)} · ${periodLabel(g.frequency)}` : 'Sin programar'}</strong></div>
+                <div class="dv2-data-item"><span>Próxima fecha</span><strong>${g.nextDate ? fmtDate(g.nextDate) : '—'}</strong></div>
+                <div class="dv2-data-item"><span>Fin estimado</span><strong>${goalFinishDate(g) || '—'}</strong></div>
+            </div>
+            ${entityActionsRow([
+                { id: 'contrib', icon: 'fa-plus', label: 'Aportar', cls: 'pos' },
+                { id: 'edit', icon: 'fa-pen', label: 'Editar objetivo' }
+            ])}
+            <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin:12px 0 6px">Aportaciones (${movs.length})</div>
+            ${detailMovList(movs.map(c => ({ date: c.date, concept: 'Aportación', amount: c.amount, type: 'in', planned: c.planned })), { defaultConcept: 'Aportación' })}`,
+            `<button class="dv2-danger-link" id="dv2GDLDel">Eliminar objetivo</button><button class="btn btn-secondary" id="dv2GDLClose">Cerrar</button>`
+        );
+        bindEntityActions(body, {
+            contrib: () => openContributionModal(g.id),
+            edit: () => openGoalModal(g.id)
+        });
+        body.parentElement.querySelector('#dv2GDLClose').onclick = closeModal;
+        body.parentElement.querySelector('#dv2GDLDel').onclick = () => confirmDelete(`¿Eliminar el objetivo «${g.name}» con ${fmtMoney(g.saved)} ahorrados?`, () => {
+            data.goals = data.goals.filter(x => x.id !== g.id);
+            saveData(); closeModal(); renderAll(); toast('Objetivo eliminado');
+        });
+    }
+
+    // ---------- Pago recurrente ----------
+    function openRecurringDetailModal(id) {
+        const r = data.recurring.find(x => x.id === id); if (!r) return;
+        const movs = [...(r.history || [])].sort((a, b) => b.date.localeCompare(a.date));
+        const body = openModal(
+            `<span class="dv2-badge" style="background:#0ea5e9">${r.emoji}</span> ${escapeHtml(r.name)} · pago recurrente`,
+            '#0ea5e9',
+            `
+            <div class="dv2-wallet-amt" style="color:#0ea5e9;margin-bottom:6px">${fmtMoney(r.amount)} <span style="font-size:13px;color:var(--text-muted)">/ ${String(periodLabel(r.period)).toLowerCase()}</span></div>
+            <div class="dv2-data-grid">
+                <div class="dv2-data-item"><span>Estado</span><strong>${r.active ? '🟢 Activo' : '⏸ Pausado'}</strong></div>
+                <div class="dv2-data-item"><span>Próximo cobro</span><strong>${r.active && r.nextDate ? fmtDate(r.nextDate) : '—'}</strong></div>
+                <div class="dv2-data-item"><span>Cuenta asociada</span><strong>${escapeHtml(r.accountName || '—')}</strong></div>
+                <div class="dv2-data-item"><span>Total histórico</span><strong>${fmtMoney(movs.reduce((s, m) => s + Math.abs(m.amount), 0))}</strong></div>
+            </div>
+            ${entityActionsRow([
+                ...(r.active && r.nextDate ? [{ id: 'charge', icon: 'fa-bolt', label: `Marcar cobrado hoy (${fmtMoney(r.amount)})`, cls: 'neg' }] : []),
+                { id: 'pause', icon: r.active ? 'fa-pause' : 'fa-play', label: r.active ? 'Pausar' : 'Reactivar' },
+                { id: 'edit', icon: 'fa-pen', label: 'Editar pago' }
+            ])}
+            <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin:12px 0 6px">Historial de cobros (${movs.length})</div>
+            ${detailMovList(movs.map(h => ({ date: h.date, concept: h.note || `Cobro de ${r.name}`, amount: h.amount, type: 'out' })), { negAll: true, defaultConcept: 'Cobro' })}`,
+            `<button class="dv2-danger-link" id="dv2RDLDel">Eliminar pago</button><button class="btn btn-secondary" id="dv2RDLClose">Cerrar</button>`
+        );
+        bindEntityActions(body, {
+            charge: () => {
+                r.history.push({ id: uid('rh'), date: TODAY_ISO, amount: r.amount, note: 'Cobro registrado manualmente' });
+                const acc = data.accounts.find(a => a.name === r.accountName);
+                if (acc) registerMovement({ date: TODAY_ISO, concept: r.name, amount: -r.amount, type: 'out', accountId: acc.id, link: { kind: 'recurring', id: r.id } });
+                else { saveData(); renderAll(); }
+                if (r.nextDate) {
+                    const stepDays = r.period === 'weekly' ? 7 : r.period === 'quarterly' ? 91 : r.period === 'semiannual' ? 182 : r.period === 'annual' ? 365 : 30;
+                    let nd = r.nextDate; while (nd <= TODAY_ISO) nd = addDays(nd, stepDays);
+                    r.nextDate = nd; saveData();
+                }
+                toast(`Cobro de ${r.name} registrado`);
+                openRecurringDetailModal(r.id);
+            },
+            pause: () => {
+                r.active = !r.active;
+                saveData(); renderAll(); toast(r.active ? 'Pago reactivado' : 'Pago en pausa');
+                openRecurringDetailModal(r.id);
+            },
+            edit: () => openRecurringModal(r.id)
+        });
+        body.parentElement.querySelector('#dv2RDLClose').onclick = closeModal;
+        body.parentElement.querySelector('#dv2RDLDel').onclick = () => confirmDelete(`¿Eliminar el pago recurrente «${r.name}»?`, () => {
+            data.recurring = data.recurring.filter(x => x.id !== r.id);
+            saveData(); closeModal(); renderAll(); toast('Pago eliminado');
+        });
+    }
+
+    // ---------- Pantalla emergente de detalle (clic en tarjeta) ----------
+    function openWalletDetailModal(id) {
+        const w = data.wallets.find(x => x.id === id); if (!w) return;
+        const movs = [...w.movements].sort((a, b) => b.date.localeCompare(a.date));
+        const body = openModal(
+            `<span class="dv2-badge" style="background:${w.color}">${w.emoji}</span> ${escapeHtml(w.name)} · monedero virtual`,
+            w.color,
+            `
+            <div class="dv2-wallet-amt" style="color:${w.color};margin-bottom:8px">${fmtMoney(walletBalance(w))}</div>
+            ${entityActionsRow([
+                { id: 'in', icon: 'fa-plus', label: 'Ingreso', cls: 'pos' },
+                { id: 'out', icon: 'fa-minus', label: 'Gasto', cls: 'neg' },
+                { id: 'transfer', icon: 'fa-right-left', label: 'Transferir a otro monedero' },
+                { id: 'edit', icon: 'fa-pen', label: 'Editar subcategoría' }
+            ])}
+            <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin:12px 0 6px">Movimientos (${movs.length})</div>
+            ${detailMovList(movs)}`,
+            `<button class="dv2-danger-link" id="dv2WDDel">Eliminar monedero</button><button class="btn btn-secondary" id="dv2WDClose">Cerrar</button>`
+        );
+        bindEntityActions(body, {
+            in: () => quickWalletMove(w, 'in'),
+            out: () => quickWalletMove(w, 'out'),
+            transfer: () => openWalletTransferModal(w),
+            edit: () => openWalletModal(w.id)
+        });
+        body.parentElement.querySelector('#dv2WDClose').onclick = closeModal;
+        body.parentElement.querySelector('#dv2WDDel').onclick = () => confirmDelete(`¿Eliminar el monedero «${w.name}»? Sus movimientos internos se borran (el saldo real no cambia).`, () => {
+            data.wallets = data.wallets.filter(x => x.id !== w.id);
+            saveData(); closeModal(); renderAll(); toast('Monedero eliminado');
+        });
+    }
+
+    function quickWalletMove(w, dir) {
+        const isOut = dir === 'out';
+        const bal = walletBalance(w);
+        const body = openModal(
+            `<span class="dv2-badge" style="background:${w.color}">${w.emoji}</span> ${isOut ? 'Gasto' : 'Ingreso'} · ${escapeHtml(w.name)}`,
+            w.color,
+            `
+            ${f('qw1', 'Importe (€)', inp('dv2QWAmt', { type: 'number', step: '0.01', min: '0', placeholder: '0,00' }))}
+            ${f('qw2', 'Concepto', inp('dv2QWCon', { placeholder: isOut ? 'Ej. Compra semanal' : 'Ej. Aportación' }))}
+            ${f('qw3', 'Fecha', inp('dv2QWDate', { type: 'date', value: TODAY_ISO }))}`,
+            `<button class="btn btn-secondary" id="dv2QWCancel">Cancelar</button><button class="btn btn-primary" id="dv2QWSave"><i class="fas fa-check"></i> Registrar</button>`
+        );
+        body.parentElement.querySelector('#dv2QWCancel').onclick = () => openWalletDetailModal(w.id);
+        body.parentElement.querySelector('#dv2QWSave').onclick = () => {
+            const amount = round2(parseFloat(body.querySelector('#dv2QWAmt').value));
+            const concept = body.querySelector('#dv2QWCon').value.trim() || (isOut ? 'Gasto' : 'Ingreso');
+            const date = body.querySelector('#dv2QWDate').value || TODAY_ISO;
+            if (isNaN(amount) || amount <= 0) { toast('Importe no válido', 'error'); return; }
+            if (isOut && amount > bal) { toast(`El monedero solo tiene ${fmtMoney(bal)}`, 'error'); return; }
+            w.movements.push({ id: uid('wm'), date, concept, amount, type: isOut ? 'out' : 'in' });
+            saveData();
+            toast(isOut ? 'Gasto registrado en el monedero' : 'Ingreso registrado en el monedero');
+            openWalletDetailModal(w.id);
+        };
+    }
+
+    function openWalletTransferModal(fromW) {
+        const others = data.wallets.filter(x => x.id !== fromW.id);
+        if (!others.length) { toast('No hay otro monedero al que transferir', 'error'); return; }
+        const bal = walletBalance(fromW);
+        const body = openModal(
+            `<span class="dv2-badge" style="background:${fromW.color}">${fromW.emoji}</span> Transferir desde «${escapeHtml(fromW.name)}»`,
+            fromW.color,
+            `
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px">Disponible en el monedero: <strong>${fmtMoney(bal)}</strong></div>
+            ${f('wt1', 'Monedero destino', sel('dv2WTTo', others.map(x => ({ v: x.id, l: `${x.emoji} ${x.name}` })), others[0].id))}
+            ${f('wt2', 'Importe (€)', inp('dv2WTAmt', { type: 'number', step: '0.01', min: '0', max: bal }))}
+            ${f('wt3', 'Nota', inp('dv2WTNote', { placeholder: 'Ej. Redistribución de octubre' }))}`,
+            `<button class="btn btn-secondary" id="dv2WTCancel">Cancelar</button><button class="btn btn-primary" id="dv2WTSave"><i class="fas fa-right-left"></i> Transferir</button>`
+        );
+        body.parentElement.querySelector('#dv2WTCancel').onclick = () => openWalletDetailModal(fromW.id);
+        body.parentElement.querySelector('#dv2WTSave').onclick = () => {
+            const toId = body.querySelector('#dv2WTTo').value;
+            const amt = round2(parseFloat(body.querySelector('#dv2WTAmt').value));
+            const note = body.querySelector('#dv2WTNote').value.trim() || 'Transferencia entre monederos';
+            if (isNaN(amt) || amt <= 0) { toast('Importe no válido', 'error'); return; }
+            if (amt > bal) { toast('No hay suficiente saldo en el monedero origen', 'error'); return; }
+            const to = data.wallets.find(x => x.id === toId); if (!to) return;
+            fromW.movements.push({ id: uid('wm'), date: TODAY_ISO, concept: `→ ${to.name}: ${note}`, amount: amt, type: 'out' });
+            to.movements.push({ id: uid('wm'), date: TODAY_ISO, concept: `← ${fromW.name}: ${note}`, amount: amt, type: 'in' });
+            saveData();
+            toast(`Transferidos ${fmtMoney(amt)} a ${to.name}`);
+            openWalletDetailModal(fromW.id);
+        };
     }
 
     // ---------- Deudas ----------
@@ -1486,28 +1834,37 @@ const DineroApp = (function () {
             { v: '__d', l: '▸ Deudas' },
             ...data.debts.filter(d => debtStatus(d) !== 'done').map(d => ({ v: 'debt:' + d.id, l: `   ${d.emoji} ${d.name}` }))
         ];
+        const fxNote = () => `<div id="dv2Mfx" style="font-size:11.5px;color:var(--text-muted);margin-top:-6px">💱 1 USD ≈ ${eurUsdRate.toFixed(4)} EUR${fxUpdatedAt ? ' · actualizado ' + fmtDate(fxUpdatedAt) : ' (valor de referencia)'}</div>`;
         const body = openModal(
             '<span class="dv2-badge" style="background:#64748b">↕️</span> Nuevo movimiento',
             '#64748b',
             `
             ${f('fm1', 'Concepto', inp('dv2MConcept', { placeholder: 'Ej. Compra semanal' }))}
             <div class="dv2-row2">
-                ${f('fm2', 'Importe (€)', inp('dv2MAmt', { type: 'number', step: '0.01', min: '0' }))}
-                ${f('fm3', 'Fecha', inp('dv2MDate', { type: 'date', value: TODAY_ISO }))}
+                ${f('fm2', 'Importe', inp('dv2MAmt', { type: 'number', step: '0.01', min: '0' }))}
+                ${f('fm2b', 'Divisa', sel('dv2MCur', [{ v: 'EUR', l: '€ Euro' }, { v: 'USD', l: '$ Dólar (EE. UU.)' }], 'EUR'))}
             </div>
+            ${fxNote()}
             <div class="dv2-row2">
+                ${f('fm3', 'Fecha', inp('dv2MDate', { type: 'date', value: TODAY_ISO }))}
                 ${f('fm4', 'Tipo', sel('dv2MType', types, 'out'))}
-                ${f('fm5', 'Cuenta', sel('dv2MAcc', data.accounts.map(a => ({ v: a.id, l: `${a.icon} ${a.name}` })), (data.accounts[0] || {}).id))}
             </div>
+            ${f('fm5', 'Cuenta', sel('dv2MAcc', data.accounts.map(a => ({ v: a.id, l: `${a.icon} ${a.name}` })), (data.accounts[0] || {}).id))}
             ${f('fm6', 'Vincular a (opcional)', sel('dv2MLink', linkOpts, ''))}`,
             `<button class="btn btn-secondary" id="dv2MCancel">Cancelar</button><button class="btn btn-primary" id="dv2MSave"><i class="fas fa-plus"></i> Registrar</button>`
         );
+        // Al elegir USD se muestra la conversión automática con el cambio actual
+        body.querySelector('#dv2MCur').addEventListener('change', () => updateFxHint(body));
+        body.querySelector('#dv2MAmt').addEventListener('input', () => updateFxHint(body));
         body.parentElement.querySelector('#dv2MCancel').onclick = closeModal;
         body.parentElement.querySelector('#dv2MSave').onclick = () => {
             const concept = body.querySelector('#dv2MConcept').value.trim();
-            const amount = round2(parseFloat(body.querySelector('#dv2MAmt').value));
+            const rawAmount = round2(parseFloat(body.querySelector('#dv2MAmt').value));
             const type = body.querySelector('#dv2MType').value;
-            if (!concept || isNaN(amount) || amount <= 0) { toast('Concepto e importe válidos requeridos', 'error'); return; }
+            const currency = body.querySelector('#dv2MCur').value;
+            if (!concept || isNaN(rawAmount) || rawAmount <= 0) { toast('Concepto e importe válidos requeridos', 'error'); return; }
+            // El núcleo financiero trabaja en EUR: los USD se convierten con el cambio vivo
+            const amount = currency === 'USD' ? round2(rawAmount / eurUsdRate) : rawAmount;
             const signed = type === 'in' || type === 'transfer-in' ? amount : -amount;
             const linkVal = body.querySelector('#dv2MLink').value;
             let link = null;
@@ -1523,9 +1880,21 @@ const DineroApp = (function () {
                     if (g && signed < 0) { g.saved = round2(g.saved + amount); g.contributions.push({ id: uid('gc'), date: body.querySelector('#dv2MDate').value, amount }); }
                 }
             }
-            registerMovement({ date: body.querySelector('#dv2MDate').value, concept, amount: signed, type, accountId: body.querySelector('#dv2MAcc').value, link });
-            closeModal(); toast('Movimiento registrado');
+            registerMovement({ date: body.querySelector('#dv2MDate').value, concept, amount: signed, type, accountId: body.querySelector('#dv2MAcc').value, link, currency });
+            closeModal(); toast(currency === 'USD' ? `Movimiento registrado (${fmtAmount(rawAmount, 'USD')} → ${fmtMoney(amount)})` : 'Movimiento registrado');
         };
+    }
+    function updateFxHint(body) {
+        const hint = body.querySelector('#dv2Mfx');
+        const cur = body.querySelector('#dv2MCur').value;
+        const amt = parseFloat(body.querySelector('#dv2MAmt').value);
+        if (cur === 'USD' && !isNaN(amt) && amt > 0) {
+            hint.innerHTML = `💱 ${fmtAmount(amt, 'USD')} ≈ <strong>${fmtMoney(round2(amt / eurUsdRate))}</strong> al cambio actual (1 USD = ${eurUsdRate.toFixed(4)} EUR)`;
+        } else if (cur === 'USD') {
+            hint.innerHTML = `💱 1 USD ≈ ${eurUsdRate.toFixed(4)} EUR · se convertirá automáticamente al registrar`;
+        } else {
+            hint.innerHTML = `💱 1 USD ≈ ${eurUsdRate.toFixed(4)} EUR${fxUpdatedAt ? ' · actualizado ' + fmtDate(fxUpdatedAt) : ' (valor de referencia)'}`;
+        }
     }
 
     // ---------- Confirmación / Toast ----------
@@ -1547,11 +1916,8 @@ const DineroApp = (function () {
     // INIT / API
     // =========================================================
     function init() {
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.dv2-wallet')) {
-                // mantener abiertos: no cerramos automáticamente para no perder contexto
-            }
-        });
+        // Cargar el tipo de cambio EUR→USD en vivo al iniciar la sección
+        loadFxRate();
     }
     function onThemeChange() { /* CSS variables: hereda el tema automáticamente */ }
 

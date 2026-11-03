@@ -185,7 +185,7 @@ const TripsApp = (function () {
                 background: var(--bg-card); color: var(--text);
                 font-size: 13px; cursor: pointer;
                 appearance: none;
-                background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+                background-image: url("image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
                 background-repeat: no-repeat;
                 background-position: right 10px center;
                 font-family: inherit;
@@ -502,6 +502,136 @@ const TripsApp = (function () {
             }
             .trips-mobile-card-row .lbl { color: var(--text-muted); }
             .trips-mobile-card-row .val { font-weight: 500; }
+
+            /* ==== Imagen de destino en tarjetas ==== */
+            .trip-card-banner.has-img { background-size: cover; background-position: center; }
+            .trip-card-days-left {
+                position: absolute; top: 10px; right: 10px; z-index: 1;
+                background: rgba(0,0,0,0.62); color: #fff;
+                font-size: 11px; font-weight: 700;
+                padding: 4px 9px; border-radius: 999px;
+                backdrop-filter: blur(3px);
+            }
+
+            /* ==== Acordeón de categorías con pagos parciales ==== */
+            .trips-accordion { display: flex; flex-direction: column; gap: 10px; }
+            .trips-cat-item {
+                background: var(--bg-card);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                overflow: hidden;
+            }
+            .trips-cat-head {
+                display: flex; align-items: center; justify-content: space-between;
+                gap: 12px; padding: 12px 14px; cursor: pointer; user-select: none;
+            }
+            .trips-cat-head:hover { background: var(--border-light); }
+            .trips-cat-title { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 13px; }
+            .trips-cat-icon {
+                width: 30px; height: 30px; border-radius: 8px; color: #fff;
+                display: inline-flex; align-items: center; justify-content: center; font-size: 12px;
+                flex-shrink: 0;
+            }
+            .trips-cat-right { display: flex; align-items: center; gap: 12px; }
+            .trips-cat-totals { text-align: right; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+            .trips-cat-chevron { transition: transform 0.2s; color: var(--text-muted); font-size: 12px; }
+            .trips-cat-item.open .trips-cat-chevron { transform: rotate(180deg); }
+            .trips-cat-body { display: none; padding: 4px 14px 14px; border-top: 1px solid var(--border-light); }
+            .trips-cat-item.open .trips-cat-body { display: block; }
+
+            .trips-subcat-row {
+                display: flex; align-items: center; justify-content: space-between; gap: 12px;
+                padding: 12px 0; border-bottom: 1px dashed var(--border-light);
+            }
+            .trips-subcat-row:last-child { border-bottom: none; }
+            .trips-subcat-info { flex: 1; min-width: 0; }
+            .trips-subcat-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; word-break: break-word; }
+            .trips-subcat-meta { font-size: 11px; color: var(--text-muted); }
+            .trips-subcat-nums { text-align: right; font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+            .trips-subcat-nums strong { font-size: 13px; }
+            .trips-pay-btn {
+                width: 34px; height: 34px; border-radius: 50%;
+                border: 1px solid var(--primary); background: var(--primary-light);
+                color: var(--primary); cursor: pointer; font-size: 13px;
+                display: inline-flex; align-items: center; justify-content: center;
+                transition: all 0.15s; flex-shrink: 0;
+            }
+            .trips-pay-btn:hover { background: var(--primary); color: #fff; transform: scale(1.08); }
+
+            .trips-mini-progress { height: 6px; background: var(--border-light); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+            .trips-mini-progress > div { height: 100%; background: var(--success); border-radius: 3px; transition: width 0.3s; }
+
+            /* Chips de estado */
+            .trips-chip {
+                display: inline-flex; align-items: center; gap: 4px;
+                font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+                white-space: nowrap;
+            }
+            .trips-chip.ok { background: var(--success-light); color: var(--success); }
+            .trips-chip.warn { background: var(--warning-light); color: var(--warning); }
+            .trips-chip.bad { background: var(--danger-light); color: var(--danger); }
+            .trips-chip.neutral { background: var(--border-light); color: var(--text-muted); }
+            .trips-chip.info { background: var(--info-light); color: var(--info); }
+
+            /* Edición inline en la planificación diaria */
+            .trips-inline-input {
+                width: 88px; padding: 3px 6px;
+                border: 1px solid transparent; border-radius: 6px;
+                background: var(--border-light); color: var(--text);
+                font-size: 12px; font-weight: 600; text-align: right;
+                font-family: inherit;
+            }
+            .trips-inline-input:hover { border-color: var(--border); }
+            .trips-inline-input:focus { outline: none; border-color: var(--primary); background: var(--bg-card); }
+
+            /* Gráficas nativas (SVG) */
+            .trips-native-chart svg { width: 100%; height: 100%; display: block; }
+            .trips-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 11px; color: var(--text-secondary); }
+            .trips-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+            .trips-legend-dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+
+            /* Modal de movimientos de pago */
+            .trips-mov-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+            .trips-mov-item {
+                display: flex; justify-content: space-between; align-items: center; gap: 10px;
+                padding: 10px 12px; border: 1px solid var(--border-light);
+                border-radius: var(--radius-sm); background: var(--border-light); font-size: 12px;
+            }
+            .trips-mov-del {
+                background: none; border: none; color: var(--text-muted);
+                cursor: pointer; font-size: 12px; padding: 4px;
+            }
+            .trips-mov-del:hover { color: var(--danger); }
+            .trips-mov-total {
+                display: flex; justify-content: space-between; font-size: 13px;
+                padding: 12px 14px; background: var(--primary-light);
+                border-radius: var(--radius-sm); font-weight: 700; color: var(--primary);
+            }
+
+            /* Ahorro y financiación */
+            .trips-fund-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+            @media (max-width: 768px) { .trips-fund-grid { grid-template-columns: 1fr; } }
+            .trips-contrib-row {
+                display: flex; justify-content: space-between; align-items: center;
+                padding: 10px 0; border-bottom: 1px solid var(--border-light); font-size: 13px; gap: 10px;
+            }
+            .trips-contrib-row:last-child { border-bottom: none; }
+            .trips-avatar {
+                width: 30px; height: 30px; border-radius: 50%; color: #fff;
+                display: inline-flex; align-items: center; justify-content: center;
+                font-size: 12px; font-weight: 700; flex-shrink: 0;
+            }
+
+            /* Ficha de actividad */
+            .trips-act-detail { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+            .trips-act-line { display: flex; justify-content: space-between; gap: 12px; }
+            .trips-act-line .lbl { color: var(--text-secondary); }
+            .trips-act-line .val { font-weight: 600; text-align: right; }
+
+            @media (max-width: 768px) {
+                .trips-form-row.three { grid-template-columns: 1fr; }
+                .trips-cat-totals { display: none; }
+            }
         `;
         document.head.appendChild(style);
     }
@@ -533,7 +663,8 @@ const TripsApp = (function () {
                 savingsSaved: 320,
                 savingsTargetDate: '2026-12-15',
                 savingsMonthly: 120,
-                savingsResponsible: 'conjunto'
+                savingsResponsible: 'conjunto',
+                imageUrl: 'https://images.unsplash.com/photo-1555881400-74d7bacc88f2?auto=format&fit=crop&w=900&q=70'
             },
             {
                 id: 'trip-2',
@@ -557,7 +688,8 @@ const TripsApp = (function () {
                 savingsSaved: 900,
                 savingsTargetDate: '2026-12-20',
                 savingsMonthly: 150,
-                savingsResponsible: 'conjunto'
+                savingsResponsible: 'conjunto',
+                imageUrl: 'https://images.unsplash.com/photo-1558644588-8b0a2e189078?auto=format&fit=crop&w=900&q=70'
             },
             {
                 id: 'trip-3',
@@ -581,7 +713,8 @@ const TripsApp = (function () {
                 savingsSaved: 1400,
                 savingsTargetDate: '2026-08-01',
                 savingsMonthly: 200,
-                savingsResponsible: 'conjunto'
+                savingsResponsible: 'conjunto',
+                imageUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=70'
             },
             {
                 id: 'trip-4',
@@ -605,7 +738,8 @@ const TripsApp = (function () {
                 savingsSaved: 0,
                 savingsTargetDate: '',
                 savingsMonthly: null,
-                savingsResponsible: 'conjunto'
+                savingsResponsible: 'conjunto',
+                imageUrl: 'https://images.unsplash.com/photo-1528360983270-3551b8abb40c?auto=format&fit=crop&w=900&q=70'
             }
         ],
         tripCategories: [
@@ -645,7 +779,27 @@ const TripsApp = (function () {
             { id: 'tb-22', tripId: 'trip-3', categoryId: 'tc-3', amount: 180 },
             { id: 'tb-23', tripId: 'trip-3', categoryId: 'tc-4', amount: 220 },
             { id: 'tb-24', tripId: 'trip-3', categoryId: 'tc-5', amount: 120 },
-            { id: 'tb-25', tripId: 'trip-3', categoryId: 'tc-6', amount: 80 }
+            { id: 'tb-25', tripId: 'trip-3', categoryId: 'tc-6', amount: 80 },
+            // Trip 1 (Oporto) — subcategorías de gasto diario (editables inline)
+            { id: 'tb-31', tripId: 'trip-1', categoryId: 'tc-3', amount: 40, dayItem: true, date: '2026-12-19', concept: 'Comidas día 2 (Oporto)' },
+            { id: 'tb-32', tripId: 'trip-1', categoryId: 'tc-4', amount: 45, dayItem: true, date: '2026-12-19', concept: 'Cena en Adega São Quim' },
+            { id: 'tb-33', tripId: 'trip-1', categoryId: 'tc-8', amount: 25, dayItem: true, date: '2026-12-19', concept: 'Metro + bono transporte' },
+            { id: 'tb-34', tripId: 'trip-1', categoryId: 'tc-5', amount: 25, dayItem: true, date: '2026-12-19', concept: 'Tour bodegas de vino do Porto' },
+            { id: 'tb-35', tripId: 'trip-1', categoryId: 'tc-3', amount: 35, dayItem: true, date: '2026-12-20', concept: 'Comidas día 3' },
+            { id: 'tb-36', tripId: 'trip-1', categoryId: 'tc-4', amount: 50, dayItem: true, date: '2026-12-20', concept: 'Cena con vista al Douro' },
+            { id: 'tb-37', tripId: 'trip-1', categoryId: 'tc-5', amount: 42, dayItem: true, date: '2026-12-20', concept: 'Crucero por el Douro' },
+            { id: 'tb-38', tripId: 'trip-1', categoryId: 'tc-6', amount: 40, dayItem: true, date: '2026-12-21', concept: 'Souvenirs y corcho' },
+            { id: 'tb-39', tripId: 'trip-1', categoryId: 'tc-3', amount: 30, dayItem: true, date: '2026-12-21', concept: 'Comidas día 4' },
+            { id: 'tb-40', tripId: 'trip-1', categoryId: 'tc-9', amount: 15, dayItem: true, date: '2026-12-22', concept: 'Tasas / extras salida' },
+            // Trip 2 (Sevilla) — subcategorías de gasto diario (editables inline)
+            { id: 'tb-41', tripId: 'trip-2', categoryId: 'tc-8', amount: 24, dayItem: true, date: '2026-12-23', concept: 'Autobús aeropuerto -> centro' },
+            { id: 'tb-42', tripId: 'trip-2', categoryId: 'tc-4', amount: 60, dayItem: true, date: '2026-12-24', concept: 'Cena Nochebuena familiar' },
+            { id: 'tb-43', tripId: 'trip-2', categoryId: 'tc-5', amount: 30, dayItem: true, date: '2026-12-25', concept: 'Entradas Catedral + Giralda' },
+            { id: 'tb-44', tripId: 'trip-2', categoryId: 'tc-3', amount: 40, dayItem: true, date: '2026-12-26', concept: 'Comidas y tapeo' },
+            { id: 'tb-45', tripId: 'trip-2', categoryId: 'tc-4', amount: 55, dayItem: true, date: '2026-12-26', concept: 'Cena en El Arenal' },
+            { id: 'tb-46', tripId: 'trip-2', categoryId: 'tc-5', amount: 45, dayItem: true, date: '2026-12-27', concept: 'Show flamenco Casa de la Memoria' },
+            { id: 'tb-47', tripId: 'trip-2', categoryId: 'tc-6', amount: 50, dayItem: true, date: '2026-12-27', concept: 'Regalos y compras' },
+            { id: 'tb-48', tripId: 'trip-2', categoryId: 'tc-8', amount: 24, dayItem: true, date: '2026-12-28', concept: 'Traslado al aeropuerto' }
         ],
         tripExpenses: [
             // Trip 3 - Costa Brava (completado, gastos reales)
@@ -661,7 +815,27 @@ const TripsApp = (function () {
             { id: 'te-11', tripId: 'trip-2', concept: 'Hotel 5 noches', amount: 450, date: '2026-11-20', categoryId: 'tc-2', person: 'conjunto', status: 'previsto', paymentStatus: 'parcial', notes: 'Señal pagada, resto el 15/12', linkedExpenseId: null },
             { id: 'te-12', tripId: 'trip-2', concept: 'Estimación comidas', amount: 180, date: '2026-12-23', categoryId: 'tc-3', person: 'conjunto', status: 'estimado', paymentStatus: 'pendiente', notes: 'Estimación agregada', linkedExpenseId: null, isAggregated: true },
             // Trip 1 - Oporto (planificado)
-            { id: 'te-20', tripId: 'trip-1', concept: 'Estimación transporte', amount: 200, date: '2026-12-18', categoryId: 'tc-1', person: 'conjunto', status: 'estimado', paymentStatus: 'pendiente', notes: 'Tren o vuelo', linkedExpenseId: null, isAggregated: true }
+            { id: 'te-20', tripId: 'trip-1', concept: 'Estimación transporte', amount: 200, date: '2026-12-18', categoryId: 'tc-1', person: 'conjunto', status: 'estimado', paymentStatus: 'pendiente', notes: 'Tren o vuelo', linkedExpenseId: null, isAggregated: true },
+            // Trip 1 - Oporto: gastos diarios reales (editables inline en Planificación Diaria)
+            { id: 'te-21', tripId: 'trip-1', concept: 'Comidas día 2 (Oporto)', amount: 38, date: '2026-12-19', categoryId: 'tc-3', person: 'ana', status: 'registrado', paymentStatus: 'pagado', notes: '', linkedExpenseId: null, dayItemRef: 'tb-31' },
+            { id: 'te-22', tripId: 'trip-1', concept: 'Cena en Adega São Quim', amount: 52, date: '2026-12-19', categoryId: 'tc-4', person: 'carlos', status: 'registrado', paymentStatus: 'pagado', notes: '', linkedExpenseId: null, dayItemRef: 'tb-32' },
+            { id: 'te-23', tripId: 'trip-1', concept: 'Metro + bono transporte', amount: 23, date: '2026-12-19', categoryId: 'tc-8', person: 'conjunto', status: 'registrado', paymentStatus: 'pagado', notes: '', linkedExpenseId: null, dayItemRef: 'tb-33' },
+            { id: 'te-24', tripId: 'trip-1', concept: 'Tour bodegas de vino do Porto', amount: 0, date: '2026-12-19', categoryId: 'tc-5', person: 'carlos', status: 'previsto', paymentStatus: 'pendiente', notes: 'Se paga en destino', linkedExpenseId: null, dayItemRef: 'tb-34' },
+            { id: 'te-25', tripId: 'trip-1', concept: 'Comidas día 3', amount: 0, date: '2026-12-20', categoryId: 'tc-3', person: 'conjunto', status: 'previsto', paymentStatus: 'pendiente', notes: '', linkedExpenseId: null, dayItemRef: 'tb-35' },
+            { id: 'te-26', tripId: 'trip-1', concept: 'Cena con vista al Douro', amount: 0, date: '2026-12-20', categoryId: 'tc-4', person: 'ana', status: 'previsto', paymentStatus: 'pendiente', notes: '', linkedExpenseId: null, dayItemRef: 'tb-36' },
+            { id: 'te-27', tripId: 'trip-1', concept: 'Crucero por el Douro', amount: 0, date: '2026-12-20', categoryId: 'tc-5', person: 'conjunto', status: 'previsto', paymentStatus: 'pendiente', notes: 'Reserva pendiente', linkedExpenseId: null, dayItemRef: 'tb-37' },
+            { id: 'te-28', tripId: 'trip-1', concept: 'Souvenirs y corcho', amount: 0, date: '2026-12-21', categoryId: 'tc-6', person: 'ana', status: 'previsto', paymentStatus: 'pendiente', notes: '', linkedExpenseId: null, dayItemRef: 'tb-38' },
+            { id: 'te-29', tripId: 'trip-1', concept: 'Comidas día 4', amount: 0, date: '2026-12-21', categoryId: 'tc-3', person: 'conjunto', status: 'previsto', paymentStatus: 'pendiente', notes: '', linkedExpenseId: null, dayItemRef: 'tb-39' },
+            { id: 'te-30', tripId: 'trip-1', concept: 'Tasas / extras salida', amount: 0, date: '2026-12-22', categoryId: 'tc-9', person: 'carlos', status: 'previsto', paymentStatus: 'pendiente', notes: '', linkedExpenseId: null, dayItemRef: 'tb-40' },
+            // Trip 2 - Sevilla: gastos diarios previstos/reales
+            { id: 'te-31', tripId: 'trip-2', concept: 'Autobús aeropuerto -> centro', amount: 24, date: '2026-12-23', categoryId: 'tc-8', person: 'conjunto', status: 'previsto', paymentStatus: 'pendiente', notes: 'Bono de bus se compra al llegar', linkedExpenseId: null, dayItemRef: 'tb-41' },
+            { id: 'te-32', tripId: 'trip-2', concept: 'Cena Nochebuena familiar', amount: 60, date: '2026-12-24', categoryId: 'tc-4', person: 'ana', status: 'previsto', paymentStatus: 'parcial', notes: 'Invitación parcial de la familia', linkedExpenseId: null, dayItemRef: 'tb-42' },
+            { id: 'te-33', tripId: 'trip-2', concept: 'Entradas Catedral + Giralda', amount: 30, date: '2026-12-25', categoryId: 'tc-5', person: 'ana', status: 'previsto', paymentStatus: 'pagado', notes: 'Compradas online', linkedExpenseId: null, dayItemRef: 'tb-43' },
+            { id: 'te-34', tripId: 'trip-2', concept: 'Comidas y tapeo', amount: 0, date: '2026-12-26', categoryId: 'tc-3', person: 'conjunto', status: 'previsto', paymentStatus: 'pendiente', notes: '', linkedExpenseId: null, dayItemRef: 'tb-44' },
+            { id: 'te-35', tripId: 'trip-2', concept: 'Cena en El Arenal', amount: 0, date: '2026-12-26', categoryId: 'tc-4', person: 'carlos', status: 'previsto', paymentStatus: 'pendiente', notes: '', linkedExpenseId: null, dayItemRef: 'tb-45' },
+            { id: 'te-36', tripId: 'trip-2', concept: 'Show flamenco Casa de la Memoria', amount: 0, date: '2026-12-27', categoryId: 'tc-5', person: 'conjunto', status: 'previsto', paymentStatus: 'pendiente', notes: 'Entradas a la venta pronto', linkedExpenseId: null, dayItemRef: 'tb-46' },
+            { id: 'te-37', tripId: 'trip-2', concept: 'Regalos y compras', amount: 0, date: '2026-12-27', categoryId: 'tc-6', person: 'ana', status: 'previsto', paymentStatus: 'pendiente', notes: '', linkedExpenseId: null, dayItemRef: 'tb-47' },
+            { id: 'te-38', tripId: 'trip-2', concept: 'Traslado al aeropuerto', amount: 0, date: '2026-12-28', categoryId: 'tc-8', person: 'carlos', status: 'previsto', paymentStatus: 'pendiente', notes: '', linkedExpenseId: null, dayItemRef: 'tb-48' }
         ],
         tripReservations: [
             {
@@ -685,13 +859,15 @@ const TripsApp = (function () {
                 serviceDate: '2026-12-18', categoryId: 'tc-2',
                 status: 'pendiente', conditions: 'Cancelación gratuita hasta 30 días antes', notes: 'Pendiente de confirmar'
             },
-            {
-                id: 'tr-4', tripId: 'trip-3', concept: 'Hotel Costa Brava',
-                provider: 'Booking', totalAmount: 560, paidAmount: 560, pendingAmount: 0,
-                reservationDate: '2026-06-10', paymentDates: ['2026-06-10'],
-                serviceDate: '2026-08-05', categoryId: 'tc-2',
-                status: 'pagado', conditions: '', notes: ''
-            }
+            { id: 'tr-4', tripId: 'trip-3', concept: 'Hotel Costa Brava', provider: 'Booking', totalAmount: 560, paidAmount: 560, pendingAmount: 0, reservationDate: '2026-06-10', paymentDates: ['2026-06-10'], serviceDate: '2026-08-05', categoryId: 'tc-2', status: 'pagado', conditions: '', notes: '' },
+            // Trip 1 - Oporto: subcategorías con pagos parciales (acordeón)
+            { id: 'tr-5', tripId: 'trip-1', concept: 'Tren Madrid -> Oporto (ida y vuelta)', provider: 'CP / Renfe', totalAmount: 140, paidAmount: 70, pendingAmount: 70, reservationDate: '2026-10-30', paymentDates: ['2026-10-30', '2026-11-30'], serviceDate: '2026-12-18', categoryId: 'tc-1', status: 'parcial', conditions: 'Tarifa promocional, cambios con coste', notes: 'Se pagó el 50% al reservar' },
+            { id: 'tr-6', tripId: 'trip-1', concept: 'Coche de alquiler (2 días Braga)', provider: 'Europcar', totalAmount: 60, paidAmount: 0, pendingAmount: 60, reservationDate: '', paymentDates: ['2026-12-15'], serviceDate: '2026-12-20', categoryId: 'tc-1', status: 'pendiente', conditions: 'Franquicio 300€', notes: 'Reserva gratuita, se paga en recogida' },
+            { id: 'tr-7', tripId: 'trip-1', concept: 'Crucero por el Douro (60 min)', provider: 'Carris Turismo', totalAmount: 42, paidAmount: 0, pendingAmount: 42, reservationDate: '', paymentDates: ['2026-12-19'], serviceDate: '2026-12-20', categoryId: 'tc-5', status: 'pendiente', conditions: 'Sin cancelación', notes: 'Comprar entradas el día anterior' },
+            { id: 'tr-8', tripId: 'trip-1', concept: 'Seguro de viaje multirriesgo', provider: 'IATI', totalAmount: 28, paidAmount: 28, pendingAmount: 0, reservationDate: '2026-11-05', paymentDates: ['2026-11-05'], serviceDate: '2026-12-18', categoryId: 'tc-7', status: 'pagado', conditions: 'Cobertura europea', notes: '' },
+            // Trip 2 - Sevilla: más subcategorías con movimientos
+            { id: 'tr-9', tripId: 'trip-2', concept: 'Parking aeropuerto MAD (5 días)', provider: 'Aena', totalAmount: 65, paidAmount: 65, pendingAmount: 0, reservationDate: '2026-11-18', paymentDates: ['2026-11-18'], serviceDate: '2026-12-23', categoryId: 'tc-1', status: 'pagado', conditions: '', notes: '' },
+            { id: 'tr-10', tripId: 'trip-2', concept: 'Show flamenco Casa de la Memoria', provider: 'Casa de la Memoria', totalAmount: 45, paidAmount: 0, pendingAmount: 45, reservationDate: '', paymentDates: ['2026-12-01'], serviceDate: '2026-12-27', categoryId: 'tc-5', status: 'pendiente', conditions: 'Entradas limitadas', notes: '¡Reservar cuanto antes!' }
         ],
         tripActivities: [
             // Trip 2 - Sevilla
@@ -700,9 +876,15 @@ const TripsApp = (function () {
             { id: 'ta-3', tripId: 'trip-2', title: 'Cena Navidad familiar', date: '2026-12-24', time: '21:00', location: 'Casa familia', estimatedCost: 60, status: 'pendiente', type: 'restaurante', notes: '' },
             { id: 'ta-4', tripId: 'trip-2', title: 'Visita Catedral', date: '2026-12-25', time: '10:00', location: 'Catedral de Sevilla', estimatedCost: 30, status: 'pendiente', type: 'actividad', notes: '' },
             { id: 'ta-5', tripId: 'trip-2', title: 'Regreso', date: '2026-12-28', time: '18:00', location: 'Aeropuerto SVQ', estimatedCost: 0, status: 'pendiente', type: 'transporte', notes: '' },
+            { id: 'ta-6', tripId: 'trip-2', title: 'Paseo por Barrio de Santa Cruz', date: '2026-12-24', time: '12:00', location: 'Centro histórico', estimatedCost: 0, status: 'confirmada', type: 'actividad', notes: 'Plan gratuito, llevar calzado cómodo.' },
+            { id: 'ta-7', tripId: 'trip-2', title: 'Comida en el Mercado de Triana', date: '2026-12-26', time: '14:00', location: 'Calle Betis 8-10, Triana', estimatedCost: 40, status: 'pendiente', type: 'restaurante', notes: 'Tapeo tradicional, presupuesto estimado para dos.' },
             // Trip 1 - Oporto
             { id: 'ta-10', tripId: 'trip-1', title: 'Salida', date: '2026-12-18', time: '08:00', location: 'Madrid', estimatedCost: 0, status: 'pendiente', type: 'transporte', notes: '' },
-            { id: 'ta-11', tripId: 'trip-1', title: 'Tour bodegas Porto', date: '2026-12-19', time: '15:00', location: 'Vila Nova de Gaia', estimatedCost: 25, status: 'pendiente', type: 'actividad', notes: '' }
+            { id: 'ta-11', tripId: 'trip-1', title: 'Tour bodegas Porto', date: '2026-12-19', time: '15:00', location: 'Vila Nova de Gaia', estimatedCost: 25, status: 'pendiente', type: 'actividad', notes: '' },
+            { id: 'ta-12', tripId: 'trip-1', title: 'Crucero por el Douro', date: '2026-12-20', time: '11:00', location: 'Muelle de Ribeira', estimatedCost: 42, status: 'pendiente', type: 'actividad', notes: 'Ruta de 60 minutos por las puentes del Duero. Reserva pendiente de pago.' },
+            { id: 'ta-13', tripId: 'trip-1', title: 'Librería Lello + Torre dos Clérigos', date: '2026-12-20', time: '16:30', location: 'Rua Ferreira Borges 103', estimatedCost: 18, status: 'confirmada', type: 'actividad', notes: 'Entrada comprada online con descuento de estudiante.' },
+            { id: 'ta-14', tripId: 'trip-1', title: 'Cena con vista al Douro', date: '2026-12-20', time: '21:00', location: 'Restaurante Cais da Ribeira', estimatedCost: 50, status: 'pendiente', type: 'restaurante', notes: 'Mesa reservada; se paga en el restaurante.' },
+            { id: 'ta-15', tripId: 'trip-1', title: 'Excursión a Braga (coche de alquiler)', date: '2026-12-21', time: '09:30', location: 'Estación São Bento', estimatedCost: 60, status: 'pendiente', type: 'transporte', notes: 'Alquiler de coche 2 días: Bom Jesus do Monte y centro histórico de Braga.' }
         ],
         settings: {
             defaultCurrency: 'EUR',
@@ -713,7 +895,50 @@ const TripsApp = (function () {
             alertLowSavings: true,
             upcomingDaysThreshold: 30,
             defaultSort: 'startDate-asc'
-        }
+        },
+        // ---- Pagos parciales (movimientos) vinculados a reservas ----
+        tripPayments: [
+            // tr-2 · Hotel Casa Palacio (Sevilla) — señal + segundo pago
+            { id: 'tp-1', reservationId: 'tr-2', amount: 150, date: '2026-11-20', payer: 'ana',   method: 'tarjeta', notes: 'Señal de reserva' },
+            { id: 'tp-2', reservationId: 'tr-2', amount: 100, date: '2026-10-28', payer: 'carlos', method: 'transferencia', notes: 'Anticipo segunda cuota' },
+            // tr-1 · Vuelos Madrid-Sevilla — pagados con la tarjeta conjunta
+            { id: 'tp-3', reservationId: 'tr-1', amount: 140, date: '2026-11-15', payer: 'conjunto', method: 'tarjeta', notes: '' },
+            { id: 'tp-4', reservationId: 'tr-1', amount: 140, date: '2026-11-15', payer: 'carlos', method: 'bizum', notes: 'Su parte del vuelo' },
+            // tr-4 · Hotel Costa Brava (completado)
+            { id: 'tp-5', reservationId: 'tr-4', amount: 280, date: '2026-06-10', payer: 'ana',   method: 'tarjeta', notes: '50% en reserva' },
+            { id: 'tp-6', reservationId: 'tr-4', amount: 280, date: '2026-07-30', payer: 'conjunto', method: 'transferencia', notes: 'Resto antes de check-in' },
+            // tr-5 · Tren Madrid -> Oporto — señal pagada, segunda cuota pendiente
+            { id: 'tp-7', reservationId: 'tr-5', amount: 70, date: '2026-10-30', payer: 'ana', method: 'tarjeta', notes: '50% al reservar billete promocional' },
+            // tr-8 · Seguro IATI — pagado íntegro por Ana
+            { id: 'tp-8', reservationId: 'tr-8', amount: 28, date: '2026-11-05', payer: 'ana', method: 'bizum', notes: 'Póliza anual multirriesgo' },
+            // tr-9 · Parking aeropuerto MAD — pagado con tarjeta conjunta
+            { id: 'tp-9', reservationId: 'tr-9', amount: 65, date: '2026-11-18', payer: 'conjunto', method: 'tarjeta', notes: '' }
+        ],
+        // ---- Actividades enriquecidas: presupuesto vinculado, pago y responsable ----
+        tripActivityExtras: {
+            'ta-3':  { budgetLinked: true,  expenseId: 'te-32', payAtDestination: true,  payer: 'conjunto' },
+            'ta-4':  { budgetLinked: true,  expenseId: 'te-33', payAtDestination: false, payer: 'ana' },
+            'ta-6':  { budgetLinked: false, expenseId: null, payAtDestination: false, payer: 'conjunto' },
+            'ta-7':  { budgetLinked: true,  expenseId: null, payAtDestination: true,  payer: 'carlos' },
+            'ta-11': { budgetLinked: true,  expenseId: 'te-24', payAtDestination: true,  payer: 'carlos' },
+            'ta-12': { budgetLinked: true,  expenseId: 'te-27', payAtDestination: false, payer: 'conjunto' },
+            'ta-13': { budgetLinked: true,  expenseId: null, payAtDestination: false, payer: 'ana' },
+            'ta-14': { budgetLinked: true,  expenseId: 'te-26', payAtDestination: true,  payer: 'ana' },
+            'ta-15': { budgetLinked: true,  expenseId: null, payAtDestination: true,  payer: 'carlos' },
+            'ta-1':  { budgetLinked: false, expenseId: null, payAtDestination: false, payer: 'conjunto' },
+            'ta-2':  { budgetLinked: false, expenseId: null, payAtDestination: false, payer: 'conjunto' },
+            'ta-5':  { budgetLinked: false, expenseId: null, payAtDestination: false, payer: 'conjunto' },
+            'ta-10': { budgetLinked: true,  expenseId: null, payAtDestination: true,  payer: 'carlos' }
+        },
+        // ---- Fuentes de financiación / ahorro por viaje ----
+        tripFundSources: [
+            { id: 'fs-1', tripId: 'trip-1', name: 'Ahorro mensual conjunto', person: 'conjunto', monthlyAmount: 100, startDate: '2026-06-01' },
+            { id: 'fs-2', tripId: 'trip-1', name: 'Extra nómina de verano', person: 'ana',      oneTimeAmount: 120, date: '2026-07-15' },
+            { id: 'fs-3', tripId: 'trip-2', name: 'Ahorro mensual Ana',    person: 'ana',      monthlyAmount: 80,  startDate: '2026-05-01' },
+            { id: 'fs-4', tripId: 'trip-2', name: 'Ahorro mensual Carlos', person: 'carlos',   monthlyAmount: 70,  startDate: '2026-05-01' },
+            { id: 'fs-5', tripId: 'trip-3', name: 'Ahorro mensual conjunto', person: 'conjunto', monthlyAmount: 200, startDate: '2026-01-01' },
+            { id: 'fs-6', tripId: 'trip-2', name: 'Extra paga de Navidad (señal hotel)', person: 'carlos', oneTimeAmount: 150, date: '2026-12-22' }
+        ]
     };
 
     // =========================================================
@@ -726,6 +951,7 @@ const TripsApp = (function () {
     let tripFilters = { search: '', status: '', type: '', destination: '', participant: '', year: '', hasPending: '' };
     let charts = {};
     let containerEl = null;
+    let currentMovementsReservationId = null;
 
     function loadData() {
         try {
@@ -733,7 +959,19 @@ const TripsApp = (function () {
             if (saved) {
                 const parsed = JSON.parse(saved);
                 // Merge con defaults para asegurar estructura completa
-                return Object.assign({}, JSON.parse(JSON.stringify(DEFAULT_TRIPS_DATA)), parsed);
+                const merged = Object.assign({}, JSON.parse(JSON.stringify(DEFAULT_TRIPS_DATA)), parsed);
+                // Migración: inyectar claves nuevas sin perder datos guardados
+                ['tripPayments', 'tripActivityExtras', 'tripFundSources'].forEach(k => {
+                    if (!(k in merged)) merged[k] = JSON.parse(JSON.stringify(DEFAULT_TRIPS_DATA[k]));
+                });
+                // Migración de enriquecimiento: si el almacenamiento procede de una
+                // versión antigua del mock (pocos registros), se regeneran los datos
+                // ficticios completos para probar todas las funciones desde el primer segundo.
+                const enrichedCount = (parsed.tripReservations || []).length + (parsed.tripBudgets || []).length;
+                if (enrichedCount < 30) {
+                    return JSON.parse(JSON.stringify(DEFAULT_TRIPS_DATA));
+                }
+                return merged;
             }
         } catch(e) {}
         return JSON.parse(JSON.stringify(DEFAULT_TRIPS_DATA));
@@ -810,6 +1048,175 @@ const TripsApp = (function () {
         return getTripReservations(tripId)
             .filter(r => r.status !== 'cancelado' && r.status !== 'pagado')
             .reduce((s, r) => s + r.pendingAmount, 0);
+    }
+
+    // ---- Pagos parciales (movimientos) por reserva ----
+    function getReservationPayments(reservationId) {
+        return (tripsData.tripPayments || [])
+            .filter(p => p.reservationId === reservationId)
+            .sort((a, b) => a.date.localeCompare(b.date));
+    }
+
+    function getPayerName(personId) {
+        if (personId === 'conjunto' || !personId) return 'Conjunto';
+        return App.getProfileName(personId);
+    }
+
+    function getPersonAvatarHtml(personId) {
+        if (personId && personId !== 'conjunto') {
+            const p = (App.data.profiles || []).find(pr => pr.id === personId);
+            if (p) return `<span class="trips-avatar" style="background:${p.color};">${App.escapeHtml(p.initial || p.name.charAt(0))}</span>`;
+        }
+        return '<span class="trips-avatar" style="background:var(--primary);"><i class="fas fa-users"></i></span>';
+    }
+
+    // Reconcilia pagado/pendiente de una reserva a partir del historial de movimientos.
+    // Si no hay movimientos registrados, respeta los importes almacenados (compatibilidad).
+    function syncReservationFromMovements(r) {
+        const movs = getReservationPayments(r.id);
+        if (movs.length > 0) {
+            r.paidAmount = Math.min(movs.reduce((s, m) => s + m.amount, 0), r.totalAmount);
+        }
+        r.pendingAmount = Math.max(round2(r.totalAmount - r.paidAmount), 0);
+        if (r.status !== 'cancelado' && r.status !== 'pendiente' && r.status !== 'reservado') {
+            if (r.pendingAmount <= 0.01) { r.status = 'pagado'; r.pendingAmount = 0; }
+            else if (r.paidAmount > 0) { r.status = 'parcial'; }
+            else { r.status = 'reservado'; }
+        } else if (r.status === 'reservado' && r.paidAmount > 0) {
+            r.status = 'parcial';
+        }
+    }
+
+    function syncAllReservations() {
+        (tripsData.tripReservations || []).forEach(syncReservationFromMovements);
+    }
+
+    function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+
+    // Totales por subcategoría (reserva) para el acordeón de categorías
+    function getSubcatTotals(r) {
+        const total = r.totalAmount || 0;
+        const paid = r.paidAmount || 0;
+        const pending = Math.max(round2(total - paid), 0);
+        return { total, paid, pending, pct: total > 0 ? (paid / total) * 100 : 0 };
+    }
+
+    function getCategorySubcatSummary(tripId, categoryId) {
+        const res = getTripReservations(tripId).filter(x => x.categoryId === categoryId && x.status !== 'cancelado');
+        let total = 0, paid = 0;
+        res.forEach(r => { total += r.totalAmount || 0; paid += r.paidAmount || 0; });
+        return { count: res.length, total, paid, pending: Math.max(round2(total - paid), 0) };
+    }
+
+    // ---- Actividades: extras con vinculación presupuestaria ----
+    function getActivityExtras(id) {
+        if (!tripsData.tripActivityExtras) tripsData.tripActivityExtras = {};
+        if (!tripsData.tripActivityExtras[id]) {
+            tripsData.tripActivityExtras[id] = { budgetLinked: false, expenseId: null, payAtDestination: true, payer: 'conjunto' };
+        }
+        return tripsData.tripActivityExtras[id];
+    }
+
+    function getActivityPaidInfo(act) {
+        const extras = getActivityExtras(act.id);
+        if (extras.expenseId) {
+            const exp = (tripsData.tripExpenses || []).find(e => e.id === extras.expenseId);
+            if (exp) return { paid: exp.paymentStatus === 'pagado', status: exp.paymentStatus, amount: exp.amount };
+        }
+        return { paid: false, status: 'pendiente', amount: act.estimatedCost || 0 };
+    }
+
+    // ---- Ahorro: importe generado por las fuentes de financiación ----
+    function monthsBetween(fromDateStr, toDateStr) {
+        const f = new Date(fromDateStr + 'T00:00:00');
+        const t = new Date(toDateStr + 'T00:00:00');
+        if (isNaN(f.getTime()) || isNaN(t.getTime())) return 0;
+        const months = (t.getFullYear() - f.getFullYear()) * 12 + (t.getMonth() - f.getMonth());
+        return Math.max(months + 1, 0);
+    }
+
+    function computeFundRaised(source) {
+        if (source.oneTimeAmount) return source.oneTimeAmount;
+        if (source.monthlyAmount && source.startDate) {
+            const today = new Date().toISOString().substring(0, 10);
+            const end = source.endDate || today;
+            if (end < source.startDate) return 0;
+            return source.monthlyAmount * monthsBetween(source.startDate, end);
+        }
+        return 0;
+    }
+
+    function getTripFundSources(tripId) {
+        return (tripsData.tripFundSources || []).filter(s => s.tripId === tripId);
+    }
+
+    function getTripFundingRaised(tripId) {
+        return round2(getTripFundSources(tripId).reduce((s, src) => s + computeFundRaised(src), 0));
+    }
+
+    function recomputeTripSavings(tripId) {
+        const trip = getTripById(tripId);
+        if (!trip) return;
+        const raised = getTripFundingRaised(tripId);
+        if (raised > 0) trip.savingsSaved = Math.min(round2(raised), trip.savingsGoal || raised);
+    }
+
+    function recomputeAllSavings() {
+        tripsData.trips.forEach(t => recomputeTripSavings(t.id));
+    }
+
+    // ---- Vencimientos futuros (calendario de financiación) ----
+    function getUpcomingDueItems(limitDays = 90) {
+        const items = [];
+        tripsData.trips.forEach(trip => {
+            if (trip.status === 'cancelado' || trip.status === 'completado') return;
+            getTripReservations(trip.id).forEach(r => {
+                if (r.status === 'pagado' || r.status === 'cancelado') return;
+                if ((r.pendingAmount || 0) <= 0) return;
+                r.paymentDates.forEach(d => {
+                    const days = getDaysUntil(d);
+                    if (days !== null && days >= 0 && days <= limitDays) {
+                        items.push({ kind: 'payment', trip, reservation: r, date: d, amount: r.pendingAmount, days });
+                    }
+                });
+            });
+            getTripFundSources(trip.id).forEach(src => {
+                if (!src.monthlyAmount) return;
+                const next = new Date();
+                next.setDate(1);
+                next.setMonth(next.getMonth() + 1);
+                const nd = next.toISOString().substring(0, 10);
+                const days = getDaysUntil(nd);
+                if (days !== null && days <= limitDays) {
+                    items.push({ kind: 'contribution', trip, source: src, date: nd, amount: src.monthlyAmount, days });
+                }
+            });
+        });
+        return items.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 12);
+    }
+
+    // ---- Estado derivado Próximo / En curso / Realizado según fechas ----
+    function getComputedTripState(trip) {
+        if (trip.status === 'cancelado') return { key: 'cancelado', label: 'Cancelado', cls: 'bad' };
+        if (trip.status === 'completado') return { key: 'realizado', label: 'Realizado', cls: 'neutral' };
+        if (trip.startDate && trip.endDate) {
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const s = new Date(trip.startDate + 'T00:00:00');
+            const e = new Date(trip.endDate + 'T00:00:00');
+            if (today > e) return { key: 'realizado', label: 'Realizado', cls: 'neutral' };
+            if (today >= s && today <= e) return { key: 'en_curso', label: 'En curso', cls: 'ok' };
+            return { key: 'proximo', label: 'Próximo', cls: 'info' };
+        }
+        if (trip.status === 'idea') return { key: 'idea', label: 'Idea', cls: 'neutral' };
+        return { key: 'proximo', label: 'Próximo', cls: 'info' };
+    }
+
+    function getTripDayLabel(dateStr) {
+        const d = new Date(dateStr + 'T00:00:00');
+        if (isNaN(d.getTime())) return dateStr;
+        const s = d.toLocaleDateString('es-ES', { weekday: 'long' });
+        return s.charAt(0).toUpperCase() + s.slice(1) + ', ' +
+            d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' });
     }
 
     function getTripDuration(trip) {
@@ -924,6 +1331,10 @@ const TripsApp = (function () {
         injectStyles();
         containerEl = container;
 
+        // Reactividad global: reconciliar totales antes de pintar cualquier vista
+        syncAllReservations();
+        recomputeAllSavings();
+
         container.innerHTML = `
             <div class="card" style="margin-bottom: 16px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
@@ -950,14 +1361,22 @@ const TripsApp = (function () {
             </div>
 
             <div class="trips-subnav">
-                <button class="trips-subnav-item active" data-view="resumen"><i class="fas fa-chart-pie"></i> Resumen</button>
+                <button class="trips-subnav-item active" data-view="resumen"><i class="fas fa-chart-pie"></i> Resumen General</button>
                 <button class="trips-subnav-item" data-view="mis-viajes"><i class="fas fa-suitcase"></i> Mis viajes</button>
+                <button class="trips-subnav-item" data-view="categorias"><i class="fas fa-layer-group"></i> Detalle y Categorías del Viaje</button>
+                <button class="trips-subnav-item" data-view="diario"><i class="fas fa-calendar-day"></i> Planificación Diaria</button>
+                <button class="trips-subnav-item" data-view="actividades"><i class="fas fa-ticket-alt"></i> Actividades</button>
+                <button class="trips-subnav-item" data-view="ahorro"><i class="fas fa-piggy-bank"></i> Ahorro y Financiación</button>
                 <button class="trips-subnav-item" data-view="planificacion"><i class="fas fa-plus-circle"></i> Planificación</button>
                 <button class="trips-subnav-item" data-view="configuracion"><i class="fas fa-cog"></i> Configuración</button>
             </div>
 
             <div class="trips-subview active" id="tripsView-resumen"></div>
             <div class="trips-subview" id="tripsView-mis-viajes"></div>
+            <div class="trips-subview" id="tripsView-categorias"></div>
+            <div class="trips-subview" id="tripsView-diario"></div>
+            <div class="trips-subview" id="tripsView-actividades"></div>
+            <div class="trips-subview" id="tripsView-ahorro"></div>
             <div class="trips-subview" id="tripsView-planificacion"></div>
             <div class="trips-subview" id="tripsView-configuracion"></div>
             <div class="trips-subview" id="tripsView-detalle"></div>
@@ -1019,6 +1438,18 @@ const TripsApp = (function () {
                         <button class="btn btn-secondary" data-close-trips-modal>Cancelar</button>
                         <button class="btn btn-primary" id="tripsSaveActivityBtn"><i class="fas fa-save"></i> Guardar</button>
                     </div>
+                </div>
+            </div>
+
+            <!-- Modal genérico: movimientos de pago / ficha de actividad -->
+            <div class="trips-modal" id="tripsGenericModal">
+                <div class="trips-modal-content">
+                    <div class="trips-modal-header">
+                        <h3 class="trips-modal-title" id="tripsGenericModalTitle"></h3>
+                        <button class="trips-modal-close" data-close-trips-modal><i class="fas fa-times"></i></button>
+                    </div>
+                    <div class="trips-modal-body" id="tripsGenericModalBody"></div>
+                    <div class="trips-modal-footer" id="tripsGenericModalFooter"></div>
                 </div>
             </div>
         `;
@@ -1086,6 +1517,437 @@ const TripsApp = (function () {
         else if (view === 'planificacion') renderPlanificacion();
         else if (view === 'configuracion') renderConfiguracion();
         else if (view === 'detalle') renderDetalle();
+        // Pestañas que operan "sobre el viaje seleccionado": si no hay viaje
+        // activo, se abre automáticamente el primer viaje próximo/planificado.
+        else if (view === 'categorias' || view === 'diario' || view === 'actividades' || view === 'ahorro') {
+            if (!ensureTripSelected()) return;
+            // Los renderizadores de pestañas buscan sus panes dentro del DOM
+            // con ids "tripPane-*"; se montan de forma autocontenida en esta vista.
+            const host = containerEl.querySelector(`#tripsView-${view}`);
+            if (!host) return;
+            currentTripTab = view;
+            host.innerHTML = `
+                <div class="trip-detail-pane active" id="tripPane-${view}"></div>
+            `;
+            if (view === 'categorias') renderCategoriasView();
+            else if (view === 'diario') renderTripDiario();
+            else if (view === 'actividades') renderTripActividadesView();
+            else if (view === 'ahorro') renderTripAhorro();
+        }
+    }
+
+    // =========================================================
+    // VISTA: CATEGORÍAS — ACORDEÓN + PAGOS PARCIALES (MOVIMIENTOS)
+    // =========================================================
+    function renderCategoriasAccordion(trip) {
+        const pane = containerEl.querySelector('#tripPane-categorias');
+        if (!pane) return;
+
+        syncAllReservations();
+
+        // Categorías con datos: reservas (subcategorías), presupuesto y gasto real
+        const catsWithData = tripsData.tripCategories.map(cat => {
+            const res = getTripReservations(trip.id).filter(r => r.categoryId === cat.id && r.status !== 'cancelado');
+            const budget = getTripBudgetByCategory(trip.id, cat.id);
+            const spent = getTripExpenseByCategory(trip.id, cat.id);
+            const sum = getCategorySubcatSummary(trip.id, cat.id);
+            return { cat, res, budget, spent, sum };
+        }).filter(x => x.res.length > 0 || x.budget !== null || x.spent > 0);
+
+        const totBudget = catsWithData.reduce((s, x) => s + (x.budget || 0), 0);
+        const totSpent = catsWithData.reduce((s, x) => s + x.spent, 0);
+        const totResTotal = catsWithData.reduce((s, x) => s + x.sum.total, 0);
+        const totResPaid = catsWithData.reduce((s, x) => s + x.sum.paid, 0);
+        const totResPending = round2(Math.max(totResTotal - totResPaid, 0));
+
+        pane.innerHTML = `
+            <div class="card" style="margin-bottom: 16px;">
+                <div class="trips-stats" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0;">
+                    <div class="trips-stat" style="cursor: default;">
+                        <div class="trips-stat-label">Presupuesto categorías</div>
+                        <div class="trips-stat-value">${App.formatCurrency(totBudget)}</div>
+                        <div class="trips-stat-meta">Global del viaje: ${App.formatCurrency(trip.budget || 0)}</div>
+                    </div>
+                    <div class="trips-stat" style="cursor: default;">
+                        <div class="trips-stat-label">Gasto registrado</div>
+                        <div class="trips-stat-value">${App.formatCurrency(totSpent)}</div>
+                        <div class="trips-stat-meta">Movimientos de gastos diarios</div>
+                    </div>
+                    <div class="trips-stat" style="cursor: default;">
+                        <div class="trips-stat-label">Pagado ya</div>
+                        <div class="trips-stat-value" style="color: var(--success);">${App.formatCurrency(totResPaid)}</div>
+                        <div class="trips-stat-meta">${App.formatCurrency(totResTotal)} comprometido</div>
+                    </div>
+                    <div class="trips-stat" style="cursor: default;">
+                        <div class="trips-stat-label">Pendiente de pago</div>
+                        <div class="trips-stat-value" style="color: ${totResPending > 0 ? 'var(--warning)' : 'var(--text)'};">${App.formatCurrency(totResPending)}</div>
+                        <div class="trips-stat-meta">Suma de saldos de subcategorías</div>
+                    </div>
+                </div>
+            </div>
+
+            ${catsWithData.length === 0 ? `
+                <div class="trips-empty"><i class="fas fa-layer-group"></i><h3>Sin categorías con datos</h3>
+                <p>Añade reservas o presupuestos por categoría para ver el desglose.</p></div>` : ''}
+
+            <div class="trips-accordion" id="tripsAccordion">
+                ${catsWithData.map(({ cat, res, budget, spent, sum }, idx) => {
+                    const pctPay = sum.total > 0 ? Math.min(100, (sum.paid / sum.total) * 100) : 0;
+                    const openByDefault = idx === 0;
+                    return `
+                    <div class="trips-cat-item ${openByDefault ? 'open' : ''}" data-cat="${cat.id}">
+                        <div class="trips-cat-head" data-acc-toggle>
+                            <div class="trips-cat-title">
+                                <span class="trips-cat-icon" style="background:${cat.color};"><i class="${cat.icon}"></i></span>
+                                ${App.escapeHtml(cat.name)}
+                                <span class="trips-chip neutral">${res.length}</span>
+                            </div>
+                            <div class="trips-cat-right">
+                                <div class="trips-cat-totals">
+                                    Presupuesto: <strong>${budget !== null ? App.formatCurrency(budget) : '—'}</strong><br>
+                                    Pagado ${App.formatCurrency(sum.paid)} · Pend. ${App.formatCurrency(sum.pending)}
+                                </div>
+                                <i class="fas fa-chevron-down trips-cat-chevron"></i>
+                            </div>
+                        </div>
+                        <div class="trips-cat-body">
+                            ${res.length === 0 ? `<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">Sin subcategorías reservadas en esta categoría.${spent > 0 ? ` Gasto real registrado: <strong>${App.formatCurrency(spent)}</strong>.` : ''}</div>` : ''}
+                            ${res.map(r => {
+                                const t = getSubcatTotals(r);
+                                const chip = t.pending <= 0.01
+                                    ? '<span class="trips-chip ok"><i class="fas fa-check"></i> Pagado</span>'
+                                    : (t.paid > 0 ? '<span class="trips-chip warn"><i class="fas fa-minus"></i> Parcial</span>'
+                                                  : '<span class="trips-chip bad"><i class="fas fa-clock"></i> Pendiente</span>');
+                                return `
+                                <div class="trips-subcat-row">
+                                    <div class="trips-subcat-info">
+                                        <div class="trips-subcat-name">${App.escapeHtml(r.concept)} ${chip}</div>
+                                        <div class="trips-subcat-meta">
+                                            <i class="fas fa-store" style="margin-right:4px;"></i>${App.escapeHtml(r.provider || '—')}
+                                            · Servicio: ${r.serviceDate ? App.formatDate(r.serviceDate) : '—'}
+                                            ${r.conditions ? ' · ' + App.escapeHtml(r.conditions) : ''}
+                                        </div>
+                                        <div class="trips-mini-progress"><div style="width:${t.pct}%;"></div></div>
+                                    </div>
+                                    <div class="trips-subcat-nums">
+                                        <div>Total <strong>${App.formatCurrency(t.total)}</strong></div>
+                                        <div>Pagado ${App.formatCurrency(t.paid)} · <span style="color:${t.pending > 0 ? 'var(--warning)' : 'var(--success)'};">Pend. ${App.formatCurrency(t.pending)}</span></div>
+                                    </div>
+                                    <button class="trips-pay-btn" title="Ver historial de pagos parciales" data-open-movements="${r.id}">
+                                        <i class="fas fa-arrow-right"></i>
+                                    </button>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+        `;
+
+        // Interacciones del acordeón
+        pane.querySelectorAll('[data-acc-toggle]').forEach(head => {
+            head.addEventListener('click', () => head.closest('.trips-cat-item').classList.toggle('open'));
+        });
+        pane.querySelectorAll('[data-open-movements]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openMovementsModal(btn.dataset.openMovements);
+            });
+        });
+    }
+
+    // ---- Modal: historial de movimientos + alta de pago parcial ----
+    function openMovementsModal(reservationId) {
+        const modal = containerEl.querySelector('#tripsGenericModal');
+        if (!modal) return;
+        currentMovementsReservationId = reservationId;
+        renderMovementsModalBody();
+        modal.classList.add('active');
+    }
+
+    function renderMovementsModalBody() {
+        const r = (tripsData.tripReservations || []).find(x => x.id === currentMovementsReservationId);
+        if (!r) return;
+        syncReservationFromMovements(r);
+        const trip = getTripById(r.tripId);
+        const movs = getReservationPayments(r.id);
+        const t = getSubcatTotals(r);
+        const today = new Date().toISOString().substring(0, 10);
+        const profiles = (App.data && App.data.profiles) || [];
+
+        const titleEl = containerEl.querySelector('#tripsGenericModalTitle');
+        const bodyEl = containerEl.querySelector('#tripsGenericModalBody');
+        const footerEl = containerEl.querySelector('#tripsGenericModalFooter');
+        if (titleEl) titleEl.innerHTML = `<i class="fas fa-money-bill-wave" style="color:var(--primary);margin-right:6px;"></i>Movimientos: ${App.escapeHtml(r.concept)}`;
+        if (footerEl) footerEl.innerHTML = '';
+
+        bodyEl.innerHTML = `
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">
+                ${trip ? App.escapeHtml(trip.name) : ''} · Proveedor: <strong>${App.escapeHtml(r.provider || '—')}</strong>
+            </div>
+            <div class="trips-mov-total">
+                <span>Total: ${App.formatCurrency(t.total)}</span>
+                <span>Pagado: ${App.formatCurrency(t.paid)}</span>
+                <span style="color:${t.pending > 0 ? 'var(--warning)' : 'var(--success)'};">Pendiente: ${App.formatCurrency(t.pending)}</span>
+            </div>
+            <div class="trips-mov-list">
+                ${movs.length === 0 ? '<div style="font-size:12px;color:var(--text-muted);padding:8px 0;">Todavía no hay pagos registrados en esta subcategoría.</div>' : ''}
+                ${movs.map(m => `
+                    <div class="trips-mov-item">
+                        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+                            ${getPersonAvatarHtml(m.payer)}
+                            <div style="min-width:0;">
+                                <div style="font-weight:600;">${App.formatCurrency(m.amount)} · ${App.escapeHtml(getPayerName(m.payer))}</div>
+                                <div style="color:var(--text-muted);font-size:11px;">
+                                    ${App.formatDate(m.date)} · ${App.escapeHtml(m.method || '')}${m.notes ? ' · ' + App.escapeHtml(m.notes) : ''}
+                                </div>
+                            </div>
+                        </div>
+                        <button class="trips-mov-del" data-del-mov="${m.id}" title="Eliminar movimiento"><i class="fas fa-trash"></i></button>
+                    </div>`).join('')}
+            </div>
+            <div class="trips-section-title" style="margin-top:16px;">Registrar nuevo pago parcial</div>
+            <div class="trips-form-row three">
+                <div class="form-group">
+                    <label class="form-label">Importe *</label>
+                    <input type="number" step="0.01" min="0" class="form-input" id="movAmount" placeholder="${t.pending.toFixed(2)}" value="">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Fecha</label>
+                    <input type="date" class="form-input" id="movDate" value="${today}">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Quién pagó</label>
+                    <select class="form-input" id="movPayer">
+                        <option value="conjunto">Conjunto</option>
+                        ${profiles.map(p => `<option value="${p.id}">${App.escapeHtml(p.name)}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            <div class="trips-form-row">
+                <div class="form-group">
+                    <label class="form-label">Método</label>
+                    <select class="form-input" id="movMethod">
+                        <option value="tarjeta">Tarjeta</option>
+                        <option value="transferencia">Transferencia</option>
+                        <option value="bizum">Bizum</option>
+                        <option value="efectivo">Efectivo</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Nota</label>
+                    <input type="text" class="form-input" id="movNotes" placeholder="Opcional">
+                </div>
+            </div>
+            <button class="btn btn-primary" id="movAddBtn" style="margin-top:6px;"><i class="fas fa-plus"></i> Añadir pago parcial</button>
+        `;
+
+        bodyEl.querySelector('#movAddBtn').addEventListener('click', () => {
+            const amount = parseFloat(bodyEl.querySelector('#movAmount').value);
+            if (!amount || amount <= 0) { App.showToast('Introduce un importe válido'); return; }
+            if (!tripsData.tripPayments) tripsData.tripPayments = [];
+            tripsData.tripPayments.push({
+                id: 'tp-' + Date.now(),
+                reservationId: r.id,
+                amount: round2(amount),
+                date: bodyEl.querySelector('#movDate').value || today,
+                payer: bodyEl.querySelector('#movPayer').value,
+                method: bodyEl.querySelector('#movMethod').value,
+                notes: bodyEl.querySelector('#movNotes').value.trim()
+            });
+            saveData();
+            renderMovementsModalBody();          // re-pinta el modal con nuevos totales
+            refreshActiveTripsView();            // reactividad global (acordeón + dashboard)
+            App.showToast('Pago registrado');
+        });
+
+        bodyEl.querySelectorAll('[data-del-mov]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.delMov;
+                App.showConfirm('Eliminar movimiento', '¿Eliminar este pago parcial? Se recalcularán los totales de la subcategoría.', () => {
+                    tripsData.tripPayments = (tripsData.tripPayments || []).filter(p => p.id !== id);
+                    saveData();
+                    renderMovementsModalBody();
+                    refreshActiveTripsView();
+                    App.showToast('Movimiento eliminado');
+                });
+            });
+        });
+    }
+
+    // Re-render inteligente tras una mutación: mantiene modales/paneles coherentes
+    function refreshActiveTripsView() {
+        if (!containerEl) return;
+        const view = containerEl.querySelector(`#tripsView-${currentView}`);
+        if (view && view.classList.contains('active')) {
+            renderView(currentView);
+        }
+    }
+
+    // Enrutador de la pestaña "Detalle y Categorías": acordeón con pagos parciales
+    function renderCategoriasView() {
+        const trip = getTripById(currentTripId);
+        if (!trip) return;
+        renderCategoriasAccordion(trip);
+    }
+
+    // =========================================================
+    // VISTA: ACTIVIDADES — TARJETAS POR DÍA + FICHA MODAL
+    // =========================================================
+    function renderActivitiesDayCards(trip) {
+        const pane = containerEl.querySelector('#tripPane-actividades');
+        if (!pane) return;
+
+        const acts = getTripActivities(trip.id);
+        const byDate = new Map();
+        acts.forEach(a => {
+            if (!byDate.has(a.date)) byDate.set(a.date, []);
+            byDate.get(a.date).push(a);
+        });
+        const dates = [...byDate.keys()].sort();
+        const linkedTotal = acts.reduce((s, a) => s + (getActivityExtras(a.id).budgetLinked ? (a.estimatedCost || 0) : 0), 0);
+        const paidActs = acts.filter(a => getActivityPaidInfo(a).paid).length;
+
+        const typeIcon = t => ({ transporte: 'fa-plane', alojamiento: 'fa-bed', restaurante: 'fa-utensils', actividad: 'fa-ticket-alt' }[t] || 'fa-star');
+
+        pane.innerHTML = `
+            <div class="card" style="margin-bottom:16px;">
+                <div class="trips-stats" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 0;">
+                    <div class="trips-stat" style="cursor: default;">
+                        <div class="trips-stat-label">Actividades</div>
+                        <div class="trips-stat-value">${acts.length}</div>
+                        <div class="trips-stat-meta">${dates.length} día(s) con agenda</div>
+                    </div>
+                    <div class="trips-stat" style="cursor: default;">
+                        <div class="trips-stat-label">Presupuesto vinculado</div>
+                        <div class="trips-stat-value">${App.formatCurrency(linkedTotal)}</div>
+                        <div class="trips-stat-meta">Suma de actividades vinculadas al presupuesto</div>
+                    </div>
+                    <div class="trips-stat" style="cursor: default;">
+                        <div class="trips-stat-label">Ya pagadas</div>
+                        <div class="trips-stat-value" style="color: var(--success);">${paidActs} / ${acts.length}</div>
+                        <div class="trips-stat-meta">Clic en una actividad para ver su ficha</div>
+                    </div>
+                </div>
+            </div>
+
+            ${dates.length === 0 ? `
+                <div class="trips-empty"><i class="fas fa-ticket-alt"></i><h3>Sin actividades</h3>
+                <p>Planifica el cronograma día a día del viaje.</p>
+                <button class="btn btn-primary" onclick="TripsApp.openActivityModal(null, '${trip.id}')"><i class="fas fa-plus"></i> Añadir actividad</button></div>` : ''}
+
+            <div style="display:flex; flex-direction:column; gap:14px;">
+                ${dates.map(dateStr => {
+                    const list = byDate.get(dateStr);
+                    const dayTotal = list.reduce((s, a) => s + (a.estimatedCost || 0), 0);
+                    return `
+                    <div class="trips-cat-item open" style="overflow:visible;">
+                        <div class="trips-cat-head" style="cursor:default;">
+                            <div class="trips-cat-title">
+                                <span class="trips-cat-icon" style="background:${trip.color || 'var(--primary)'};"><i class="fas fa-calendar-day"></i></span>
+                                ${getTripDayLabel(dateStr)}
+                            </div>
+                            <div class="trips-cat-right">
+                                <div class="trips-cat-totals" style="text-align:right;">${list.length} actividad(es)<br>Total: <strong>${App.formatCurrency(dayTotal)}</strong></div>
+                            </div>
+                        </div>
+                        <div class="trips-cat-body" style="display:block;">
+                            ${list.map(a => {
+                                const info = getActivityPaidInfo(a);
+                                const extras = getActivityExtras(a.id);
+                                const chip = info.paid
+                                    ? '<span class="trips-chip ok"><i class="fas fa-check"></i> Pagado</span>'
+                                    : (extras.payAtDestination
+                                        ? '<span class="trips-chip neutral"><i class="fas fa-map-pin"></i> Pago en destino</span>'
+                                        : '<span class="trips-chip warn"><i class="fas fa-clock"></i> Pendiente</span>');
+                                return `
+                                <div class="trips-subcat-row" data-open-activity="${a.id}" style="cursor:pointer;">
+                                    <div class="trips-subcat-info">
+                                        <div class="trips-subcat-name">
+                                            <i class="fas ${typeIcon(a.type)}" style="color:${trip.color || 'var(--primary)'};margin-right:6px;"></i>
+                                            ${App.escapeHtml(a.title)} ${chip}
+                                        </div>
+                                        <div class="trips-subcat-meta">
+                                            <i class="far fa-clock" style="margin-right:4px;"></i>${App.escapeHtml(a.time || '—')}
+                                            · <i class="fas fa-map-marker-alt" style="margin-right:4px;"></i>${App.escapeHtml(a.location || '—')}
+                                            ${extras.budgetLinked ? ' · Vinculada al presupuesto' : ''}
+                                        </div>
+                                    </div>
+                                    <div class="trips-subcat-nums">
+                                        <div><strong>${App.formatCurrency(a.estimatedCost || 0)}</strong></div>
+                                        <div>${App.escapeHtml(getPayerName(extras.payer))}</div>
+                                    </div>
+                                    <i class="fas fa-chevron-right" style="color:var(--text-muted);font-size:12px;"></i>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+        `;
+
+        pane.querySelectorAll('[data-open-activity]').forEach(row => {
+            row.addEventListener('click', () => openActivityDetailModal(row.dataset.openActivity));
+        });
+    }
+
+    // ---- Ficha emergente de actividad ----
+    function openActivityDetailModal(activityId) {
+        const modal = containerEl.querySelector('#tripsGenericModal');
+        const a = (tripsData.tripActivities || []).find(x => x.id === activityId);
+        if (!modal || !a) return;
+        const trip = getTripById(a.tripId);
+        const extras = getActivityExtras(a.id);
+        const info = getActivityPaidInfo(a);
+        const cat = tripsData.tripCategories.find(c =>
+            (a.type === 'transporte' && c.id === 'tc-1') ||
+            (a.type === 'alojamiento' && c.id === 'tc-2') ||
+            (a.type === 'restaurante' && ['tc-3', 'tc-4'].includes(c.id)) ||
+            (a.type === 'actividad' && c.id === 'tc-5')) || null;
+
+        containerEl.querySelector('#tripsGenericModalTitle').innerHTML =
+            `<i class="fas fa-ticket-alt" style="color:var(--primary);margin-right:6px;"></i>${App.escapeHtml(a.title)}`;
+        containerEl.querySelector('#tripsGenericModalBody').innerHTML = `
+            <div class="trips-act-detail">
+                <div class="trips-act-line"><span class="lbl">Viaje</span><span class="val">${trip ? App.escapeHtml(trip.name) : '—'}</span></div>
+                <div class="trips-act-line"><span class="lbl">Día</span><span class="val">${getTripDayLabel(a.date)}</span></div>
+                <div class="trips-act-line"><span class="lbl">Horario</span><span class="val">${App.escapeHtml(a.time || 'Por definir')}</span></div>
+                <div class="trips-act-line"><span class="lbl">Ubicación</span><span class="val">${App.escapeHtml(a.location || '—')}</span></div>
+                <div class="trips-act-line"><span class="lbl">Costo vinculado</span><span class="val">${App.formatCurrency(a.estimatedCost || 0)} ${extras.budgetLinked ? '(en presupuesto)' : '(no vinculada)'}</span></div>
+                <div class="trips-act-line"><span class="lbl">Estado de pago</span><span class="val">${info.paid ? '<span class="trips-chip ok">Pagado</span>' : (extras.payAtDestination ? '<span class="trips-chip neutral">Pago en destino</span>' : '<span class="trips-chip warn">Pendiente</span>')}</span></div>
+                <div class="trips-act-line"><span class="lbl">Lo asume</span><span class="val" style="display:flex;align-items:center;gap:6px;justify-content:flex-end;">${getPersonAvatarHtml(extras.payer)} ${App.escapeHtml(getPayerName(extras.payer))}</span></div>
+                ${cat ? `<div class="trips-act-line"><span class="lbl">Categoría</span><span class="val"><i class="${cat.icon}" style="color:${cat.color};margin-right:4px;"></i>${App.escapeHtml(cat.name)}</span></div>` : ''}
+                ${a.notes ? `<div style="padding:10px 12px;background:var(--border-light);border-radius:var(--radius-sm);font-size:12px;color:var(--text-secondary);"><i class="fas fa-sticky-note" style="margin-right:6px;"></i>${App.escapeHtml(a.notes)}</div>` : ''}
+            </div>
+        `;
+        containerEl.querySelector('#tripsGenericModalFooter').innerHTML = `
+            <button class="btn btn-secondary" data-close-trips-modal>Cerrar</button>
+            <button class="btn btn-primary" id="actEditBtn"><i class="fas fa-pen"></i> Editar actividad</button>
+        `;
+        const editBtn = containerEl.querySelector('#actEditBtn');
+        if (editBtn) editBtn.addEventListener('click', () => {
+            modal.classList.remove('active');
+            openActivityModal(a.id, a.tripId);
+        });
+        modal.classList.add('active');
+    }
+
+    // Enrutador de la pestaña "Actividades": tarjetas por día + ficha modal
+    function renderTripActividadesView() {
+        const trip = getTripById(currentTripId);
+        if (!trip) return;
+        renderActivitiesDayCards(trip);
+    }
+
+    // Selecciona un viaje por defecto si aún no hay ninguno activo
+    function ensureTripSelected() {
+        if (currentTripId && getTripById(currentTripId)) return true;
+        const candidates = tripsData.trips
+            .filter(t => t.status !== 'cancelado')
+            .sort((a, b) => (a.startDate || '9999').localeCompare(b.startDate || '9999'));
+        if (candidates.length === 0) return false;
+        currentTripId = candidates[0].id;
+        return true;
     }
 
     // =========================================================
@@ -1429,11 +2291,11 @@ const TripsApp = (function () {
 
         charts.budget = new Chart(canvas, {
             type: 'bar',
-            data: {
+             {
                 labels: trips.map(t => t.name),
                 datasets: [{
                     label: 'Presupuesto',
-                    data: trips.map(t => t.budget),
+                     trips.map(t => t.budget),
                     backgroundColor: trips.map(t => t.color + 'cc'),
                     borderColor: trips.map(t => t.color),
                     borderWidth: 1,
@@ -1481,10 +2343,10 @@ const TripsApp = (function () {
 
         charts.categories = new Chart(canvas, {
             type: 'doughnut',
-            data: {
+             {
                 labels: items.map(i => i.name),
                 datasets: [{
-                    data: items.map(i => i.total),
+                     items.map(i => i.total),
                     backgroundColor: items.map(i => i.color),
                     borderWidth: 2, borderColor: colors.bg
                 }]
@@ -1514,12 +2376,12 @@ const TripsApp = (function () {
 
         charts.comparison = new Chart(canvas, {
             type: 'bar',
-            data: {
+             {
                 labels: completed.map(t => t.name),
                 datasets: [
                     {
                         label: 'Presupuesto estimado',
-                        data: completed.map(t => t.budget),
+                         completed.map(t => t.budget),
                         backgroundColor: 'rgba(37,99,235,0.2)',
                         borderColor: '#2563eb',
                         borderWidth: 2,
@@ -1527,7 +2389,7 @@ const TripsApp = (function () {
                     },
                     {
                         label: 'Gasto real',
-                        data: completed.map(t => getTripTotalSpent(t.id)),
+                         completed.map(t => getTripTotalSpent(t.id)),
                         backgroundColor: 'rgba(16,185,129,0.6)',
                         borderColor: '#10b981',
                         borderWidth: 1,
@@ -1911,8 +2773,8 @@ const TripsApp = (function () {
                         </div>
                     ` : `
                         <div class="timeline">
-                            ${[...upcomingActivities.map(a => ({ type: 'activity', data: a, date: a.date })),
-                                ...upcomingReservations.map(r => ({ type: 'reservation', data: r, date: r.paymentDate }))]
+                            ${[...upcomingActivities.map(a => ({ type: 'activity',  a, date: a.date })),
+                                ...upcomingReservations.map(r => ({ type: 'reservation',  r, date: r.paymentDate }))]
                                 .sort((a, b) => a.date.localeCompare(b.date))
                                 .slice(0, 6)
                                 .map(item => {
@@ -1973,10 +2835,10 @@ const TripsApp = (function () {
 
         charts.detail = new Chart(canvas, {
             type: 'doughnut',
-            data: {
+             {
                 labels: items.map(i => i.name),
                 datasets: [{
-                    data: items.map(i => i.total),
+                     items.map(i => i.total),
                     backgroundColor: items.map(i => i.color),
                     borderWidth: 2, borderColor: colors.bg
                 }]
@@ -3550,11 +4412,36 @@ const TripsApp = (function () {
     // =========================================================
     // API PÚBLICA
     // =========================================================
+    // Función auxiliar: abre el modal de viaje con una plantilla rápida
+    // (usada desde los botones "Nueva idea" / "Nueva escapada")
+    // =========================================================
+    function openTripModalQuick(type = null) {
+        openTripModal();
+        if (!type) return;
+        const map = {
+            idea:      { name: 'Idea: ', type: 'idea' },
+            escapada:  { name: '', type: 'escapada' }
+        };
+        const preset = map[type];
+        if (!preset) return;
+        setTimeout(() => {
+            const body = containerEl && containerEl.querySelector('#tripsTripModalBody');
+            if (!body) return;
+            const nameInput = body.querySelector('#tripName');
+            const typeSelect = body.querySelector('#tripType');
+            if (nameInput && !nameInput.value) nameInput.value = preset.name;
+            if (typeSelect) typeSelect.value = preset.type;
+        }, 50);
+    }
+
+    // =========================================================
     return {
         render,
         init,
         onThemeChange,
         openTripModal,
+        openTripModalQuick,
+        openTripDetail,
         backToList
     };
 })();
