@@ -679,6 +679,13 @@
         .tm-detail-section { margin-bottom: 26px; }
         .tm-detail-section h3 { margin: 0 0 12px; font-size: 15.5px; display: flex; align-items: center; gap: 8px; }
 
+        /* Pestañas internas de la pantalla de configuración del viaje */
+        .tm-subtabs { display: inline-flex; gap: 4px; background: rgba(148,163,184,.14); border: 1px solid var(--tm-border); border-radius: 999px; padding: 4px; margin-bottom: 18px; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+        .tm-subtabs::-webkit-scrollbar { display: none; }
+        .tm-subtab { border: none; background: transparent; color: var(--tm-text-secondary); font-size: 12.5px; font-weight: 600; padding: 8px 16px; border-radius: 999px; cursor: pointer; font-family: inherit; transition: all .15s ease; white-space: nowrap; }
+        .tm-subtab:hover { color: var(--tm-text); }
+        .tm-subtab.active { background: var(--tm-bg-card); color: var(--tm-primary); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+
         /* Mini calendario mensual */
         .tm-mini-cal-row { display: flex; gap: 14px; flex-wrap: wrap; }
         .tm-mini-cal { background: rgba(148,163,184,.08); border: 1px solid var(--tm-border); border-radius: 10px; padding: 8px 10px; }
@@ -697,15 +704,14 @@
         .tm-cat-chip small { font-size: 11px; color: var(--tm-text-secondary); font-variant-numeric: tabular-nums; }
 
         /* Carrusel horizontal de tarjetas (días y actividades) */
-        .tm-carousel { position: relative; }
-        .tm-car-track { display: flex; gap: 14px; overflow-x: auto; scroll-behavior: smooth; padding: 4px 2px 10px; scrollbar-width: thin; }
+        .tm-carousel { display: flex; align-items: center; gap: 10px; }
+        .tm-car-track { display: flex; gap: 14px; overflow-x: auto; scroll-behavior: smooth; padding: 4px 2px 10px; scrollbar-width: thin; flex: 1; min-width: 0; }
         .tm-car-track::-webkit-scrollbar { height: 6px; }
         .tm-car-track::-webkit-scrollbar-thumb { background: rgba(148,163,184,.4); border-radius: 999px; }
-        .tm-car-arrow { position: absolute; top: 50%; transform: translateY(-60%); z-index: 3; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--tm-border); background: var(--tm-bg-card); color: var(--tm-text); font-size: 19px; line-height: 1; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.16); display: flex; align-items: center; justify-content: center; transition: all .15s ease; }
-        .tm-car-arrow:hover { background: var(--tm-primary); color: #fff; transform: translateY(-60%) scale(1.06); }
-        .tm-car-arrow.left { left: -12px; }
-        .tm-car-arrow.right { right: -12px; }
-        .tm-day-card-h { flex: 0 0 268px; width: 268px; vertical-align: top; }
+        .tm-car-arrow { flex: none; order: -1; width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--tm-border); background: var(--tm-bg-card); color: var(--tm-text); font-size: 24px; line-height: 1; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.16); display: flex; align-items: center; justify-content: center; transition: all .15s ease; }
+        .tm-car-arrow:hover { background: var(--tm-primary); color: #fff; transform: scale(1.06); }
+        .tm-carousel .tm-car-arrow.right { order: 1; }
+        .tm-day-card-h { flex: 0 0 340px; width: 340px; display: flex; flex-direction: column; vertical-align: top; }
         .tm-day-card-h .tm-day-title { font-size: 12.5px; }
 
         /* Líneas de gasto diario dentro de la tarjeta */
@@ -720,6 +726,36 @@
 
         /* Filas de actividades dentro del carrusel */
         .tm-act-row .tm-badge { font-size: 9.5px; padding: 2px 7px; }
+
+        /* Reglas y avisos (pantalla Configuración) */
+        .tm-rule-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px dashed var(--tm-border); font-size: 13px; }
+        .tm-rule-row:first-of-type { border-top: none; }
+        .tm-rule-icon { font-size: 18px; flex: none; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: rgba(148,163,184,.12); }
+        .tm-rule-main { flex: 1; min-width: 0; }
+        .tm-rule-label { font-weight: 600; }
+        .tm-rule-sub { font-size: 11.5px; color: var(--tm-text-muted); margin-top: 2px; }
+        .tm-switch { position: relative; width: 40px; height: 22px; flex: none; cursor: pointer; }
+        .tm-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+        .tm-switch-slider { position: absolute; inset: 0; border-radius: 999px; background: rgba(148,163,184,.45); transition: background .15s ease; }
+        .tm-switch-slider::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s ease; }
+        .tm-switch input:checked + .tm-switch-slider { background: var(--tm-success); }
+        .tm-switch input:checked + .tm-switch-slider::before { transform: translateX(18px); }
+        .tm-select-days { width: 110px; flex: none; }
+        .tm-alert-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid rgba(239,68,68,.35); background: rgba(239,68,68,.06); border-radius: 10px; margin-bottom: 8px; font-size: 13px; }
+        .tm-alert-item.warn { border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.07); }
+        .tm-alert-item strong { margin-left: auto; white-space: nowrap; }
+
+        /* Ahorro y financiación del viaje (rediseño) */
+        .tm-fund-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .tm-fund-card { background: var(--tm-bg-card); border: 1px solid var(--tm-border); border-radius: 12px; padding: 14px 16px; }
+        .tm-fund-card small { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--tm-text-muted); margin-bottom: 4px; }
+        .tm-fund-card strong { font-size: 17px; letter-spacing: -.3px; }
+        .tm-fund-bar { height: 12px; border-radius: 999px; background: rgba(148,163,184,.25); overflow: hidden; margin: 10px 0 6px; }
+        .tm-fund-bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--tm-primary), #60a5fa); transition: width .5s ease; }
+        .tm-fund-split { display: flex; gap: 4px; height: 12px; border-radius: 999px; overflow: hidden; background: rgba(148,163,184,.25); margin: 10px 0 6px; }
+        .tm-fund-split > span { display: block; height: 100%; }
+        .tm-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--tm-text-secondary); margin-top: 6px; }
+        .tm-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; }
     `; }
 
     /* =========================================================================
@@ -741,6 +777,7 @@
 
             this.state = {
                 activeTab: 'resumen',
+                detailTab: 'config',      // pestaña interna del detalle: config | diario | actividades | ahorro
                 selectedTripId: null,     // null → vista global (Resumen General)
                 openCategories: {},       // { tripId|categoryId: true } estado acordeón
                 expandedDays: {},
@@ -884,7 +921,6 @@
                 <header class="tm-header tm-header-compact">
                     <div class="tm-controls">
                         <button type="button" class="tm-btn tm-btn-ghost tm-btn-sm" id="tm-back-btn" data-action="back-btn" hidden>← Volver</button>
-                        <select id="tm-trip-select" class="tm-select" aria-label="Selector global de viaje activo"></select>
                     </div>
                 </header>
                 <nav class="tm-tabs" role="tablist">
@@ -940,13 +976,9 @@
         }
 
         _renderHeader() {
-            const sel = this.mount.querySelector('#tm-trip-select');
             const inDetail = this.state.activeTab === 'detail';
-            const opts = ['<option value="">🌍 Todos los viajes</option>']
-                .concat(this.trips.map(t =>
-                    `<option value="${t.id}" ${t.id === this.state.selectedTripId ? 'selected' : ''}>${TripManager.esc(t.name)}</option>`));
-            sel.innerHTML = opts.join('');
-            sel.hidden = inDetail;
+            const header = this.mount.querySelector('.tm-header');
+            if (header) header.style.display = inDetail ? '' : 'none';
             const backBtn = this.mount.querySelector('#tm-back-btn');
             backBtn.hidden = !inDetail;
         }
@@ -1239,6 +1271,7 @@
         openTripDetail(id) {
             this.state.selectedTripId = id;
             this.state.activeTab = 'detail';
+            this.state.detailTab = 'config';   // siempre arranca en la 1ª pestaña
             this.state.dayScroll = 0;
             this.state.actScroll = 0;
             this.render();
@@ -1260,6 +1293,41 @@
             const planned = this.spentPlannedOf(trip);
             const paid = this.paidOf(trip);
             const cats = this._splitCategories(trip);
+            const dt = this.state.detailTab || 'config';
+
+            const sectionHTML = {
+                config: `
+                    <section class="tm-detail-section">
+                        <h3>🗂️ Categorías presupuestadas</h3>
+                        <div class="tm-cat-chips">
+                            ${cats.map(c => {
+                                const tot = c.items.reduce((s, i) => s + (i.total || 0), 0);
+                                const cp = c.items.reduce((s, i) => s + i.payments.reduce((x, p) => x + p.amount, 0), 0);
+                                return `<div class="tm-cat-chip" style="--chip:${c.color}">
+                                    <span class="tm-cat-chip-icon">${c.icon}</span>
+                                    <div><strong>${TripManager.esc(c.name)}</strong><small>${TripManager.fmt(cp)} / ${TripManager.fmt(tot)}</small></div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                        <div class="tm-accordion" style="margin-top:14px;">${this._catAccordionHTML(trip)}</div>
+                    </section>
+                    ${this._rulesSectionHTML(trip, st)}`,
+                diario: `
+                    <section class="tm-detail-section">
+                        <h3>📅 Planificación diaria</h3>
+                        ${this._carouselHTML('day', this._daysCarouselInner(trip), `Total del viaje: ${TripManager.fmt(this.dailyBudgetedOf(trip))} planificado · ${TripManager.fmt(this.dailyRealOf(trip))} real`)}
+                    </section>`,
+                actividades: `
+                    <section class="tm-detail-section">
+                        <h3>🎯 Actividades</h3>
+                        ${this._carouselHTML('act', this._activitiesCarouselInner(trip))}
+                    </section>`,
+                ahorro: `
+                    <section class="tm-detail-section">
+                        <h3>💶 Ahorro y financiación del viaje</h3>
+                        ${this._privateFundHTML(trip)}
+                    </section>`
+            }[dt];
 
             view.innerHTML = `
                 <div class="tm-detail-hero">
@@ -1277,47 +1345,18 @@
                         ${this._calHTML(trip)}
                         <div class="tm-detail-actions">
                             <button type="button" class="tm-btn tm-btn-primary tm-btn-sm" data-action="edit-trip">✏️ Editar datos generales</button>
-                            <button type="button" class="tm-btn tm-btn-ghost tm-btn-sm" data-action="exit-trip">← Volver a la lista</button>
                         </div>
                     </div>
                 </div>
 
-                <div class="tm-detail-metrics">
-                    <div class="tm-metric"><small>Presupuesto límite</small><strong>${TripManager.fmt(trip.budgetLimit)}</strong></div>
-                    <div class="tm-metric"><small>Gastado / Planif.</small><strong id="tm-detail-planned">${TripManager.fmt(planned)}</strong></div>
-                    <div class="tm-metric"><small>Pagado ya</small><strong style="color:var(--tm-success)">${TripManager.fmt(paid)}</strong></div>
-                    <div class="tm-metric"><small>Pendiente</small><strong id="tm-detail-pending" style="color:var(--tm-danger)">${TripManager.fmt(Math.max(planned - paid, 0))}</strong></div>
-                </div>
+                <nav class="tm-subtabs" role="tablist">
+                    <button type="button" class="tm-subtab ${dt === 'config' ? 'active' : ''}" data-action="detail-tab" data-tab="config">⚙️ Configuración y categorías</button>
+                    <button type="button" class="tm-subtab ${dt === 'diario' ? 'active' : ''}" data-action="detail-tab" data-tab="diario">📅 Planificación diaria</button>
+                    <button type="button" class="tm-subtab ${dt === 'actividades' ? 'active' : ''}" data-action="detail-tab" data-tab="actividades">🎯 Actividades</button>
+                    <button type="button" class="tm-subtab ${dt === 'ahorro' ? 'active' : ''}" data-action="detail-tab" data-tab="ahorro">💶 Ahorro y financiación</button>
+                </nav>
 
-                <section class="tm-detail-section">
-                    <h3>🗂️ Categorías presupuestadas</h3>
-                    <div class="tm-cat-chips">
-                        ${cats.map(c => {
-                            const tot = c.items.reduce((s, i) => s + (i.total || 0), 0);
-                            const cp = c.items.reduce((s, i) => s + i.payments.reduce((x, p) => x + p.amount, 0), 0);
-                            return `<div class="tm-cat-chip" style="--chip:${c.color}">
-                                <span class="tm-cat-chip-icon">${c.icon}</span>
-                                <div><strong>${TripManager.esc(c.name)}</strong><small>${TripManager.fmt(cp)} / ${TripManager.fmt(tot)}</small></div>
-                            </div>`;
-                        }).join('')}
-                    </div>
-                    <div class="tm-accordion" style="margin-top:14px;">${this._catAccordionHTML(trip)}</div>
-                </section>
-
-                <section class="tm-detail-section">
-                    <h3>📅 Planificación diaria</h3>
-                    ${this._carouselHTML('day', this._daysCarouselInner(trip), `Total diario: ${TripManager.fmt(this.dailyBudgetedOf(trip))} planificado · ${TripManager.fmt(this.dailyRealOf(trip))} real`)}
-                </section>
-
-                <section class="tm-detail-section">
-                    <h3>🎯 Actividades</h3>
-                    ${this._carouselHTML('act', this._activitiesCarouselInner(trip))}
-                </section>
-
-                <section class="tm-detail-section">
-                    <h3>💶 Ahorro y financiación privatizada</h3>
-                    ${this._privateFundHTML(trip)}
-                </section>`;
+                ${sectionHTML}`;
 
             // restaurar desplazamientos de los carruseles
             this._applyScroll('day'); this._applyScroll('act');
@@ -1431,34 +1470,128 @@
             track.scrollTo({ left: this.state[kind + 'Scroll'], behavior: 'smooth' });
         }
 
-        /* Ahorro y financiación PRIVATIZADA al viaje */
+        /* Ahorro y financiación PRIVATIZADA al viaje (rediseño) */
         _privateFundHTML(trip) {
             const planned = this.plannedOf(trip);
             const paid = this.paidOf(trip);
             const remaining = Math.max(planned - paid, 0);
             const saved = this.savedTotal();
             const coverage = remaining > 0 ? Math.min(Math.round(saved / remaining * 100), 999) : 100;
+            const fundPct = remaining > 0 ? Math.min(Math.round(Math.min(saved, remaining) / remaining * 100), 100) : 100;
             const contribs = this.data.savings.contributions.slice().reverse().slice(0, 6).map(c => `
                 <li><span>${TripManager.shortDate(c.date)} · ${TripManager.esc(c.note)} <span class="muted">(${TripManager.esc(c.payer)})</span></span>
                     <strong style="color:var(--tm-success)">+${TripManager.fmt(c.amount)}</strong></li>`).join('');
             return `
-                <div class="tm-two-col">
-                    <div class="tm-panel">
-                        <h3 style="font-size:13.5px;">Financiación de «${TripManager.esc(trip.name)}»</h3>
-                        <ul class="tm-list">
-                            <li><span>Planificado del viaje</span><strong>${TripManager.fmt(planned)}</strong></li>
-                            <li><span>Ya pagado</span><strong style="color:var(--tm-success)">${TripManager.fmt(paid)}</strong></li>
-                            <li><span>Restante por financiar</span><strong style="color:var(--tm-danger)">${TripManager.fmt(remaining)}</strong></li>
-                            <li><span>Fondo de ahorro disponible</span><strong>${TripManager.fmt(saved)}</strong></li>
-                            <li><span>Cobertura del fondo sobre el viaje</span><strong>${coverage}%</strong></li>
-                        </ul>
-                        <div style="margin-top:12px;"><button type="button" class="tm-btn tm-btn-primary tm-btn-sm" data-action="contribution-modal">＋ Registrar aportación al fondo</button></div>
+                <div class="tm-fund-grid">
+                    <div class="tm-fund-card"><small>Planificado del viaje</small><strong>${TripManager.fmt(planned)}</strong></div>
+                    <div class="tm-fund-card"><small>Ya pagado</small><strong style="color:var(--tm-success)">${TripManager.fmt(paid)}</strong></div>
+                    <div class="tm-fund-card"><small>Restante por financiar</small><strong style="color:var(--tm-danger)">${TripManager.fmt(remaining)}</strong></div>
+                    <div class="tm-fund-card"><small>Fondo de ahorro disponible</small><strong>${TripManager.fmt(saved)}</strong></div>
+                </div>
+
+                <div class="tm-panel" style="padding:16px 18px;">
+                    <h3 style="font-size:13.5px;margin:0 0 4px;">Cobertura del fondo sobre «${TripManager.esc(trip.name)}»</h3>
+                    <div class="tm-fund-bar"><div class="tm-fund-bar-fill" style="width:${fundPct}%"></div></div>
+                    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--tm-text-secondary);">
+                        <span>${coverage >= 100 ? '✅ El fondo cubre la totalidad del restante' : `El fondo cubre el ${coverage}% del restante`}</span>
+                        <span>${TripManager.fmt(Math.min(saved, remaining))} / ${TripManager.fmt(remaining)}</span>
                     </div>
-                    <div class="tm-panel">
-                        <h3 style="font-size:13.5px;">Últimas aportaciones</h3>
-                        <ul class="tm-list">${contribs || '<li><span class="muted">Sin aportaciones.</span></li>'}</ul>
+                    <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
+                        <button type="button" class="tm-btn tm-btn-primary tm-btn-sm" data-action="contribution-modal">＋ Registrar aportación al fondo</button>
                     </div>
+                </div>
+
+                <div class="tm-panel" style="padding:16px 18px;margin-top:14px;">
+                    <h3 style="font-size:13.5px;margin:0 0 8px;">Últimas aportaciones</h3>
+                    <ul class="tm-list">${contribs || '<li><span class="muted">Sin aportaciones todavía.</span></li>'}</ul>
                 </div>`;
+        }
+
+        /* --------------------- Reglas y avisos del viaje --------------------- */
+        RULE_CATALOG() {
+            return [
+                { id: 'vuelos',      icon: '✈️', label: 'Comprar los vuelos',              match: /transporte|vuelo/i },
+                { id: 'hospedaje',   icon: '🏨', label: 'Reservar el hospedaje',           match: /hospedaje|hotel|alojamiento|accommodation/i },
+                { id: 'actividades', icon: '🎟️', label: 'Reservar actividades y entradas', match: /actividad/i },
+                { id: 'seguro',      icon: '🛡️', label: 'Contratar el seguro de viaje',    match: /seguro/i },
+                { id: 'comida',      icon: '🍽️', label: 'Presupuestar la comida',          match: /comida/i },
+                { id: 'otros',       icon: '🧳', label: 'Revisar otros gastos',            match: /otro/i }
+            ];
+        }
+        _ensureRules() {
+            if (!this.data.rules) this.data.rules = [];
+            const catalog = this.RULE_CATALOG();
+            catalog.forEach(def => {
+                if (!this.data.rules.find(r => r.id === def.id)) {
+                    this.data.rules.push({ id: def.id, enabled: true, days: 60 });
+                }
+            });
+            // limpiar reglas fuera del catálogo
+            this.data.rules = this.data.rules.filter(r => catalog.some(d => d.id === r.id));
+        }
+        /** Devuelve {def, rule, pending, dueDate|null} por regla aplicable a un viaje. */
+        _ruleStatusForTrip(trip) {
+            this._ensureRules();
+            return this.RULE_CATALOG().map(def => {
+                const rule = this.data.rules.find(r => r.id === def.id);
+                const cats = trip.categories.filter(c => def.match.test(c.name));
+                let pending = 0, dueDate = null;
+                cats.forEach(c => c.items.forEach(i => {
+                    const p = i.payments.reduce((s, pp) => s + pp.amount, 0);
+                    const rest = (i.total || 0) - p;
+                    if (rest > 0.005) {
+                        pending += rest;
+                        const dd = i.dueDate || trip.startDate;
+                        if (!dueDate || dd < dueDate) dueDate = dd;
+                    }
+                }));
+                return { def, rule, pending, dueDate };
+            });
+        }
+        _rulesSectionHTML(trip, st) {
+            const today = TripManager.iso(new Date());
+            const statuses = this._ruleStatusForTrip(trip);
+            const rows = statuses.map(({ def, rule, pending }) => {
+                const dayOpts = [7, 14, 30, 45, 60, 90].map(d =>
+                    `<option value="${d}" ${d === rule.days ? 'selected' : ''}>${d} días antes</option>`).join('');
+                return `
+                <div class="tm-rule-row">
+                    <span class="tm-rule-icon">${def.icon}</span>
+                    <div class="tm-rule-main">
+                        <div class="tm-rule-label">${def.label}</div>
+                        <div class="tm-rule-sub">Avisa si sigue sin cerrar el pago de esta categoría</div>
+                    </div>
+                    <select class="tm-select tm-select-sm tm-select-days" data-action="rule-days" data-rule="${def.id}" ${rule.enabled ? '' : 'disabled'} aria-label="Antelación del aviso">${dayOpts}</select>
+                    <label class="tm-switch" title="${rule.enabled ? 'Regla activada' : 'Regla desactivada'}">
+                        <input type="checkbox" data-action="rule-toggle" data-rule="${def.id}" ${rule.enabled ? 'checked' : ''}>
+                        <span class="tm-switch-slider"></span>
+                    </label>
+                </div>`;
+            }).join('');
+
+            // Avisos activos para este viaje
+            let alerts = '';
+            if (st !== 'realizado') {
+                const items = statuses.map(({ def, rule, pending, dueDate }) => {
+                    if (!rule.enabled || pending <= 0.005 || !dueDate) return '';
+                    const limit = TripManager.addDays(trip.startDate, -rule.days);
+                    if (today > limit) {
+                        return `<div class="tm-alert-item">⏰ <span><strong>${def.icon} ${def.label}:</strong> quedan pagos pendientes y ya deberías haberlo cerrado (fecha límite: ${TripManager.shortDate(limit)}).</span><strong style="color:var(--tm-danger)">${TripManager.fmt(pending)}</strong></div>`;
+                    }
+                    if (dueDate < today) {
+                        return `<div class="tm-alert-item warn">📅 <span><strong>${def.icon} ${def.label}:</strong> vencimiento pasado con saldo pendiente.</span><strong style="color:var(--tm-warning, #f59e0b)">${TripManager.fmt(pending)}</strong></div>`;
+                    }
+                    return `<div class="tm-alert-item warn">🔔 <span><strong>${def.icon} ${def.label}:</strong> avisa el ${TripManager.shortDate(limit)} (${rule.days} días antes de la salida). Vence: ${TripManager.shortDate(dueDate)}.</span><strong>${TripManager.fmt(pending)}</strong></div>`;
+                }).join('');
+                alerts = items || '<div class="tm-rule-sub" style="margin-top:8px;">✅ Sin avisos: todo lo programado está en plazo o pagado.</div>';
+            }
+
+            return `
+                <section class="tm-detail-section">
+                    <h3>🔔 Reglas y avisos</h3>
+                    <div class="tm-panel" style="padding:6px 18px 14px;">${rows}</div>
+                    ${alerts ? `<div style="margin-top:14px;"><h3 style="font-size:13.5px;">Avisos para «${TripManager.esc(trip.name)}»</h3>${alerts}</div>` : ''}
+                </section>`;
         }
 
         /* =========================================================
@@ -1871,14 +2004,44 @@
 
         _onChange(e) {
             const el = e.target;
-            if (el.id === 'tm-trip-select') {
-                if (this.state.activeTab === 'detail') this.closeTripDetail();
-                else this.selectTrip(el.value || null);
-                return;
-            }
             if (el.dataset && el.dataset.action === 'month-filter') {
                 this.state.monthFilter = el.value || '';
                 this.render();
+                return;
+            }
+            if (el.dataset && el.dataset.action === 'rule-days') {
+                this._ensureRules();
+                const r = this.data.rules.find(x => x.id === el.dataset.rule);
+                if (r) { r.days = parseInt(el.value, 10) || 0; this._notifyChange(); }
+                return;
+            }
+            if (el.dataset && el.dataset.action === 'rule-toggle') {
+                this._ensureRules();
+                const r = this.data.rules.find(x => x.id === el.dataset.rule);
+                if (r) {
+                    r.enabled = !!el.checked;
+                    this._notifyChange();
+                    // Refresca los avisos sin re-render completo
+                    if (this.state.activeTab === 'detail' && this.state.detailTab === 'config') this._render_detail();
+                }
+                return;
+            }
+            if (el.dataset && el.dataset.action === 'cat-select') {
+                const trip = this.selectedTrip;
+                if (!trip) return;
+                const day = trip.days[+el.dataset.day];
+                const item = day && day.items[+el.dataset.item];
+                if (item) {
+                    item.category = el.value;
+                    const line = el.closest('.tm-dline');
+                    const catEl = line && line.querySelector('.tm-dline-cat');
+                    if (catEl) {
+                        const c = this._splitCategories(trip).find(cc => cc.name === el.value);
+                        catEl.textContent = c ? c.icon : el.value;
+                        catEl.style.setProperty('--dot', c ? c.color : 'var(--tm-primary)');
+                        catEl.title = el.value;
+                    }
+                }
             }
         }
 
