@@ -643,38 +643,46 @@
             </div>
 
             <div id="sectionContainer"></div>
+
+            <!-- Contenedor del módulo de Planificación de Viajes (TripManager).
+                 Se muestra cuando la sección activa es 'viajes'; app.js monta aquí
+                 el componente y trip-manager.js inyecta sus propios estilos. -->
+            <div id="trip-manager-app" hidden></div>
         </main>
     </div>
 
     <div class="toast-container" id="toastContainer"></div>
 
+    <!-- Librerías base / shell -->
     <script src="0_app.js"></script>
     <script src="2_presupuesto-comun.js"></script>
     <script src="3_calendario.js"></script>
     <script src="4_ingresos-personales.js"></script>
     <script src="5_dinero.js"></script>
-    <script src="6_viajes.js"></script>
+
+    <!-- Módulo de viajes reescrito: primero el gestor, después su conexión con el DOM -->
+    <script src="trip-manager.js"></script>
+    <script src="app.js"></script>
 
     <script>
         // =========================================================
         // CONEXIONES ENTRE MÓDULOS (centralizadas en App)
         // Cada módulo publica aquí la API que expone al resto;
         // ningún módulo llama directamente a otro módulo.
+        // La API de 'viajes' la registra app.js sobre window.TripManager,
+        // por lo que ya NO se repite aquí (única fuente de verdad).
         // =========================================================
         App.registerModule('presupuesto-comun', {
             openExpenseModal: (id) => BudgetApp.openExpenseModal(id),
             openCategoryModal: (id) => BudgetApp.openCategoryModal(id)
-        });
-        App.registerModule('viajes', {
-            openTripDetail: (tripId, tab) => TripsApp.openTripDetail(tripId, tab || 'resumen'),
-            openTripModal: (id) => TripsApp.openTripModal(id)
         });
         App.registerModule('mi-dinero', {
             getSavings: () => DineroApp.getSavings()
         });
 
         document.addEventListener('DOMContentLoaded', () => {
-            App.init();
+            App.init();          // Shell + navegación principal
+            initTripManager();   // Monta TripManager en #trip-manager-app
         });
     </script>
 
