@@ -114,21 +114,28 @@ const DataService = (function () {
         try {
             status.syncing = true;
             emit();
-            await fetch(CONFIG.apiUrl, {
+
+            const idToken = window.AuthService ? AuthService.getIdToken() : null;
+            const bodyPayload = { action: 'write', module, data };
+            if (idToken) bodyPayload.id_token = idToken;
+            else bodyPayload.token = CONFIG.token;
+
+            const response = await fetch(CONFIG.apiUrl, {
                 method: 'POST',
                 // text/plain evita CORS preflight (Apps Script no maneja OPTIONS)
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({
-                    token: CONFIG.token,
-                    action: 'write',
-                    module,
-                    data
-                })
-            }).then(async r => {
-                const json = await r.json();
-                if (!json.ok) throw new Error(json.error || 'write failed');
-                return json;
+                body: JSON.stringify(bodyPayload)
             });
+
+            const json = await response.json();
+            
+            if (!json.ok) {
+                if (json.error === 'unauthorized') {
+                    if (window.AuthService) AuthService.requestReauth();
+                }
+                throw new Error(json.error || 'write failed');
+            }
+
             status.connected = true;
             status.lastSync = Date.now();
             status.lastError = null;
@@ -150,10 +157,23 @@ const DataService = (function () {
     }
 
     async function fetchAll() {
-        const url = CONFIG.apiUrl + '?token=' + encodeURIComponent(CONFIG.token) + '&action=read';
+        const idToken = window.AuthService ? AuthService.getIdToken() : null;
+        let url = CONFIG.apiUrl + '?action=read';
+        if (idToken) url += '&id_token=' + encodeURIComponent(idToken);
+        else url += '&token=' + encodeURIComponent(CONFIG.token);
+
         const r = await fetch(url, { method: 'GET' });
         const json = await r.json();
-        if (!json.ok) throw new Error(json.error || 'read failed');
+        if (!json.ok) {
+            if (json.error === 'unauthorized') {
+                if (window.AuthService) AuthService.requestReauth();
+                throw new Error('Sesión expirada');
+            }
+            if (json.error === 'forbidden') {
+                throw new Error('Tu cuenta (' + json.email + ') no tiene acceso a este Sheet.');
+            }
+            throw new Error(json.error || 'read failed');
+        }
         return json.data;
     }
 

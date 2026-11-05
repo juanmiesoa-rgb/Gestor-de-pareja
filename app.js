@@ -428,6 +428,23 @@ const App = (function () {
             }
         },
 
+        updateAuthUI: (payload) => {
+            const chip = document.getElementById('userChip');
+            const avatar = document.getElementById('userAvatar');
+            const name = document.getElementById('userName');
+            if (!chip) return;
+            if (payload && payload.signedIn && payload.user) {
+                chip.hidden = false;
+                if (avatar && payload.user.picture) {
+                    avatar.src = payload.user.picture;
+                    avatar.alt = payload.user.name || '';
+                }
+                if (name) name.textContent = payload.user.name || payload.user.email || '';
+            } else {
+                chip.hidden = true;
+            }
+        },
+
         /* ---------- FASE 1 · Acceso unificado ---------- */
         getAccounts: () => data.accounts || [],
 
@@ -775,22 +792,29 @@ App.registerModule('calendario', {
 })();
 
 /* =============================================================================
-   ARRANQUE
+   ARRANQUE CON AUTENTICACIÓN Y CARGA INSTANTÁNEA
    ============================================================================= */
-document.addEventListener('DOMContentLoaded', async () => {
-    // 1 · Arrancar INMEDIATAMENTE con localStorage (0 ms)
+let appStarted = false;
+
+async function bootstrapApp() {
+    if (appStarted) return;
+    appStarted = true;
+
+    // 1 · Ocultar login si estaba visible
+    if (window.AuthService) AuthService.hideLogin();
+
+    // 2 · Arrancar INMEDIATAMENTE con localStorage (0 ms)
     initTripManager();
     App.init();
 
-    // 2 · Refresh en background (no bloquea)
+    // 3 · Refresh en background desde Sheets
     if (window.DataService) {
         DataService.init();
     }
 
-    // 3 · Escuchar refresh del server → re-render selectivo
+    // 4 · Escuchar refresh del server → re-render selectivo
     document.addEventListener('app:data-refreshed', () => {
         console.info('[App] Datos externos actualizados · re-renderizando…');
-        // Re-montar TripManager para que recoja cambios en viajes
         const tm = window.getTripManager && window.getTripManager();
         if (tm && tm.mounted) {
             try {
@@ -804,7 +828,45 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             } catch (e) {}
         }
-        // Re-renderizar la sección activa
         if (typeof App.refreshAll === 'function') App.refreshAll();
     });
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // Si no hay servicio de auth (por si acaso), arrancamos normal
+    if (!window.AuthService) {
+        console.warn('[App] AuthService no cargado. Arrancando sin login.');
+        bootstrapApp();
+        return;
+    }
+
+    try {
+        // 1. Cargar el SDK de Google
+        await AuthService.init();
+    } catch (e) {
+        console.error('[App] Error al cargar Google Sign-In:', e);
+        AuthService.showError('No se pudo cargar Google Sign-In. Comprueba tu conexión.');
+        return;
+    }
+
+    // 2. Configurar el botón de cerrar sesión
+    const signOutBtn = document.getElementById('signOutBtn');
+    if (signOutBtn) {
+        signOutBtn.onclick = () => {
+            AuthService.signOut();
+            appStarted = false; 
+        };
+    }
+
+    // 3. Comprobar si ya hay sesión
+    if (!AuthService.isSignedIn()) {
+        AuthService.showLogin();
+        AuthService.onChange(({ signedIn }) => {
+            if (signedIn) bootstrapApp();
+        });
+        return;
+    }
+
+    // 4. Si ya está logueado, arrancar
+    bootstrapApp();
 });
