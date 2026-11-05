@@ -1,2269 +1,1884 @@
-/* =============================================================
-   MI-DINERO.JS
-   Sección completa con 6 vistas:
-   - Resumen (indicadores por persona y conjunto)
-   - Nóminas (perfil salarial, cálculo neto estimado vs real)
-   - Gastos individuales obligatorios
-   - Distribución del dinero restante
-   - Pagas extras (con distribución independiente)
-   - Configuración
-   
-   Regla clave: el mayor número de pagas de la pareja (15 vs 14)
-   se usa como referencia común para normalizar el ingreso mensual.
-   ============================================================= */
-const MyMoneyApp = (function () {
+/* =============================================================================
+   INGRESOS-PERSONALES.JS · v12 — Puente App completo
+   -----------------------------------------------------------------------------
+   Cambios clave respecto a v11:
+     · getSalary(pid, mk), getIncomeForMonth(mk), getIndividualExpenses(pid, mk)
+       expuestos para el puente
+     · getSharedContributionRules() ampliado con salary y netMonthly por persona
+     · Botón "Confirmar cobro mensual" → App.registerIncomeMovement()
+     · Botón "Confirmar cobro extra/bonus" → App.registerIncomeMovement() +
+       distribución automática (ahorro → cuenta savings, viajes → fondo viajes)
+     · Listener app:module-changed → re-render automático
+   ============================================================================= */
+const IngresosModulo = (function () {
     'use strict';
 
-    // =========================================================
-    // ESTILOS ESPECÍFICOS
-    // =========================================================
-    // CSS del módulo → inyección estandarizada (App.injectStylesheet)
-    function moduleCSS() { return `
-            /* Sub-navegación */
-            .mm-subnav {
-                display: flex; gap: 4px;
-                border-bottom: 1px solid var(--border);
-                margin-bottom: 24px;
-                overflow-x: auto;
-            }
-            .mm-subnav-item {
-                padding: 10px 16px;
-                background: none; border: none;
-                color: var(--text-secondary);
-                font-size: 14px; font-weight: 500;
-                cursor: pointer;
-                border-bottom: 2px solid transparent;
-                margin-bottom: -1px;
-                transition: all 0.15s;
-                white-space: nowrap;
-                font-family: inherit;
-                display: inline-flex; align-items: center; gap: 6px;
-            }
-            .mm-subnav-item:hover { color: var(--text); }
-            .mm-subnav-item.active { color: var(--primary); border-bottom-color: var(--primary); }
+    const STORAGE_KEY = 'finanzas_ingresos_v11';
+    const MODULE = 'ingresos-personales';
 
-            .mm-subview { display: none; }
-            .mm-subview.active { display: block; }
-
-            /* Person tabs */
-            .mm-person-tabs {
-                display: flex; gap: 8px; margin-bottom: 20px;
-                padding: 4px; background: var(--border-light);
-                border-radius: var(--radius);
-            }
-            .mm-person-tab {
-                flex: 1; padding: 10px;
-                background: transparent; border: none;
-                color: var(--text-secondary);
-                font-size: 13px; font-weight: 500;
-                cursor: pointer; border-radius: var(--radius-sm);
-                transition: all 0.15s; font-family: inherit;
-                display: flex; align-items: center; justify-content: center; gap: 8px;
-            }
-            .mm-person-tab.active {
-                background: var(--bg-card); color: var(--text);
-                box-shadow: var(--shadow-sm);
-            }
-            .mm-person-avatar {
-                width: 22px; height: 22px; border-radius: 50%;
-                display: inline-flex; align-items: center; justify-content: center;
-                font-size: 11px; font-weight: 700;
-            }
-
-            /* Stats */
-            .mm-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
-            @media (max-width: 1024px) { .mm-stats { grid-template-columns: repeat(2, 1fr); } }
-            @media (max-width: 480px) { .mm-stats { grid-template-columns: 1fr; } }
-
-            .mm-stat {
-                background: var(--bg-card);
-                border: 1px solid var(--border);
-                border-radius: var(--radius);
-                padding: 16px;
-                transition: all 0.2s;
-            }
-            .mm-stat:hover { box-shadow: var(--shadow-md); }
-            .mm-stat-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-            .mm-stat-icon {
-                width: 34px; height: 34px; border-radius: 10px;
-                display: flex; align-items: center; justify-content: center;
-                font-size: 15px;
-            }
-            .mm-stat-label { font-size: 11px; color: var(--text-secondary); font-weight: 500; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
-            .mm-stat-value { font-size: 20px; font-weight: 700; margin-bottom: 2px; }
-            .mm-stat-meta { font-size: 11px; color: var(--text-muted); }
-            .mm-stat-meta.estimated { font-style: italic; color: var(--warning); }
-
-            /* Profile cards */
-            .mm-profile-card {
-                background: var(--bg-card);
-                border: 1px solid var(--border);
-                border-radius: var(--radius);
-                overflow: hidden;
-                margin-bottom: 16px;
-            }
-            .mm-profile-header {
-                padding: 16px 20px;
-                background: linear-gradient(135deg, var(--profile-color, var(--primary)), var(--profile-color-end, #7c3aed));
-                color: white;
-                display: flex; align-items: center; gap: 14px;
-            }
-            .mm-profile-avatar {
-                width: 48px; height: 48px; border-radius: 50%;
-                background: rgba(255,255,255,0.2);
-                display: flex; align-items: center; justify-content: center;
-                font-size: 20px; font-weight: 700;
-            }
-            .mm-profile-info { flex: 1; }
-            .mm-profile-name { font-size: 18px; font-weight: 700; }
-            .mm-profile-sub { font-size: 12px; opacity: 0.9; }
-            .mm-profile-body { padding: 16px 20px; }
-
-            /* Distribution bars */
-            .mm-dist-item {
-                margin-bottom: 14px;
-            }
-            .mm-dist-head {
-                display: flex; justify-content: space-between; align-items: center;
-                margin-bottom: 6px;
-            }
-            .mm-dist-label {
-                display: flex; align-items: center; gap: 8px;
-                font-size: 13px; font-weight: 500;
-            }
-            .mm-dist-icon {
-                width: 24px; height: 24px; border-radius: 6px;
-                display: flex; align-items: center; justify-content: center;
-                font-size: 11px; color: white;
-            }
-            .mm-dist-values {
-                display: flex; gap: 8px; align-items: center;
-                font-size: 13px;
-            }
-            .mm-dist-amount { font-weight: 700; }
-            .mm-dist-pct { color: var(--text-muted); font-size: 12px; }
-            .mm-dist-bar {
-                width: 100%; height: 8px;
-                background: var(--border-light);
-                border-radius: 4px; overflow: hidden;
-            }
-            .mm-dist-bar-fill {
-                height: 100%; border-radius: 4px;
-                transition: width 0.3s;
-            }
-
-            /* Slider input */
-            .mm-slider-row {
-                display: flex; align-items: center; gap: 12px;
-                margin-bottom: 14px;
-            }
-            .mm-slider-row label {
-                flex: 0 0 160px;
-                font-size: 13px; font-weight: 500;
-            }
-            .mm-slider-row input[type="range"] {
-                flex: 1;
-                accent-color: var(--primary);
-            }
-            .mm-slider-row .mm-slider-value {
-                flex: 0 0 100px; text-align: right;
-                font-weight: 700; font-size: 13px;
-            }
-
-            /* Tables */
-            .mm-table-wrap { overflow-x: auto; }
-            .mm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-            .mm-table th {
-                text-align: left; padding: 10px 12px;
-                font-size: 11px; font-weight: 600;
-                color: var(--text-muted);
-                text-transform: uppercase; letter-spacing: 0.5px;
-                border-bottom: 1px solid var(--border);
-                background: var(--bg-card);
-            }
-            .mm-table td {
-                padding: 12px;
-                border-bottom: 1px solid var(--border-light);
-                vertical-align: middle;
-            }
-            .mm-table tr:hover td { background: var(--border-light); }
-            .mm-table .amount { font-weight: 600; font-variant-numeric: tabular-nums; }
-            .mm-table .amount.positive { color: var(--success); }
-            .mm-table .amount.negative { color: var(--danger); }
-
-            /* Forms */
-            .mm-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
-            .mm-form-row.single { grid-template-columns: 1fr; }
-            .mm-form-row.three { grid-template-columns: repeat(3, 1fr); }
-            @media (max-width: 768px) {
-                .mm-form-row, .mm-form-row.three { grid-template-columns: 1fr; }
-            }
-
-            .mm-form-group { margin-bottom: 14px; }
-            .mm-form-label {
-                display: block; font-size: 12px; font-weight: 500;
-                color: var(--text-secondary); margin-bottom: 6px;
-            }
-            .mm-form-input, .mm-form-select, .mm-form-textarea {
-                width: 100%; padding: 9px 12px;
-                border: 1px solid var(--border); border-radius: var(--radius-sm);
-                background: var(--bg-card); color: var(--text);
-                font-size: 13px; font-family: inherit;
-            }
-            .mm-form-input:focus, .mm-form-select:focus { outline: none; border-color: var(--primary); }
-            .mm-form-textarea { resize: vertical; min-height: 70px; }
-            .mm-form-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
-            .mm-form-error { font-size: 11px; color: var(--danger); margin-top: 4px; display: none; }
-            .mm-form-group.error .mm-form-input,
-            .mm-form-group.error .mm-form-select { border-color: var(--danger); }
-            .mm-form-group.error .mm-form-error { display: block; }
-
-            /* Modal */
-            .mm-modal {
-                display: none; position: fixed; inset: 0;
-                background: rgba(0,0,0,0.5); z-index: 1000;
-                align-items: center; justify-content: center;
-                padding: 20px;
-            }
-            .mm-modal.active { display: flex; }
-            .mm-modal-content {
-                background: var(--bg-card); border-radius: var(--radius-lg);
-                max-width: 600px; width: 100%;
-                max-height: 90vh; overflow-y: auto;
-                box-shadow: var(--shadow-md);
-            }
-            .mm-modal-header {
-                padding: 20px; border-bottom: 1px solid var(--border);
-                display: flex; justify-content: space-between; align-items: center;
-                position: sticky; top: 0; background: var(--bg-card); z-index: 1;
-            }
-            .mm-modal-title { font-size: 16px; font-weight: 600; }
-            .mm-modal-close {
-                background: none; border: none;
-                color: var(--text-muted); cursor: pointer;
-                font-size: 18px; padding: 4px;
-            }
-            .mm-modal-body { padding: 20px; }
-            .mm-modal-footer {
-                padding: 16px 20px; border-top: 1px solid var(--border);
-                display: flex; justify-content: flex-end; gap: 8px;
-                position: sticky; bottom: 0; background: var(--bg-card);
-            }
-
-            /* Section title */
-            .mm-section-title {
-                font-size: 13px; font-weight: 600;
-                text-transform: uppercase; letter-spacing: 0.5px;
-                color: var(--text-muted);
-                margin: 20px 0 12px;
-                padding-bottom: 8px;
-                border-bottom: 1px solid var(--border);
-            }
-
-            /* Empty */
-            .mm-empty {
-                text-align: center; padding: 40px 20px;
-                color: var(--text-muted);
-            }
-            .mm-empty i { font-size: 40px; margin-bottom: 12px; opacity: 0.5; }
-            .mm-empty h3 { font-size: 15px; color: var(--text); margin-bottom: 6px; }
-            .mm-empty p { font-size: 13px; margin-bottom: 16px; }
-
-            /* Config */
-            .mm-config-section { margin-bottom: 24px; }
-            .mm-config-section h3 {
-                font-size: 14px; font-weight: 600;
-                margin-bottom: 12px; padding-bottom: 8px;
-                border-bottom: 1px solid var(--border);
-                display: flex; align-items: center; gap: 8px;
-            }
-            .mm-config-row {
-                display: flex; justify-content: space-between; align-items: center;
-                padding: 10px 0;
-                border-bottom: 1px solid var(--border-light);
-                font-size: 13px;
-                gap: 12px;
-            }
-            .mm-config-row:last-child { border-bottom: none; }
-            .mm-config-row .label { color: var(--text-secondary); flex: 1; }
-
-            /* Switch */
-            .mm-switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
-            .mm-switch input { opacity: 0; width: 0; height: 0; }
-            .mm-slider {
-                position: absolute; cursor: pointer; inset: 0;
-                background: var(--border); border-radius: 20px;
-                transition: 0.2s;
-            }
-            .mm-slider:before {
-                position: absolute; content: "";
-                height: 14px; width: 14px; left: 3px; bottom: 3px;
-                background: white; border-radius: 50%;
-                transition: 0.2s;
-            }
-            .mm-switch input:checked + .mm-slider { background: var(--primary); }
-            .mm-switch input:checked + .mm-slider:before { transform: translateX(16px); }
-
-            /* Action menu */
-            .mm-action-menu { position: relative; display: inline-block; }
-            .mm-action-dropdown {
-                display: none;
-                position: absolute; right: 0; top: 100%;
-                background: var(--bg-card);
-                border: 1px solid var(--border);
-                border-radius: var(--radius-sm);
-                box-shadow: var(--shadow-md);
-                min-width: 170px;
-                z-index: 50; padding: 4px;
-            }
-            .mm-action-dropdown.open { display: block; }
-            .mm-action-dropdown button {
-                display: flex; align-items: center; gap: 8px;
-                width: 100%; padding: 8px 10px;
-                background: none; border: none;
-                color: var(--text); font-size: 13px;
-                cursor: pointer; border-radius: 4px;
-                text-align: left; font-family: inherit;
-            }
-            .mm-action-dropdown button:hover { background: var(--border-light); }
-            .mm-action-dropdown button.danger { color: var(--danger); }
-            .mm-action-dropdown button i { width: 14px; color: var(--text-muted); }
-            .mm-action-dropdown button.danger i { color: var(--danger); }
-
-            /* Alert banner */
-            .mm-alert {
-                padding: 12px 14px;
-                border-radius: var(--radius-sm);
-                margin-bottom: 12px;
-                display: flex; align-items: flex-start; gap: 10px;
-                font-size: 13px;
-            }
-            .mm-alert.warning { background: var(--warning-light); color: var(--warning); border-left: 3px solid var(--warning); }
-            .mm-alert.danger { background: var(--danger-light); color: var(--danger); border-left: 3px solid var(--danger); }
-            .mm-alert.info { background: var(--info-light); color: var(--info); border-left: 3px solid var(--info); }
-            .mm-alert.success { background: var(--success-light); color: var(--success); border-left: 3px solid var(--success); }
-
-            /* Pays list */
-            .mm-pay-item {
-                background: var(--bg-card);
-                border: 1px solid var(--border);
-                border-radius: var(--radius);
-                padding: 14px;
-                margin-bottom: 10px;
-                display: flex; align-items: center; gap: 14px;
-            }
-            .mm-pay-date {
-                min-width: 70px; text-align: center;
-                padding: 8px;
-                background: var(--border-light);
-                border-radius: var(--radius-sm);
-            }
-            .mm-pay-date .d { font-size: 18px; font-weight: 700; line-height: 1; }
-            .mm-pay-date .m { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
-            .mm-pay-info { flex: 1; }
-            .mm-pay-title { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
-            .mm-pay-meta { font-size: 11px; color: var(--text-muted); }
-            .mm-pay-amount { font-size: 16px; font-weight: 700; text-align: right; }
-
-            /* Comparison */
-            .mm-compare-row {
-                display: flex; justify-content: space-between; align-items: center;
-                padding: 10px 0;
-                border-bottom: 1px solid var(--border-light);
-                font-size: 13px;
-            }
-            .mm-compare-row:last-child { border-bottom: none; }
-            .mm-compare-row .lbl { color: var(--text-secondary); }
-            .mm-compare-row .val { font-weight: 600; }
-            .mm-compare-row .val.positive { color: var(--success); }
-            .mm-compare-row .val.negative { color: var(--danger); }
-            .mm-compare-row .val.estimated { color: var(--warning); font-style: italic; }
-
-            /* Mobile */
-            @media (max-width: 768px) {
-                .mm-slider-row { flex-direction: column; align-items: stretch; }
-                .mm-slider-row label { flex: none; }
-                .mm-slider-row .mm-slider-value { flex: none; text-align: left; }
-            }
-    `; }
-
-    // =========================================================
-    // DATOS POR DEFECTO
-    // =========================================================
-    const DEFAULT_MY_MONEY_DATA = {
-        // Datos salariales por persona
-        salaryProfiles: {
-            ana: {
-                personId: 'ana',
-                company: 'TechCorp SL',
-                grossAnnual: 38000,
-                paysPerYear: 15, // 14 pagas + 1 prorrateo (o 12+3 extras)
-                grossPerPay: null, // Se calcula si es null
-                socialSecurity: 160, // €/mes aproximado
-                irpfPercent: 18,
-                irpfAmount: null,
-                otherDeductions: 30,
-                otherComplements: 50,
-                usualPayDay: 1, // día del mes
-                extraPayDates: ['2026-07-01', '2026-12-01'], // pagas extras reales
-                extraPayType: 'separate', // separate o prorated
-                notes: 'Datos actualizados según nómina de septiembre 2026'
-            },
-            carlos: {
-                personId: 'carlos',
-                company: 'Consultora ABC',
-                grossAnnual: 42000,
-                paysPerYear: 14, // 12 + 2 extras
-                grossPerPay: null,
-                socialSecurity: 180,
-                irpfPercent: 20,
-                irpfAmount: null,
-                otherDeductions: 25,
-                otherComplements: 0,
-                usualPayDay: 5,
-                extraPayDates: ['2026-07-15', '2026-12-15'],
-                extraPayType: 'separate',
-                notes: ''
-            }
-        },
-
-        // Ingreso mensual neto REAL introducido manualmente (prioriza sobre estimado)
-        realMonthlyIncome: {
-            ana: 2350,
-            carlos: null // Pendiente de introducir
-        },
-
-        // Gastos individuales obligatorios
-        individualExpenses: [
-            // Ana
-            { id: 'ie-1', personId: 'ana', name: 'Seguro médico', category: 'salud', amount: 45, frequency: 'monthly', nextPayment: '2026-11-05', account: 'acc-ana', active: true, mandatory: true, notes: '' },
-            { id: 'ie-2', personId: 'ana', name: 'Suscripción gimnasio', category: 'suscripciones', amount: 35, frequency: 'monthly', nextPayment: '2026-11-01', account: 'acc-ana', active: true, mandatory: true, notes: '' },
-            { id: 'ie-3', personId: 'ana', name: 'Teléfono móvil', category: 'telefono', amount: 25, frequency: 'monthly', nextPayment: '2026-11-10', account: 'acc-ana', active: true, mandatory: true, notes: '' },
-            { id: 'ie-4', personId: 'ana', name: 'Seguro coche', category: 'coche', amount: 480, frequency: 'annual', nextPayment: '2027-03-15', account: 'acc-ana', active: true, mandatory: true, notes: 'Anual, equivale a 40€/mes' },
-            // Carlos
-            { id: 'ie-5', personId: 'carlos', name: 'Financiación coche', category: 'coche', amount: 220, frequency: 'monthly', nextPayment: '2026-11-10', account: 'acc-carlos', active: true, mandatory: true, notes: 'Préstamo vehículo' },
-            { id: 'ie-6', personId: 'carlos', name: 'Gasolina', category: 'coche', amount: 120, frequency: 'monthly', nextPayment: '2026-11-05', account: 'acc-carlos', active: true, mandatory: true, notes: 'Media mensual estimada' },
-            { id: 'ie-7', personId: 'carlos', name: 'Parking mensual', category: 'coche', amount: 80, frequency: 'monthly', nextPayment: '2026-11-01', account: 'acc-carlos', active: true, mandatory: true, notes: '' },
-            { id: 'ie-8', personId: 'carlos', name: 'Netflix personal', category: 'suscripciones', amount: 12.99, frequency: 'monthly', nextPayment: '2026-11-08', account: 'acc-carlos', active: true, mandatory: false, notes: 'Suscripción individual' },
-            { id: 'ie-9', personId: 'carlos', name: 'Seguro médico', category: 'salud', amount: 55, frequency: 'monthly', nextPayment: '2026-11-05', account: 'acc-carlos', active: true, mandatory: true, notes: '' }
-        ],
-
-        // Distribución mensual del dinero restante (debe sumar 100%)
-        monthlyDistribution: {
-            ana: {
-                shared: 45,
-                mortgage: 25,
-                trips: 15,
-                personal: 15
-            },
-            carlos: {
-                shared: 50,
-                mortgage: 20,
-                trips: 15,
-                personal: 15
-            }
-        },
-
-        // Distribución de pagas extras (independiente, debe sumar 100%)
-        extraPayDistribution: {
-            ana: {
-                shared: 20,
-                mortgage: 40,
-                trips: 25,
-                personal: 15
-            },
-            carlos: {
-                shared: 15,
-                mortgage: 45,
-                trips: 25,
-                personal: 15
-            }
-        },
-
-        // Pagas extras reales registradas
-        extraPays: [
-            { id: 'ep-1', personId: 'ana', date: '2026-07-01', type: 'extraordinary', estimatedAmount: 2533.33, realAmount: 2580, status: 'received', notes: 'Paga verano cobrada' },
-            { id: 'ep-2', personId: 'carlos', date: '2026-07-15', type: 'extraordinary', estimatedAmount: 3000, realAmount: 3000, status: 'received', notes: '' }
-        ],
-
-        // Ahorros acumulados (registrados manualmente)
-        savings: {
-            mortgage: {
-                ana: 8500,
-                carlos: 7200,
-                goal: 40000
-            },
-            trips: {
-                ana: 1200,
-                carlos: 1100
-            }
-        },
-
-        // Aportaciones reales registradas a gastos compartidos (histórico)
-        sharedContributions: [
-            { id: 'sc-1', personId: 'ana', date: '2026-10-02', amount: 1057.50, month: '2026-10', notes: 'Aportación octubre' },
-            { id: 'sc-2', personId: 'carlos', date: '2026-10-05', amount: 1175, month: '2026-10', notes: 'Aportación octubre' }
-        ],
-
-        // Historial de cambios
-        history: [],
-
-        // Configuración
-        settings: {
-            defaultView: 'resumen',
-            showEstimatedWhenNoReal: true,
-            warningNegativeRemaining: true
-        }
+    /* ========================== UTILIDADES ========================== */
+    const num = (v, d = 0) => {
+        if (v === null || v === undefined || v === '') return d;
+        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+        return Number.isFinite(n) ? n : d;
     };
+    const int = (v, d = 0) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : d; };
+    const div0 = (a, b) => (Number.isFinite(a) && Number.isFinite(b) && Math.abs(b) > 1e-9) ? a / b : 0;
+    const clamp = (v, mn, mx) => Math.min(mx, Math.max(mn, num(v, mn)));
+    const round2 = n => Math.round(num(n, 0) * 100) / 100;
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const todayISO = () => new Date().toISOString().slice(0, 10);
+    const monthKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const fmtEur = n => num(n, 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' });
+    const fmtPct = n => `${round2(num(n, 0))}%`;
+    const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    function monthLabel(mk, short = false) {
+        const [y, m] = String(mk).split('-').map(Number);
+        if (!y || !m) return mk;
+        return short ? `${MONTHS[m - 1]} ${String(y).slice(2)}` : `${MONTHS[m - 1]} ${y}`;
+    }
+    function addMonths(mk, delta) {
+        const [y, m] = String(mk).split('-').map(Number);
+        return monthKey(new Date(y, m - 1 + delta, 1));
+    }
+    function uid(p) { return p + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
-    // =========================================================
-    // ESTADO
-    // =========================================================
-    let myData = loadData();
-    let currentView = 'resumen';
-    let currentPerson = 'ana';
-    let containerEl = null;
-
-    // Persistencia local (patrón compartido con la shell App)
-    function loadData() { return App.loadStored('finanzas_mymoney_data', DEFAULT_MY_MONEY_DATA); }
-    function saveData() { App.saveStored('finanzas_mymoney_data', myData); }
-
-    // =========================================================
-    // CÁLCULOS FINANCIEROS
-    // =========================================================
-    
-    /**
-     * Referencia común: el mayor número de pagas de la pareja.
-     * Regla fundamental del proyecto.
-     */
-    function getCommonPaysReference() {
-        const pays = Object.values(myData.salaryProfiles).map(p => p.paysPerYear || 12);
-        return Math.max(...pays);
+    /* ========================== PERSONAS ========================== */
+    function people() {
+        const ids = ((window.App && App.data && App.data.profiles) || []).map(p => p.id);
+        return ids.length ? ids : ['ana', 'carlos'];
+    }
+    function getPerson(id) {
+        const list = (window.App && App.data && App.data.profiles) || [];
+        return list.find(p => p.id === id) || { id, name: id, initial: '?', color: '#64748b' };
     }
 
-    /**
-     * Calcula el neto anual estimado de una persona.
-     */
-    function getEstimatedNetAnnual(personId) {
-        const profile = myData.salaryProfiles[personId];
-        if (!profile) return 0;
-
-        const grossAnnual = profile.grossAnnual || 0;
-        const ssAnnual = (profile.socialSecurity || 0) * 12;
-        
-        // IRPF: si hay importe fijo usarlo, si no calcular del %
-        let irpfAnnual;
-        if (profile.irpfAmount !== null && profile.irpfAmount !== undefined && profile.irpfAmount > 0) {
-            irpfAnnual = profile.irpfAmount * 12;
-        } else {
-            irpfAnnual = grossAnnual * ((profile.irpfPercent || 0) / 100);
-        }
-        
-        const otherDedAnnual = (profile.otherDeductions || 0) * 12;
-        const otherCompAnnual = (profile.otherComplements || 0) * 12;
-
-        const netAnnual = grossAnnual - ssAnnual - irpfAnnual - otherDedAnnual + otherCompAnnual;
-        return Math.max(0, netAnnual);
+    /** FASE 3 · Cuenta por defecto según persona (para nóminas) */
+    function defaultAccountFor(pid) {
+        const map = { ana: 'acc-2', carlos: 'acc-3' };
+        const accId = map[pid];
+        const accounts = (window.App && typeof App.getAccounts === 'function') ? App.getAccounts() : [];
+        if (accounts.find(a => a.id === accId)) return accId;
+        return (accounts[0] || {}).id || null;
     }
 
-    /**
-     * Neto mensual estimado NORMALIZADO usando la referencia común de pagas.
-     * Si una persona cobra 14 pagas y la otra 15, ambas se dividen entre 15.
-     */
-    function getNormalizedMonthlyEstimated(personId) {
-        const netAnnual = getEstimatedNetAnnual(personId);
-        const reference = getCommonPaysReference();
-        return netAnnual / reference;
-    }
-
-    /**
-     * Ingreso mensual UTILIZADO para planificación:
-     * - Si existe real introducido → usar real
-     * - Si no → usar estimado normalizado
-     */
-    function getMonthlyIncomeUsed(personId) {
-        const real = myData.realMonthlyIncome[personId];
-        if (real !== null && real !== undefined && real > 0) {
-            return real;
-        }
-        return getNormalizedMonthlyEstimated(personId);
-    }
-
-    /**
-     * Total de gastos individuales mensuales EQUIVALENTES (normalizados).
-     */
-    function getIndividualExpensesMonthly(personId) {
-        return myData.individualExpenses
-            .filter(e => e.personId === personId && e.active !== false)
-            .reduce((sum, e) => sum + normalizeToMonthly(e.amount, e.frequency), 0);
-    }
-
-    /**
-     * Normaliza un importe a equivalente mensual según frecuencia.
-     */
-    function normalizeToMonthly(amount, frequency) {
-        const a = parseFloat(amount) || 0;
-        switch (frequency) {
-            case 'weekly': return a * 52 / 12;
-            case 'monthly': return a;
-            case 'quarterly': return a / 3;
-            case 'semiannual': return a / 6;
-            case 'annual': return a / 12;
-            default: return a;
-        }
-    }
-
-    /**
-     * Dinero restante mensual después de gastos obligatorios.
-     */
-    function getRemainingMonthly(personId) {
-        return getMonthlyIncomeUsed(personId) - getIndividualExpensesMonthly(personId);
-    }
-
-    /**
-     * Calcula la distribución de una persona (importes por categoría).
-     */
-    function getDistribution(personId, distributionType = 'monthly') {
-        const dist = distributionType === 'extra' 
-            ? myData.extraPayDistribution[personId] 
-            : myData.monthlyDistribution[personId];
-        const base = distributionType === 'extra' ? 0 : getRemainingMonthly(personId);
-        
+    /* ========================== ESTADO Y PERSISTENCIA ========================== */
+    function defaultProfile() {
         return {
-            shared: base * (dist.shared / 100),
-            mortgage: base * (dist.mortgage / 100),
-            trips: base * (dist.trips / 100),
-            personal: base * (dist.personal / 100)
+            grossAnnual: 0, paysPerYear: 12, accrualPeriod: 'annual', joinDate: '2020-01-01',
+            extraDates: [], bonuses: [], socialSecurityPct: 6.5, irpfMode: 'auto', irpfPercent: 15, deductions: [],
+            extraPayDay: 15
+        };
+    }
+    function defaultState() {
+        const profiles = {}, distribution = {};
+        people().forEach(id => {
+            profiles[id] = defaultProfile();
+            distribution[id] = { savingsPct: 20 };
+        });
+        return {
+            version: 11, profiles, distribution,
+            extraDistribution: { savings: 50, trips: 20 },
+            monthlyControl: {}, individualExpenses: {}, extraPayments: {},
+            drafts: []
         };
     }
 
-    /**
-     * Valida que los porcentajes sumen 100%.
-     */
-    function validateDistribution(dist) {
-        const total = dist.shared + dist.mortgage + dist.trips + dist.personal;
-        return Math.abs(total - 100) < 0.01;
+    let state = null;
+    function ensureState() { if (!state) state = loadState(); return state; }
+    function loadState() {
+        try {
+            const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+            const def = defaultState();
+            if (!raw || typeof raw !== 'object' || raw.version !== 11) return def;
+            return Object.assign(def, raw);
+        } catch (e) { return defaultState(); }
+    }
+    function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {} }
+    function notify(detail) {
+        save();
+        if (window.App && typeof App.notifyModuleChange === 'function') App.notifyModuleChange(MODULE, detail || {});
+        else document.dispatchEvent(new CustomEvent('app:module-changed', { detail: Object.assign({ source: MODULE }, detail || {}) }));
     }
 
-    /**
-     * Obtiene el perfil de una persona desde App.data.
-     */
-    function getPersonProfile(personId) {
-        return App.data.profiles.find(p => p.id === personId) || { id: personId, name: personId, initial: '?', color: '#94a3b8' };
-    }
-
-    /**
-     * Próxima nómina mensual de una persona.
-     */
-    function getNextMonthlyPayDate(personId) {
-        const profile = myData.salaryProfiles[personId];
-        if (!profile) return null;
-        const today = new Date(2026, 9, 30); // Fecha demo
-        const day = profile.usualPayDay || 1;
-        let next = new Date(today.getFullYear(), today.getMonth(), day);
-        if (next < today) {
-            next = new Date(today.getFullYear(), today.getMonth() + 1, day);
+    /* ========================== CÁLCULOS ========================== */
+    const IRPF_MINIMO_EXENTO = 5550;
+    const IRPF_BRACKETS = [
+        { limit: 12450, pct: 19 }, { limit: 20200, pct: 24 },
+        { limit: 35200, pct: 30 }, { limit: 60000, pct: 37 },
+        { limit: 300000, pct: 45 }, { limit: Infinity, pct: 47 }
+    ];
+    function estimateIrpf(gross) {
+        const g = Math.max(0, num(gross, 0));
+        if (g <= IRPF_MINIMO_EXENTO) return 0;
+        let taxable = g - IRPF_MINIMO_EXENTO;
+        let tax = 0, prev = 0;
+        for (const b of IRPF_BRACKETS) {
+            const lim = Math.min(b.limit, taxable);
+            if (lim > prev) { tax += (lim - prev) * b.pct / 100; prev = lim; }
+            if (prev >= taxable) break;
         }
-        return next.toISOString().substring(0, 10);
+        return round2(tax);
+    }
+    function getMaxPays() {
+        const vals = people().map(id => int(state.profiles[id] && state.profiles[id].paysPerYear, 0)).filter(v => v > 0);
+        return Math.max(12, ...vals);
     }
 
-    // =========================================================
-    // RENDER PRINCIPAL
-    // =========================================================
-    function render(container) {
-        App.injectStylesheet('mymoney-styles', moduleCSS());
-        containerEl = container;
+    function computeSalary(profile) {
+        profile = profile || defaultProfile();
+        const grossAnnual = Math.max(0, num(profile.grossAnnual, 0));
+        const pays = Math.max(12, int(profile.paysPerYear, 12));
+        const ssPct = clamp(profile.socialSecurityPct, 0, 100);
 
-        container.innerHTML = `
-            <div class="mm-subnav">
-                <button class="mm-subnav-item active" data-view="resumen"><i class="fas fa-chart-pie"></i> Resumen</button>
-                <button class="mm-subnav-item" data-view="nominas"><i class="fas fa-file-invoice-dollar"></i> Nóminas</button>
-                <button class="mm-subnav-item" data-view="gastos"><i class="fas fa-receipt"></i> Gastos individuales</button>
-                <button class="mm-subnav-item" data-view="distribucion"><i class="fas fa-sliders-h"></i> Distribución</button>
-                <button class="mm-subnav-item" data-view="pagas"><i class="fas fa-gift"></i> Pagas extras</button>
-                <button class="mm-subnav-item" data-view="configuracion"><i class="fas fa-cog"></i> Configuración</button>
-            </div>
+        const ssAnnual = round2(grossAnnual * ssPct / 100);
+        const ssPerPay = round2(div0(ssAnnual, 12));
 
-            <div class="mm-subview active" id="mmView-resumen"></div>
-            <div class="mm-subview" id="mmView-nominas"></div>
-            <div class="mm-subview" id="mmView-gastos"></div>
-            <div class="mm-subview" id="mmView-distribucion"></div>
-            <div class="mm-subview" id="mmView-pagas"></div>
-            <div class="mm-subview" id="mmView-configuracion"></div>
+        let irpfAnnual, irpfEffPct;
+        if ((profile.irpfMode || 'auto') === 'auto') {
+            irpfAnnual = estimateIrpf(grossAnnual);
+            irpfEffPct = round2(div0(irpfAnnual, grossAnnual) * 100);
+        } else {
+            irpfAnnual = round2(grossAnnual * clamp(profile.irpfPercent, 0, 100) / 100);
+            irpfEffPct = clamp(profile.irpfPercent, 0, 100);
+        }
+        irpfAnnual = Math.min(Math.max(0, irpfAnnual), grossAnnual);
+        const irpfPerPay = round2(div0(irpfAnnual, pays));
 
-            <!-- Modal Perfil Salarial -->
-            <div class="mm-modal" id="mmSalaryModal">
-                <div class="mm-modal-content">
-                    <div class="mm-modal-header">
-                        <h3 class="mm-modal-title" id="mmSalaryModalTitle">Editar perfil salarial</h3>
-                        <button class="mm-modal-close" data-close-mm><i class="fas fa-times"></i></button>
-                    </div>
-                    <div class="mm-modal-body" id="mmSalaryModalBody"></div>
-                    <div class="mm-modal-footer">
-                        <button class="btn btn-secondary" data-close-mm>Cancelar</button>
-                        <button class="btn btn-primary" id="mmSaveSalaryBtn"><i class="fas fa-save"></i> Guardar</button>
-                    </div>
-                </div>
-            </div>
+        const deds = Array.isArray(profile.deductions) ? profile.deductions : [];
+        const dedAnnual = deds.filter(d => d.kind !== 'complement').reduce((s, d) => s + (d.freq === 'annual' ? num(d.amount, 0) : num(d.amount, 0) * 12), 0);
+        const compAnnual = deds.filter(d => d.kind === 'complement').reduce((s, d) => s + (d.freq === 'annual' ? num(d.amount, 0) : num(d.amount, 0) * 12), 0);
 
-            <!-- Modal Gasto Individual -->
-            <div class="mm-modal" id="mmExpenseModal">
-                <div class="mm-modal-content">
-                    <div class="mm-modal-header">
-                        <h3 class="mm-modal-title" id="mmExpenseModalTitle">Nuevo gasto individual</h3>
-                        <button class="mm-modal-close" data-close-mm><i class="fas fa-times"></i></button>
-                    </div>
-                    <div class="mm-modal-body" id="mmExpenseModalBody"></div>
-                    <div class="mm-modal-footer">
-                        <button class="btn btn-secondary" data-close-mm>Cancelar</button>
-                        <button class="btn btn-primary" id="mmSaveExpenseBtn"><i class="fas fa-save"></i> Guardar</button>
-                    </div>
-                </div>
-            </div>
+        const netAnnual = Math.max(0, round2(grossAnnual - ssAnnual - irpfAnnual - dedAnnual + compAnnual));
+        const netPerPay = round2(div0(netAnnual, pays));
 
-            <!-- Modal Paga Extra -->
-            <div class="mm-modal" id="mmExtraPayModal">
-                <div class="mm-modal-content">
-                    <div class="mm-modal-header">
-                        <h3 class="mm-modal-title" id="mmExtraPayModalTitle">Registrar paga extra</h3>
-                        <button class="mm-modal-close" data-close-mm><i class="fas fa-times"></i></button>
-                    </div>
-                    <div class="mm-modal-body" id="mmExtraPayModalBody"></div>
-                    <div class="mm-modal-footer">
-                        <button class="btn btn-secondary" data-close-mm>Cancelar</button>
-                        <button class="btn btn-primary" id="mmSaveExtraPayBtn"><i class="fas fa-save"></i> Guardar</button>
-                    </div>
-                </div>
-            </div>
-        `;
+        const grossPerPay = round2(div0(grossAnnual, pays));
+        const dedPerPay = round2(div0(dedAnnual, pays));
+        const compPerPay = round2(div0(compAnnual, pays));
+        const monthlyNet = round2(grossPerPay - ssPerPay - irpfPerPay - dedPerPay + compPerPay);
 
-        bindGlobalEvents();
-        renderView(currentView);
+        const refPays = getMaxPays();
+        const normalizedMonthly = round2(div0(netAnnual, refPays));
+        const proratedExtra = pays < refPays ? round2(Math.max(0, netPerPay - normalizedMonthly)) : 0;
+
+        const numExtras = Math.max(0, pays - 12);
+        const grossPerExtra = numExtras > 0 ? round2(grossAnnual / pays) : 0;
+        const netPerExtra = round2(grossPerExtra * (1 - irpfEffPct / 100));
+
+        return {
+            grossAnnual, pays, ssPct, ssAnnual, ssPerPay,
+            irpfAnnual, irpfPerPay, irpfEffPct, dedAnnual, compAnnual,
+            netAnnual, monthlyNet, netPerPay, normalizedMonthly, proratedExtra, refPays,
+            numExtras, grossPerExtra, netPerExtra
+        };
     }
 
-    function bindGlobalEvents() {
-        containerEl.querySelectorAll('.mm-subnav-item').forEach(btn => {
-            btn.addEventListener('click', () => {
-                currentView = btn.dataset.view;
-                containerEl.querySelectorAll('.mm-subnav-item').forEach(b => b.classList.toggle('active', b === btn));
-                containerEl.querySelectorAll('.mm-subview').forEach(v => v.classList.toggle('active', v.id === `mmView-${currentView}`));
-                renderView(currentView);
-            });
+    function getExtraDistribution() {
+        const d = state.extraDistribution || { savings: 50, trips: 20 };
+        const s = clamp(d.savings, 0, 100), t = clamp(d.trips, 0, 100);
+        return { savings: s, trips: t, personal: round2(Math.max(0, 100 - s - t)) };
+    }
+
+    function getMonthExtras(pid, mk) {
+        const p = state.profiles[pid] || defaultProfile();
+        const bd = computeSalary(p);
+        const list = [];
+
+        if (bd.proratedExtra > 0) {
+            list.push({ id: 'eq', type: 'equiparacion', label: 'Equiparación mensual', amount: bd.proratedExtra });
+        }
+
+        const isExtraMonth = p.extraDates.some(d => mk.endsWith(d.slice(0, 2)));
+        if (isExtraMonth) {
+            const [cy, cm] = mk.split('-').map(Number);
+            const joinDate = new Date(p.joinDate + 'T00:00:00');
+            const payDate = new Date(cy, cm - 1, 1);
+
+            const diffTime = payDate.getTime() - joinDate.getTime();
+            const diasTrabajados = Math.max(0, Math.floor(diffTime / 86400000));
+            const diasDevengo = p.accrualPeriod === 'semiannual' ? 182 : 365;
+            const factor = Math.min(1, diasTrabajados / diasDevengo);
+
+            const grossExtraFull = round2(bd.grossAnnual / bd.pays);
+            const irpf = round2(grossExtraFull * (bd.irpfEffPct / 100));
+            const netExtraFull = round2(grossExtraFull - irpf);
+            const netExtraFinal = round2(netExtraFull * factor);
+
+            if (netExtraFinal > 0) {
+                list.push({ id: 'ex', type: 'extraordinaria', label: 'Extraordinaria', amount: netExtraFinal });
+            }
+        }
+
+        (p.bonuses || []).forEach(b => {
+            if (b.date.startsWith(mk)) {
+                const net = num(b.amount) - num(b.irpfDiscount);
+                if (net > 0) list.push({ id: b.id, type: 'bonus', label: `Bonus: ${b.name}`, amount: net });
+            }
         });
 
-        containerEl.querySelectorAll('[data-close-mm]').forEach(btn => {
-            btn.addEventListener('click', () => btn.closest('.mm-modal').classList.remove('active'));
-        });
-        containerEl.querySelectorAll('.mm-modal').forEach(modal => {
-            modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
-        });
-
-        containerEl.querySelector('#mmSaveSalaryBtn').addEventListener('click', saveSalaryProfile);
-        containerEl.querySelector('#mmSaveExpenseBtn').addEventListener('click', saveIndividualExpense);
-        containerEl.querySelector('#mmSaveExtraPayBtn').addEventListener('click', saveExtraPay);
+        return list;
     }
 
-    function switchView(view) {
-        currentView = view;
-        containerEl.querySelectorAll('.mm-subnav-item').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-        containerEl.querySelectorAll('.mm-subview').forEach(v => v.classList.toggle('active', v.id === `mmView-${view}`));
-        renderView(view);
+    function normalizeMonthly(amount, freq) {
+        const a = Math.max(0, num(amount, 0));
+        return ({ quarterly: a / 3, semiannual: a / 6, annual: a / 12 }[freq]) || a;
+    }
+    function getIndividualExpenses(pid, mk) {
+        mk = mk || ui.month;
+        const keys = Object.keys(state.individualExpenses || {}).filter(k => k <= mk).sort().reverse();
+        if (!keys.length) return [];
+        return state.individualExpenses[keys[0]][pid] || [];
+    }
+    function individualExpensesTotal(pid, mk) {
+        return round2(getIndividualExpenses(pid, mk).filter(e => e.active !== false).reduce((s, e) => s + normalizeMonthly(e.amount, e.frequency), 0));
     }
 
-    function renderView(view) {
-        if (view === 'resumen') renderResumen();
-        else if (view === 'nominas') renderNominas();
-        else if (view === 'gastos') renderGastos();
-        else if (view === 'distribucion') renderDistribucion();
-        else if (view === 'pagas') renderPagas();
-        else if (view === 'configuracion') renderConfiguracion();
+    function monthlyIncome(pid, mk) {
+        mk = mk || ui.month;
+        const c = state.monthlyControl[mk];
+        if (c && c.real && c.real[pid] != null) return round2(num(c.real[pid], 0));
+        const keys = Object.keys(state.monthlyControl || {}).filter(k => k < mk).sort().reverse();
+        for (const k of keys) {
+            const cc = state.monthlyControl[k];
+            if (cc && cc.real && cc.real[pid] != null) return round2(num(cc.real[pid], 0));
+        }
+        return computeSalary(state.profiles[pid] || defaultProfile()).normalizedMonthly;
+    }
+    function theoreticalMonthly(pid, mk) {
+        return computeSalary(state.profiles[pid] || defaultProfile()).normalizedMonthly;
     }
 
-    // =========================================================
-    // VISTA: RESUMEN
-    // =========================================================
-    function renderResumen() {
-        const view = containerEl.querySelector('#mmView-resumen');
-        const reference = getCommonPaysReference();
+    function getEquity() {
+        const ids = people(), rem = {};
+        ids.forEach(id => { rem[id] = round2(monthlyIncome(id) - individualExpensesTotal(id)); });
+        const positive = ids.reduce((s, id) => s + Math.max(0, rem[id]), 0);
+        const shares = {};
+        if (positive <= 1e-9) {
+            const even = round2(div0(100, ids.length || 1));
+            ids.forEach(id => { shares[id] = { pct: even, remaining: rem[id] }; });
+        } else {
+            ids.forEach(id => { shares[id] = { pct: round2(Math.max(0, rem[id]) / positive * 100), remaining: rem[id] }; });
+        }
+        const totalRemaining = round2(ids.reduce((s, id) => s + rem[id], 0));
+        return { shares, totalRemaining };
+    }
 
-        // Cálculos por persona
-        const people = App.data.profiles.map(p => {
-            const normalized = getNormalizedMonthlyEstimated(p.id);
-            const real = myData.realMonthlyIncome[p.id];
-            const used = getMonthlyIncomeUsed(p.id);
-            const expenses = getIndividualExpensesMonthly(p.id);
-            const remaining = getRemainingMonthly(p.id);
-            const dist = getDistribution(p.id);
-            const hasReal = real !== null && real !== undefined && real > 0;
-            return {
-                profile: p,
-                normalized,
-                real,
-                used,
-                expenses,
-                remaining,
-                distribution: dist,
-                hasReal
+    function getPcNeeds() {
+        try {
+            const pc = (window.App && typeof App.pcSummary === 'function') ? App.pcSummary() : null;
+            if (!pc) return null;
+            return { total: round2(num(pc.fixed, 0) + num(pc.variable, 0)) };
+        } catch (e) { return null; }
+    }
+
+    function getDistributionAmounts(pid) {
+        const remaining = round2(monthlyIncome(pid) - individualExpensesTotal(pid));
+        const eq = getEquity();
+        const share = eq.shares[pid] ? eq.shares[pid].pct : 50;
+        const savingsPct = state.distribution[pid] ? clamp(state.distribution[pid].savingsPct, 0, 100) : 20;
+        const pc = getPcNeeds();
+        const shared = pc && pc.total > 0 ? round2(pc.total * share / 100) : round2(remaining * share / 100);
+        const savings = round2(remaining * savingsPct / 100);
+        const free = round2(remaining - shared - savings);
+        return { remaining, share, shared, sharedPct: remaining > 0 ? round2(shared / remaining * 100) : 0, savings, savingsPct, free, freePct: remaining > 0 ? round2(free / remaining * 100) : 0 };
+    }
+
+    /** FASE 2 · Ampliado con salary y netMonthly */
+    function getSharedContributionRules() {
+        const eq = getEquity(), out = {};
+        people().forEach(id => {
+            const a = getDistributionAmounts(id);
+            const bd = computeSalary(state.profiles[id] || defaultProfile());
+            out[id] = {
+                pct: eq.shares[id] ? eq.shares[id].pct : 50,
+                amount: a.shared,
+                remaining: a.remaining,
+                salary: bd.normalizedMonthly,
+                netMonthly: bd.monthlyNet
             };
         });
-
-        const totalIncome = people.reduce((s, p) => s + p.used, 0);
-        const totalExpenses = people.reduce((s, p) => s + p.expenses, 0);
-        const totalRemaining = people.reduce((s, p) => s + p.remaining, 0);
-        const totalShared = people.reduce((s, p) => s + p.distribution.shared, 0);
-        const totalMortgage = people.reduce((s, p) => s + p.distribution.mortgage, 0);
-        const totalTrips = people.reduce((s, p) => s + p.distribution.trips, 0);
-
-        view.innerHTML = `
-            <div class="mm-alert info">
-                <i class="fas fa-info-circle"></i>
-                <div>
-                    <strong>Referencia común de pagas: ${reference}</strong>
-                    El ingreso mensual estimado se normaliza dividiendo el neto anual entre ${reference} (el mayor número de pagas de la pareja) para poder comparar y planificar de forma homogénea.
-                </div>
-            </div>
-
-            <div class="mm-stats">
-                <div class="mm-stat">
-                    <div class="mm-stat-head">
-                        <div>
-                            <div class="mm-stat-label">Ingresos mensuales</div>
-                            <div class="mm-stat-value">${App.formatCurrency(totalIncome)}</div>
-                            <div class="mm-stat-meta">Suma de ambos perfiles</div>
-                        </div>
-                        <div class="mm-stat-icon" style="background: var(--success-light); color: var(--success);"><i class="fas fa-euro-sign"></i></div>
-                    </div>
-                </div>
-                <div class="mm-stat">
-                    <div class="mm-stat-head">
-                        <div>
-                            <div class="mm-stat-label">Gastos individuales</div>
-                            <div class="mm-stat-value">${App.formatCurrency(totalExpenses)}</div>
-                            <div class="mm-stat-meta">Obligatorios normalizados</div>
-                        </div>
-                        <div class="mm-stat-icon" style="background: var(--danger-light); color: var(--danger);"><i class="fas fa-receipt"></i></div>
-                    </div>
-                </div>
-                <div class="mm-stat">
-                    <div class="mm-stat-head">
-                        <div>
-                            <div class="mm-stat-label">Dinero restante</div>
-                            <div class="mm-stat-value" style="color: ${totalRemaining >= 0 ? 'var(--success)' : 'var(--danger)'};">${App.formatCurrency(totalRemaining)}</div>
-                            <div class="mm-stat-meta">Para distribuir</div>
-                        </div>
-                        <div class="mm-stat-icon" style="background: var(--primary-light); color: var(--primary);"><i class="fas fa-wallet"></i></div>
-                    </div>
-                </div>
-                <div class="mm-stat">
-                    <div class="mm-stat-head">
-                        <div>
-                            <div class="mm-stat-label">Aportación compartida</div>
-                            <div class="mm-stat-value">${App.formatCurrency(totalShared)}</div>
-                            <div class="mm-stat-meta">Presupuesto común</div>
-                        </div>
-                        <div class="mm-stat-icon" style="background: var(--info-light); color: var(--info);"><i class="fas fa-users"></i></div>
-                    </div>
-                </div>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-                ${people.map(p => renderPersonSummaryCard(p)).join('')}
-            </div>
-
-            <div class="card" style="margin-top: 16px;">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Distribución conjunta del dinero restante</div>
-                        <div class="card-subtitle">Total: ${App.formatCurrency(totalRemaining)}</div>
-                    </div>
-                </div>
-                ${renderDistributionSummary({
-                    shared: totalShared,
-                    mortgage: totalMortgage,
-                    trips: totalTrips,
-                    personal: people.reduce((s, p) => s + p.distribution.personal, 0)
-                }, totalRemaining)}
-            </div>
-
-            <div class="card" style="margin-top: 16px;">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Próximos cobros</div>
-                        <div class="card-subtitle">Nóminas y pagas previstas</div>
-                    </div>
-                </div>
-                <div id="mmNextPaysList"></div>
-            </div>
-        `;
-
-        renderNextPays();
+        out.total = round2(people().reduce((s, id) => s + out[id].amount, 0));
+        return out;
     }
 
-    function renderPersonSummaryCard(p) {
-        const diff = p.hasReal ? p.real - p.normalized : null;
-        return `
-            <div class="mm-profile-card" style="--profile-color: ${p.profile.color}; --profile-color-end: ${p.profile.color}dd;">
-                <div class="mm-profile-header">
-                    <div class="mm-profile-avatar">${p.profile.initial}</div>
-                    <div class="mm-profile-info">
-                        <div class="mm-profile-name">${App.escapeHtml(p.profile.name)}</div>
-                        <div class="mm-profile-sub">${myData.salaryProfiles[p.profile.id]?.company || 'Sin empresa'}</div>
-                    </div>
-                </div>
-                <div class="mm-profile-body">
-                    <div class="mm-compare-row">
-                        <span class="lbl">Neto estimado normalizado</span>
-                        <span class="val estimated">${App.formatCurrency(p.normalized)}</span>
-                    </div>
-                    <div class="mm-compare-row">
-                        <span class="lbl">Ingreso mensual ${p.hasReal ? 'real' : 'utilizado'}</span>
-                        <span class="val">${App.formatCurrency(p.used)}</span>
-                    </div>
-                    ${diff !== null ? `
-                        <div class="mm-compare-row">
-                            <span class="lbl">Diferencia (real − estimado)</span>
-                            <span class="val ${diff >= 0 ? 'positive' : 'negative'}">${diff >= 0 ? '+' : ''}${App.formatCurrency(diff)}</span>
-                        </div>
-                    ` : ''}
-                    <div class="mm-compare-row">
-                        <span class="lbl">Gastos individuales</span>
-                        <span class="val negative">−${App.formatCurrency(p.expenses)}</span>
-                    </div>
-                    <div class="mm-compare-row">
-                        <span class="lbl"><strong>Dinero restante</strong></span>
-                        <span class="val" style="color: ${p.remaining >= 0 ? 'var(--success)' : 'var(--danger)'};"><strong>${App.formatCurrency(p.remaining)}</strong></span>
-                    </div>
-                    ${p.remaining < 0 ? `
-                        <div class="mm-alert danger" style="margin-top: 10px; margin-bottom: 0;">
-                            <i class="fas fa-exclamation-triangle"></i>
-                            <span>Los gastos superan al ingreso utilizado</span>
-                        </div>
-                    ` : ''}
-                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-light);">
-                        <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px;">Distribución</div>
-                        ${renderMiniDistribution(p.distribution, p.remaining)}
-                    </div>
-                    <div style="display: flex; gap: 6px; margin-top: 12px;">
-                        <button class="btn btn-sm btn-secondary" data-person-action="edit-salary" data-person="${p.profile.id}" style="flex: 1;"><i class="fas fa-edit"></i> Nómina</button>
-                        <button class="btn btn-sm btn-secondary" data-person-action="edit-expenses" data-person="${p.profile.id}" style="flex: 1;"><i class="fas fa-receipt"></i> Gastos</button>
-                        <button class="btn btn-sm btn-secondary" data-person-action="edit-dist" data-person="${p.profile.id}" style="flex: 1;"><i class="fas fa-sliders-h"></i> %</button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
+    /* ========================== FASE 2 · API DEL PUENTE ========================== */
 
-    function renderMiniDistribution(dist, base) {
-        const items = [
-            { key: 'shared', label: 'Compartido', color: 'var(--primary)', icon: 'fa-users' },
-            { key: 'mortgage', label: 'Hipoteca', color: 'var(--success)', icon: 'fa-home' },
-            { key: 'trips', label: 'Viajes', color: 'var(--info)', icon: 'fa-plane' },
-            { key: 'personal', label: 'Personal', color: 'var(--warning)', icon: 'fa-user' }
-        ];
-        return items.map(it => {
-            const amount = base * (dist[it.key] / 100);
-            return `
-                <div style="display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0;">
-                    <span style="color: var(--text-secondary);"><i class="fas ${it.icon}" style="color: ${it.color}; margin-right: 4px;"></i>${it.label}</span>
-                    <span style="font-weight: 600;">${App.formatCurrency(amount)}</span>
-                </div>
-            `;
-        }).join('');
-    }
-
-    function renderDistributionSummary(dist, total) {
-        const items = [
-            { key: 'shared', label: 'Gastos compartidos', color: 'var(--primary)', icon: 'fa-users' },
-            { key: 'mortgage', label: 'Ahorro hipoteca', color: 'var(--success)', icon: 'fa-home' },
-            { key: 'trips', label: 'Viajes', color: 'var(--info)', icon: 'fa-plane' },
-            { key: 'personal', label: 'Dinero personal', color: 'var(--warning)', icon: 'fa-user' }
-        ];
-        return items.map(it => {
-            const pct = total > 0 ? (dist[it.key] / total) * 100 : 0;
-            return `
-                <div class="mm-dist-item">
-                    <div class="mm-dist-head">
-                        <div class="mm-dist-label">
-                            <div class="mm-dist-icon" style="background: ${it.color};"><i class="fas ${it.icon}"></i></div>
-                            <span>${it.label}</span>
-                        </div>
-                        <div class="mm-dist-values">
-                            <span class="mm-dist-amount">${App.formatCurrency(dist[it.key])}</span>
-                            <span class="mm-dist-pct">${pct.toFixed(1)}%</span>
-                        </div>
-                    </div>
-                    <div class="mm-dist-bar">
-                        <div class="mm-dist-bar-fill" style="width: ${Math.min(pct, 100)}%; background: ${it.color};"></div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    function renderNextPays() {
-        const container = containerEl.querySelector('#mmNextPaysList');
-        const pays = [];
-
-        App.data.profiles.forEach(p => {
-            const nextMonthly = getNextMonthlyPayDate(p.id);
-            if (nextMonthly) {
-                pays.push({
-                    personId: p.id,
-                    personName: p.name,
-                    color: p.color,
-                    initial: p.initial,
-                    date: nextMonthly,
-                    type: 'monthly',
-                    title: `Nómina mensual`,
-                    amount: getMonthlyIncomeUsed(p.id),
-                    isEstimate: !myData.realMonthlyIncome[p.id]
-                });
-            }
-        });
-
-        // Pagas extras próximas
-        Object.entries(myData.salaryProfiles).forEach(([personId, profile]) => {
-            const person = getPersonProfile(personId);
-            (profile.extraPayDates || []).forEach(date => {
-                if (date >= '2026-10-30') {
-                    const netPay = getEstimatedNetAnnual(personId) / (profile.paysPerYear || 14);
-                    pays.push({
-                        personId,
-                        personName: person.name,
-                        color: person.color,
-                        initial: person.initial,
-                        date,
-                        type: 'extra',
-                        title: 'Paga extra',
-                        amount: netPay,
-                        isEstimate: true
-                    });
-                }
-            });
-        });
-
-        pays.sort((a, b) => a.date.localeCompare(b.date));
-
-        if (pays.length === 0) {
-            container.innerHTML = '<div class="mm-empty"><i class="fas fa-calendar-check"></i><h3>Sin cobros próximos</h3></div>';
-            return;
-        }
-
-        container.innerHTML = pays.slice(0, 6).map(p => {
-            const d = new Date(p.date + 'T00:00:00');
-            return `
-                <div class="mm-pay-item">
-                    <div class="mm-pay-date" style="background: ${p.color}20; color: ${p.color};">
-                        <div class="d">${d.getDate()}</div>
-                        <div class="m">${['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][d.getMonth()]}</div>
-                    </div>
-                    <div style="width: 36px; height: 36px; border-radius: 50%; background: ${p.color}; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700;">${p.initial}</div>
-                    <div class="mm-pay-info">
-                        <div class="mm-pay-title">${p.title} · ${App.escapeHtml(p.personName)}</div>
-                        <div class="mm-pay-meta">${App.formatDate(p.date)} ${p.isEstimate ? '· <em style="color: var(--warning);">Estimado</em>' : '· Real'}</div>
-                    </div>
-                    <div class="mm-pay-amount" style="color: var(--success);">${App.formatCurrency(p.amount)}</div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    // =========================================================
-    // VISTA: NÓMINAS
-    // =========================================================
-    function renderNominas() {
-        const view = containerEl.querySelector('#mmView-nominas');
-        const reference = getCommonPaysReference();
-
-        view.innerHTML = `
-            <div class="mm-alert info">
-                <i class="fas fa-calculator"></i>
-                <div>
-                    <strong>Referencia común: ${reference} pagas/año</strong>
-                    El neto anual estimado se divide entre ${reference} para obtener el mensual normalizado. Esto permite comparar ingresos aunque cada persona cobre distinto número de pagas.
-                </div>
-            </div>
-
-            <div class="mm-person-tabs">
-                ${App.data.profiles.map(p => `
-                    <button class="mm-person-tab ${currentPerson === p.id ? 'active' : ''}" data-person="${p.id}">
-                        <span class="mm-person-avatar" style="background: ${p.color}30; color: ${p.color};">${p.initial}</span>
-                        ${App.escapeHtml(p.name)}
-                    </button>
-                `).join('')}
-            </div>
-
-            <div id="mmSalaryContent"></div>
-        `;
-
-        view.querySelectorAll('.mm-person-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                currentPerson = tab.dataset.person;
-                view.querySelectorAll('.mm-person-tab').forEach(t => t.classList.toggle('active', t === tab));
-                renderSalaryContent();
-            });
-        });
-
-        renderSalaryContent();
-    }
-
-    function renderSalaryContent() {
-        const container = containerEl.querySelector('#mmSalaryContent');
-        const profile = myData.salaryProfiles[currentPerson];
-        const person = getPersonProfile(currentPerson);
-        const netAnnual = getEstimatedNetAnnual(currentPerson);
-        const normalized = getNormalizedMonthlyEstimated(currentPerson);
-        const real = myData.realMonthlyIncome[currentPerson];
-        const used = getMonthlyIncomeUsed(currentPerson);
-        const reference = getCommonPaysReference();
-
-        // Desglose deducciones
-        const grossAnnual = profile.grossAnnual || 0;
-        const ssAnnual = (profile.socialSecurity || 0) * 12;
-        const irpfAnnual = profile.irpfAmount ? profile.irpfAmount * 12 : grossAnnual * ((profile.irpfPercent || 0) / 100);
-        const otherDedAnnual = (profile.otherDeductions || 0) * 12;
-        const otherCompAnnual = (profile.otherComplements || 0) * 12;
-
-        container.innerHTML = `
-            <div class="mm-profile-card" style="--profile-color: ${person.color}; --profile-color-end: ${person.color}dd;">
-                <div class="mm-profile-header">
-                    <div class="mm-profile-avatar">${person.initial}</div>
-                    <div class="mm-profile-info">
-                        <div class="mm-profile-name">${App.escapeHtml(person.name)}</div>
-                        <div class="mm-profile-sub">${App.escapeHtml(profile.company || 'Sin empresa')} · ${profile.paysPerYear} pagas/año</div>
-                    </div>
-                    <button class="btn btn-sm" style="background: rgba(255,255,255,0.2); color: white; border-color: rgba(255,255,255,0.3);" data-edit-salary="${currentPerson}">
-                        <i class="fas fa-edit"></i> Editar
-                    </button>
-                </div>
-                <div class="mm-profile-body">
-                    <div class="mm-section-title" style="margin-top: 0;">Cálculo del neto estimado</div>
-                    <div class="mm-compare-row">
-                        <span class="lbl">Salario bruto anual</span>
-                        <span class="val">${App.formatCurrency(grossAnnual)}</span>
-                    </div>
-                    <div class="mm-compare-row">
-                        <span class="lbl">− Seguridad Social (anual)</span>
-                        <span class="val negative">−${App.formatCurrency(ssAnnual)}</span>
-                    </div>
-                    <div class="mm-compare-row">
-                        <span class="lbl">− IRPF (${profile.irpfAmount ? 'fijo' : profile.irpfPercent + '%'} · anual)</span>
-                        <span class="val negative">−${App.formatCurrency(irpfAnnual)}</span>
-                    </div>
-                    <div class="mm-compare-row">
-                        <span class="lbl">− Otras deducciones (anual)</span>
-                        <span class="val negative">−${App.formatCurrency(otherDedAnnual)}</span>
-                    </div>
-                    <div class="mm-compare-row">
-                        <span class="lbl">+ Otros complementos (anual)</span>
-                        <span class="val positive">+${App.formatCurrency(otherCompAnnual)}</span>
-                    </div>
-                    <div class="mm-compare-row" style="border-top: 2px solid var(--border); padding-top: 12px; margin-top: 8px;">
-                        <span class="lbl"><strong>Neto anual estimado</strong></span>
-                        <span class="val" style="font-size: 16px;"><strong>${App.formatCurrency(netAnnual)}</strong></span>
-                    </div>
-                    <div class="mm-compare-row">
-                        <span class="lbl">÷ ${profile.paysPerYear} pagas propias</span>
-                        <span class="val">${App.formatCurrency(netAnnual / (profile.paysPerYear || 14))}</span>
-                    </div>
-                    <div class="mm-compare-row" style="background: var(--warning-light); padding: 10px; border-radius: var(--radius-sm); margin-top: 8px;">
-                        <span class="lbl"><strong>÷ ${reference} pagas (referencia común)</strong></span>
-                        <span class="val estimated"><strong>${App.formatCurrency(normalized)} /mes</strong></span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Ingreso mensual para planificación</div>
-                        <div class="card-subtitle">Se prioriza el valor real si existe</div>
-                    </div>
-                </div>
-                <div class="mm-compare-row">
-                    <span class="lbl">Ingreso mensual normalizado estimado</span>
-                    <span class="val estimated">${App.formatCurrency(normalized)}</span>
-                </div>
-                <div class="mm-compare-row">
-                    <span class="lbl">Ingreso mensual real introducido</span>
-                    <span class="val">${real !== null && real !== undefined ? App.formatCurrency(real) : '<em style="color: var(--text-muted);">No introducido</em>'}</span>
-                </div>
-                <div class="mm-compare-row" style="background: var(--primary-light); padding: 10px; border-radius: var(--radius-sm); margin-top: 8px;">
-                    <span class="lbl"><strong>Ingreso mensual utilizado</strong></span>
-                    <span class="val" style="color: var(--primary);"><strong>${App.formatCurrency(used)}</strong></span>
-                </div>
-                ${real !== null && real !== undefined ? `
-                    <div class="mm-compare-row">
-                        <span class="lbl">Diferencia (real − estimado)</span>
-                        <span class="val ${real - normalized >= 0 ? 'positive' : 'negative'}">${real - normalized >= 0 ? '+' : ''}${App.formatCurrency(real - normalized)}</span>
-                    </div>
-                ` : `
-                    <div class="mm-alert warning" style="margin-top: 12px; margin-bottom: 0;">
-                        <i class="fas fa-info-circle"></i>
-                        <div>
-                            No has introducido el ingreso real. Se está utilizando la estimación normalizada.
-                            <button class="btn btn-sm btn-secondary" style="margin-top: 6px;" data-introduce-real="${currentPerson}">
-                                <i class="fas fa-edit"></i> Introducir ingreso real
-                            </button>
-                        </div>
-                    </div>
-                `}
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Próximos cobros</div>
-                    </div>
-                </div>
-                ${renderPersonPays(currentPerson)}
-            </div>
-        `;
-
-        container.querySelector(`[data-edit-salary="${currentPerson}"]`)?.addEventListener('click', () => openSalaryModal(currentPerson));
-        container.querySelector(`[data-introduce-real="${currentPerson}"]`)?.addEventListener('click', () => openSalaryModal(currentPerson, true));
-    }
-
-    function renderPersonPays(personId) {
-        const profile = myData.salaryProfiles[personId];
-        const pays = [];
-
-        // Nóminas mensuales próximas (3 meses)
-        for (let i = 0; i < 3; i++) {
-            const today = new Date(2026, 9, 30);
-            const d = new Date(today.getFullYear(), today.getMonth() + i, profile.usualPayDay || 1);
-            if (d >= today) {
-                pays.push({
-                    date: d.toISOString().substring(0, 10),
-                    title: 'Nómina mensual',
-                    amount: getMonthlyIncomeUsed(personId),
-                    type: 'monthly',
-                    isEstimate: !myData.realMonthlyIncome[personId]
-                });
-            }
-        }
-
-        // Pagas extras
-        (profile.extraPayDates || []).forEach(date => {
-            if (date >= '2026-10-30') {
-                pays.push({
-                    date,
-                    title: 'Paga extra',
-                    amount: getEstimatedNetAnnual(personId) / (profile.paysPerYear || 14),
-                    type: 'extra',
-                    isEstimate: true
-                });
-            }
-        });
-
-        pays.sort((a, b) => a.date.localeCompare(b.date));
-
-        if (pays.length === 0) return '<div class="mm-empty"><p>Sin cobros próximos</p></div>';
-
-        return pays.slice(0, 6).map(p => {
-            const d = new Date(p.date + 'T00:00:00');
-            return `
-                <div class="mm-pay-item">
-                    <div class="mm-pay-date">
-                        <div class="d">${d.getDate()}</div>
-                        <div class="m">${['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][d.getMonth()]}</div>
-                    </div>
-                    <div class="mm-pay-info">
-                        <div class="mm-pay-title">${p.title}</div>
-                        <div class="mm-pay-meta">${App.formatDate(p.date)} ${p.isEstimate ? '· <em style="color: var(--warning);">Estimado</em>' : ''}</div>
-                    </div>
-                    <div class="mm-pay-amount" style="color: var(--success);">${App.formatCurrency(p.amount)}</div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    // =========================================================
-    // MODAL: PERFIL SALARIAL
-    // =========================================================
-    function openSalaryModal(personId, focusReal = false) {
-        const modal = containerEl.querySelector('#mmSalaryModal');
-        const body = containerEl.querySelector('#mmSalaryModalBody');
-        const profile = myData.salaryProfiles[personId];
-        const person = getPersonProfile(personId);
-
-        containerEl.querySelector('#mmSalaryModalTitle').textContent = `Perfil salarial · ${person.name}`;
-
-        body.innerHTML = `
-            <input type="hidden" id="salaryPersonId" value="${personId}">
-            
-            <div class="mm-section-title" style="margin-top: 0;">Datos laborales</div>
-            <div class="mm-form-row">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Empresa</label>
-                    <input type="text" class="mm-form-input" id="salaryCompany" value="${App.escapeHtml(profile.company || '')}">
-                </div>
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Salario bruto anual (€) *</label>
-                    <input type="number" step="0.01" min="0" class="mm-form-input" id="salaryGrossAnnual" value="${profile.grossAnnual || ''}" required>
-                    <div class="mm-form-error">Obligatorio</div>
-                </div>
-            </div>
-            <div class="mm-form-row">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Número de pagas al año *</label>
-                    <select class="mm-form-select" id="salaryPays">
-                        <option value="12" ${profile.paysPerYear === 12 ? 'selected' : ''}>12 pagas (mensual con prorrateo)</option>
-                        <option value="14" ${profile.paysPerYear === 14 ? 'selected' : ''}>14 pagas (12 mensuales + 2 extras)</option>
-                        <option value="15" ${profile.paysPerYear === 15 ? 'selected' : ''}>15 pagas (12 mensuales + 3 extras)</option>
-                        <option value="16" ${profile.paysPerYear === 16 ? 'selected' : ''}>16 pagas</option>
-                    </select>
-                </div>
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Día habitual de cobro</label>
-                    <input type="number" min="1" max="31" class="mm-form-input" id="salaryPayDay" value="${profile.usualPayDay || 1}">
-                </div>
-            </div>
-
-            <div class="mm-section-title">Deducciones</div>
-            <div class="mm-form-row">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Seguridad Social mensual (€)</label>
-                    <input type="number" step="0.01" min="0" class="mm-form-input" id="salarySS" value="${profile.socialSecurity || 0}">
-                </div>
-                <div class="mm-form-group">
-                    <label class="mm-form-label">IRPF (%)</label>
-                    <input type="number" step="0.01" min="0" max="100" class="mm-form-input" id="salaryIRPFPct" value="${profile.irpfPercent || 0}">
-                    <div class="mm-form-hint">Se aplica si no hay importe fijo</div>
-                </div>
-            </div>
-            <div class="mm-form-row">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">IRPF fijo mensual (€)</label>
-                    <input type="number" step="0.01" min="0" class="mm-form-input" id="salaryIRPFAmount" value="${profile.irpfAmount || ''}">
-                    <div class="mm-form-hint">Dejar vacío para usar el %</div>
-                </div>
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Otras deducciones mensuales (€)</label>
-                    <input type="number" step="0.01" min="0" class="mm-form-input" id="salaryOtherDed" value="${profile.otherDeductions || 0}">
-                </div>
-            </div>
-            <div class="mm-form-row single">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Otros complementos netos mensuales (€)</label>
-                    <input type="number" step="0.01" min="0" class="mm-form-input" id="salaryComplements" value="${profile.otherComplements || 0}">
-                </div>
-            </div>
-
-            <div class="mm-section-title">Ingreso mensual real</div>
-            <div class="mm-form-row single">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Ingreso mensual neto REAL (€)</label>
-                    <input type="number" step="0.01" min="0" class="mm-form-input" id="salaryRealIncome" value="${myData.realMonthlyIncome[personId] || ''}">
-                    <div class="mm-form-hint">Si se introduce, se prioriza sobre la estimación normalizada</div>
-                </div>
-            </div>
-
-            <div class="mm-section-title">Pagas extras</div>
-            <div class="mm-form-row single">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Fechas previstas de pagas extras (separadas por coma, formato AAAA-MM-DD)</label>
-                    <input type="text" class="mm-form-input" id="salaryExtraDates" value="${(profile.extraPayDates || []).join(', ')}" placeholder="2026-07-01, 2026-12-01">
-                </div>
-            </div>
-            <div class="mm-form-row single">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Notas</label>
-                    <textarea class="mm-form-textarea" id="salaryNotes">${App.escapeHtml(profile.notes || '')}</textarea>
-                </div>
-            </div>
-        `;
-
-        modal.classList.add('active');
-        if (focusReal) {
-            setTimeout(() => body.querySelector('#salaryRealIncome').focus(), 100);
-        }
-    }
-
-    function saveSalaryProfile() {
-        const body = containerEl.querySelector('#mmSalaryModalBody');
-        const personId = body.querySelector('#salaryPersonId').value;
-        const grossAnnual = parseFloat(body.querySelector('#salaryGrossAnnual').value);
-
-        body.querySelectorAll('.mm-form-group').forEach(g => g.classList.remove('error'));
-        if (isNaN(grossAnnual) || grossAnnual <= 0) {
-            body.querySelector('#salaryGrossAnnual').closest('.mm-form-group').classList.add('error');
-            return;
-        }
-
-        const profile = myData.salaryProfiles[personId];
-        profile.company = body.querySelector('#salaryCompany').value.trim();
-        profile.grossAnnual = grossAnnual;
-        profile.paysPerYear = parseInt(body.querySelector('#salaryPays').value);
-        profile.usualPayDay = parseInt(body.querySelector('#salaryPayDay').value) || 1;
-        profile.socialSecurity = parseFloat(body.querySelector('#salarySS').value) || 0;
-        profile.irpfPercent = parseFloat(body.querySelector('#salaryIRPFPct').value) || 0;
-        const irpfAmountVal = body.querySelector('#salaryIRPFAmount').value;
-        profile.irpfAmount = irpfAmountVal === '' ? null : parseFloat(irpfAmountVal);
-        profile.otherDeductions = parseFloat(body.querySelector('#salaryOtherDed').value) || 0;
-        profile.otherComplements = parseFloat(body.querySelector('#salaryComplements').value) || 0;
-        profile.notes = body.querySelector('#salaryNotes').value.trim();
-
-        const extraDatesStr = body.querySelector('#salaryExtraDates').value;
-        profile.extraPayDates = extraDatesStr.split(',').map(s => s.trim()).filter(s => s);
-
-        const realVal = body.querySelector('#salaryRealIncome').value;
-        myData.realMonthlyIncome[personId] = realVal === '' ? null : parseFloat(realVal);
-
-        myData.history.unshift({
-            timestamp: new Date().toISOString(),
-            action: 'salary_updated',
-            personId,
-            detail: `Salario bruto: ${App.formatCurrency(grossAnnual)}`
-        });
-
-        saveData();
-        containerEl.querySelector('#mmSalaryModal').classList.remove('active');
-        App.showToast('Perfil salarial actualizado');
-        renderView(currentView);
-    }
-
-    // =========================================================
-    // VISTA: GASTOS INDIVIDUALES
-    // =========================================================
-    function renderGastos() {
-        const view = containerEl.querySelector('#mmView-gastos');
-
-        view.innerHTML = `
-            <div class="mm-person-tabs">
-                ${App.data.profiles.map(p => `
-                    <button class="mm-person-tab ${currentPerson === p.id ? 'active' : ''}" data-person="${p.id}">
-                        <span class="mm-person-avatar" style="background: ${p.color}30; color: ${p.color};">${p.initial}</span>
-                        ${App.escapeHtml(p.name)}
-                    </button>
-                `).join('')}
-            </div>
-
-            <div id="mmExpensesContent"></div>
-        `;
-
-        view.querySelectorAll('.mm-person-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                currentPerson = tab.dataset.person;
-                view.querySelectorAll('.mm-person-tab').forEach(t => t.classList.toggle('active', t === tab));
-                renderExpensesContent();
-            });
-        });
-
-        renderExpensesContent();
-    }
-
-    function renderExpensesContent() {
-        const container = containerEl.querySelector('#mmExpensesContent');
-        const person = getPersonProfile(currentPerson);
-        const expenses = myData.individualExpenses.filter(e => e.personId === currentPerson);
-        const totalMonthly = getIndividualExpensesMonthly(currentPerson);
-        const income = getMonthlyIncomeUsed(currentPerson);
-        const remaining = getRemainingMonthly(currentPerson);
-
-        container.innerHTML = `
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Gastos individuales de ${App.escapeHtml(person.name)}</div>
-                        <div class="card-subtitle">${expenses.length} gasto(s) · Total mensual equivalente: ${App.formatCurrency(totalMonthly)}</div>
-                    </div>
-                    <button class="btn btn-sm btn-primary" data-new-expense="${currentPerson}"><i class="fas fa-plus"></i> Nuevo gasto</button>
-                </div>
-
-                ${remaining < 0 ? `
-                    <div class="mm-alert danger">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        <div>
-                            <strong>Los gastos obligatorios superan al ingreso utilizado.</strong>
-                            Déficit mensual: ${App.formatCurrency(Math.abs(remaining))}
-                        </div>
-                    </div>
-                ` : ''}
-
-                ${expenses.length === 0 ? `
-                    <div class="mm-empty">
-                        <i class="fas fa-receipt"></i>
-                        <h3>Sin gastos individuales</h3>
-                        <p>Añade los gastos obligatorios de esta persona.</p>
-                    </div>
-                ` : `
-                    <div class="mm-table-wrap">
-                        <table class="mm-table">
-                            <thead>
-                                <tr>
-                                    <th>Concepto</th>
-                                    <th>Categoría</th>
-                                    <th>Importe</th>
-                                    <th>Frecuencia</th>
-                                    <th>Eq. mensual</th>
-                                    <th>Próximo pago</th>
-                                    <th>Estado</th>
-                                    <th style="width: 80px;">Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${expenses.map(e => {
-                                    const monthly = normalizeToMonthly(e.amount, e.frequency);
-                                    const freqLabel = { weekly: 'Semanal', monthly: 'Mensual', quarterly: 'Trimestral', semiannual: 'Semestral', annual: 'Anual' }[e.frequency] || e.frequency;
-                                    return `
-                                        <tr style="${e.active === false ? 'opacity: 0.5;' : ''}">
-                                            <td>
-                                                <div style="font-weight: 500;">${App.escapeHtml(e.name)}</div>
-                                                ${e.notes ? `<div style="font-size: 11px; color: var(--text-muted);">${App.escapeHtml(e.notes)}</div>` : ''}
-                                            </td>
-                                            <td><span class="badge badge-neutral">${e.category || '—'}</span></td>
-                                            <td class="amount">${App.formatCurrency(e.amount)}</td>
-                                            <td>${freqLabel}</td>
-                                            <td class="amount"><strong>${App.formatCurrency(monthly)}</strong></td>
-                                            <td>${e.nextPayment ? App.formatDate(e.nextPayment) : '—'}</td>
-                                            <td>${e.active === false ? '<span class="badge badge-neutral">Inactivo</span>' : e.mandatory ? '<span class="badge badge-warning">Obligatorio</span>' : '<span class="badge badge-info">Opcional</span>'}</td>
-                                            <td>
-                                                <div class="mm-action-menu">
-                                                    <button class="btn btn-icon btn-ghost" data-expense-menu="${e.id}"><i class="fas fa-ellipsis-v"></i></button>
-                                                    <div class="mm-action-dropdown" id="iemenu-${e.id}">
-                                                        <button data-expense-action="edit" data-id="${e.id}"><i class="fas fa-edit"></i> Editar</button>
-                                                        <button data-expense-action="toggle" data-id="${e.id}"><i class="fas fa-${e.active === false ? 'check' : 'times'}"></i> ${e.active === false ? 'Activar' : 'Desactivar'}</button>
-                                                        <button data-expense-action="delete" data-id="${e.id}" class="danger"><i class="fas fa-trash"></i> Eliminar</button>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    `;
-                                }).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                `}
-            </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">Resumen mensual</div>
-                </div>
-                <div class="mm-compare-row">
-                    <span class="lbl">Ingreso mensual utilizado</span>
-                    <span class="val">${App.formatCurrency(income)}</span>
-                </div>
-                <div class="mm-compare-row">
-                    <span class="lbl">− Total gastos individuales (equivalente mensual)</span>
-                    <span class="val negative">−${App.formatCurrency(totalMonthly)}</span>
-                </div>
-                <div class="mm-compare-row" style="background: ${remaining >= 0 ? 'var(--success-light)' : 'var(--danger-light)'}; padding: 10px; border-radius: var(--radius-sm); margin-top: 8px;">
-                    <span class="lbl"><strong>= Dinero restante mensual</strong></span>
-                    <span class="val" style="color: ${remaining >= 0 ? 'var(--success)' : 'var(--danger)'}; font-size: 16px;"><strong>${App.formatCurrency(remaining)}</strong></span>
-                </div>
-            </div>
-        `;
-
-        container.querySelector(`[data-new-expense="${currentPerson}"]`).addEventListener('click', () => openExpenseModal(null, currentPerson));
-
-        container.querySelectorAll('[data-expense-menu]').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const id = btn.dataset.expenseMenu;
-                container.querySelectorAll('.mm-action-dropdown.open').forEach(m => {
-                    if (m.id !== `iemenu-${id}`) m.classList.remove('open');
-                });
-                container.querySelector(`#iemenu-${id}`).classList.toggle('open');
-            });
-        });
-
-        container.querySelectorAll('[data-expense-action]').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const action = btn.dataset.expenseAction;
-                const id = btn.dataset.id;
-                container.querySelectorAll('.mm-action-dropdown.open').forEach(m => m.classList.remove('open'));
-                if (action === 'edit') openExpenseModal(id, currentPerson);
-                else if (action === 'toggle') toggleExpense(id);
-                else if (action === 'delete') confirmDeleteExpense(id);
-            });
-        });
-    }
-
-    function toggleExpense(id) {
-        const exp = myData.individualExpenses.find(e => e.id === id);
-        if (!exp) return;
-        exp.active = exp.active === false ? true : false;
-        saveData();
-        App.showToast(exp.active ? 'Gasto activado' : 'Gasto desactivado');
-        renderExpensesContent();
-    }
-
-    function confirmDeleteExpense(id) {
-        const exp = myData.individualExpenses.find(e => e.id === id);
-        if (!exp) return;
-        App.showConfirm(
-            'Eliminar gasto',
-            `¿Eliminar "${exp.name}"?`,
-            () => {
-                myData.individualExpenses = myData.individualExpenses.filter(e => e.id !== id);
-                saveData();
-                App.showToast('Gasto eliminado');
-                renderExpensesContent();
-            }
-        );
-    }
-
-    // =========================================================
-    // MODAL: GASTO INDIVIDUAL
-    // =========================================================
-    function openExpenseModal(id = null, personId = null) {
-        const modal = containerEl.querySelector('#mmExpenseModal');
-        const body = containerEl.querySelector('#mmExpenseModalBody');
-        const exp = id ? myData.individualExpenses.find(e => e.id === id) : null;
-        const pid = personId || (exp ? exp.personId : currentPerson);
-        const person = getPersonProfile(pid);
-
-        containerEl.querySelector('#mmExpenseModalTitle').textContent = exp ? 'Editar gasto individual' : `Nuevo gasto · ${person.name}`;
-
-        body.innerHTML = `
-            <input type="hidden" id="expEditId" value="${id || ''}">
-            <input type="hidden" id="expPersonId" value="${pid}">
-            
-            <div class="mm-form-row single">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Nombre del gasto *</label>
-                    <input type="text" class="mm-form-input" id="expName" value="${exp ? App.escapeHtml(exp.name) : ''}" required>
-                    <div class="mm-form-error">Obligatorio</div>
-                </div>
-            </div>
-            <div class="mm-form-row three">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Importe (€) *</label>
-                    <input type="number" step="0.01" min="0" class="mm-form-input" id="expAmount" value="${exp ? exp.amount : ''}" required>
-                    <div class="mm-form-error">Obligatorio</div>
-                </div>
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Frecuencia</label>
-                    <select class="mm-form-select" id="expFrequency">
-                        <option value="weekly" ${exp && exp.frequency === 'weekly' ? 'selected' : ''}>Semanal</option>
-                        <option value="monthly" ${exp && exp.frequency === 'monthly' ? 'selected' : (!exp ? 'selected' : '')}>Mensual</option>
-                        <option value="quarterly" ${exp && exp.frequency === 'quarterly' ? 'selected' : ''}>Trimestral</option>
-                        <option value="semiannual" ${exp && exp.frequency === 'semiannual' ? 'selected' : ''}>Semestral</option>
-                        <option value="annual" ${exp && exp.frequency === 'annual' ? 'selected' : ''}>Anual</option>
-                    </select>
-                </div>
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Categoría</label>
-                    <select class="mm-form-select" id="expCategory">
-                        <option value="coche" ${exp && exp.category === 'coche' ? 'selected' : ''}>Coche</option>
-                        <option value="salud" ${exp && exp.category === 'salud' ? 'selected' : ''}>Salud</option>
-                        <option value="telefono" ${exp && exp.category === 'telefono' ? 'selected' : ''}>Teléfono</option>
-                        <option value="suscripciones" ${exp && exp.category === 'suscripciones' ? 'selected' : ''}>Suscripciones</option>
-                        <option value="seguros" ${exp && exp.category === 'seguros' ? 'selected' : ''}>Seguros</option>
-                        <option value="transporte" ${exp && exp.category === 'transporte' ? 'selected' : ''}>Transporte</option>
-                        <option value="otros" ${exp && exp.category === 'otros' ? 'selected' : ''}>Otros</option>
-                    </select>
-                </div>
-            </div>
-            <div class="mm-form-row">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Próximo pago</label>
-                    <input type="date" class="mm-form-input" id="expNextPayment" value="${exp ? exp.nextPayment || '' : ''}">
-                </div>
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Cuenta asociada</label>
-                    <select class="mm-form-select" id="expAccount">
-                        <option value="">—</option>
-                        ${App.data.accounts.filter(a => a.owners.includes(pid) || a.owners.includes('conjunto')).map(a => `<option value="${a.id}" ${exp && exp.account === a.id ? 'selected' : ''}>${App.escapeHtml(a.name)}</option>`).join('')}
-                    </select>
-                </div>
-            </div>
-            <div class="mm-form-row">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Carácter</label>
-                    <select class="mm-form-select" id="expMandatory">
-                        <option value="true" ${exp && exp.mandatory !== false ? 'selected' : (!exp ? 'selected' : '')}>Obligatorio</option>
-                        <option value="false" ${exp && exp.mandatory === false ? 'selected' : ''}>Opcional</option>
-                    </select>
-                </div>
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Estado</label>
-                    <select class="mm-form-select" id="expActive">
-                        <option value="true" ${exp && exp.active !== false ? 'selected' : (!exp ? 'selected' : '')}>Activo</option>
-                        <option value="false" ${exp && exp.active === false ? 'selected' : ''}>Inactivo</option>
-                    </select>
-                </div>
-            </div>
-            <div class="mm-form-row single">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Notas</label>
-                    <textarea class="mm-form-textarea" id="expNotes">${exp ? App.escapeHtml(exp.notes || '') : ''}</textarea>
-                </div>
-            </div>
-        `;
-
-        modal.classList.add('active');
-    }
-
-    function saveIndividualExpense() {
-        const body = containerEl.querySelector('#mmExpenseModalBody');
-        const id = body.querySelector('#expEditId').value;
-        const personId = body.querySelector('#expPersonId').value;
-        const name = body.querySelector('#expName').value.trim();
-        const amount = parseFloat(body.querySelector('#expAmount').value);
-
-        body.querySelectorAll('.mm-form-group').forEach(g => g.classList.remove('error'));
-        let valid = true;
-        if (!name) { body.querySelector('#expName').closest('.mm-form-group').classList.add('error'); valid = false; }
-        if (isNaN(amount) || amount <= 0) { body.querySelector('#expAmount').closest('.mm-form-group').classList.add('error'); valid = false; }
-        if (!valid) return;
-
-        const expData = {
-            personId,
-            name,
-            amount,
-            frequency: body.querySelector('#expFrequency').value,
-            category: body.querySelector('#expCategory').value,
-            nextPayment: body.querySelector('#expNextPayment').value,
-            account: body.querySelector('#expAccount').value,
-            mandatory: body.querySelector('#expMandatory').value === 'true',
-            active: body.querySelector('#expActive').value === 'true',
-            notes: body.querySelector('#expNotes').value.trim()
+    /** Salario de una persona en un mes: teórico + real (si existe) */
+    function getSalary(pid, mk) {
+        mk = mk || ui.month;
+        const profile = state.profiles[pid] || defaultProfile();
+        const bd = computeSalary(profile);
+        const ctrl = state.monthlyControl[mk];
+        const real = ctrl && ctrl.real && ctrl.real[pid] != null ? round2(num(ctrl.real[pid], 0)) : null;
+        return {
+            theoretical: bd.normalizedMonthly,
+            real,
+            netMonthly: bd.monthlyNet,
+            netPerPay: bd.netPerPay,
+            grossAnnual: bd.grossAnnual,
+            irpfEffPct: bd.irpfEffPct,
+            ssPerPay: bd.ssPerPay,
+            irpfPerPay: bd.irpfPerPay,
+            pays: bd.pays,
+            refPays: bd.refPays
         };
-
-        if (id) {
-            const exp = myData.individualExpenses.find(e => e.id === id);
-            Object.assign(exp, expData);
-            App.showToast('Gasto actualizado');
-        } else {
-            expData.id = App.generateId('ie');
-            myData.individualExpenses.push(expData);
-            App.showToast('Gasto añadido');
-        }
-
-        saveData();
-        containerEl.querySelector('#mmExpenseModal').classList.remove('active');
-        renderExpensesContent();
     }
 
-    // =========================================================
-    // VISTA: DISTRIBUCIÓN
-    // =========================================================
-    function renderDistribucion() {
-        const view = containerEl.querySelector('#mmView-distribucion');
-
-        view.innerHTML = `
-            <div class="mm-person-tabs">
-                ${App.data.profiles.map(p => `
-                    <button class="mm-person-tab ${currentPerson === p.id ? 'active' : ''}" data-person="${p.id}">
-                        <span class="mm-person-avatar" style="background: ${p.color}30; color: ${p.color};">${p.initial}</span>
-                        ${App.escapeHtml(p.name)}
-                    </button>
-                `).join('')}
-            </div>
-
-            <div id="mmDistContent"></div>
-        `;
-
-        view.querySelectorAll('.mm-person-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                currentPerson = tab.dataset.person;
-                view.querySelectorAll('.mm-person-tab').forEach(t => t.classList.toggle('active', t === tab));
-                renderDistContent();
-            });
+    /** Ingreso total del hogar para un mes */
+    function getIncomeForMonth(mk) {
+        mk = mk || ui.month;
+        let total = 0;
+        people().forEach(pid => {
+            const sal = getSalary(pid, mk);
+            total += sal.real != null ? sal.real : sal.theoretical;
         });
-
-        renderDistContent();
+        return round2(total);
     }
 
-    function renderDistContent() {
-        const container = containerEl.querySelector('#mmDistContent');
-        const person = getPersonProfile(currentPerson);
-        const dist = myData.monthlyDistribution[currentPerson];
-        const remaining = getRemainingMonthly(currentPerson);
-        const isValid = validateDistribution(dist);
+    /* ========================== HISTÓRICO ========================== */
+    function getHistoryYears() {
+        const now = new Date();
+        return [now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2];
+    }
 
-        const items = [
-            { key: 'shared', label: 'Gastos compartidos', color: 'var(--primary)', icon: 'fa-users', desc: 'Aportación al presupuesto común' },
-            { key: 'mortgage', label: 'Ahorro hipoteca', color: 'var(--success)', icon: 'fa-home', desc: `Acumulado: ${App.formatCurrency(myData.savings.mortgage[currentPerson] || 0)}` },
-            { key: 'trips', label: 'Viajes', color: 'var(--info)', icon: 'fa-plane', desc: `Acumulado: ${App.formatCurrency(myData.savings.trips[currentPerson] || 0)}` },
-            { key: 'personal', label: 'Dinero personal', color: 'var(--warning)', icon: 'fa-user', desc: 'Disponible libre' }
-        ];
+    function generateHistoryData() {
+        const now = new Date();
+        const historyData = {};
+        people().forEach(pid => { historyData[pid] = []; });
 
-        container.innerHTML = `
-            ${remaining < 0 ? `
-                <div class="mm-alert danger">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <div>
-                        <strong>No hay dinero restante para distribuir.</strong>
-                        Los gastos individuales (${App.formatCurrency(getIndividualExpensesMonthly(currentPerson))}) superan al ingreso utilizado (${App.formatCurrency(getMonthlyIncomeUsed(currentPerson))}).
+        for (let i = 23; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const mk = monthKey(d);
+            const ex = getExtraDistribution();
+
+            people().forEach((pid, index) => {
+                const p = state.profiles[pid] || defaultProfile();
+                const isCurrent = i === 0;
+
+                let equiparacion = 0, extraordinaria = 0, bonus = 0;
+                if (isCurrent) {
+                    getMonthExtras(pid, mk).forEach(e => {
+                        if (e.type === 'equiparacion') equiparacion += e.amount;
+                        if (e.type === 'extraordinaria') extraordinaria += e.amount;
+                        if (e.type === 'bonus') bonus += e.amount;
+                    });
+                } else {
+                    const base = index === 0 ? 48000 : 30800;
+                    const bdMock = computeSalary({ grossAnnual: base, paysPerYear: 14, socialSecurityPct: 6.5, irpfMode: 'auto' });
+                    equiparacion = bdMock.proratedExtra;
+                    if (p.extraDates.includes(mk.slice(5))) extraordinaria = bdMock.netPerExtra;
+                }
+
+                const total = equiparacion + extraordinaria + bonus;
+                historyData[pid].push({
+                    mk,
+                    equiparacion, extraordinaria, bonus,
+                    savings: round2(total * ex.savings / 100),
+                    trips: round2(total * ex.trips / 100),
+                    personal: round2(total * ex.personal / 100),
+                    monthly: computeSalary(p).netPerPay
+                });
+            });
+        }
+        return historyData;
+    }
+
+    /* ========================== UI STATE ========================== */
+    const ui = {
+        tab: 'base',
+        month: monthKey(new Date()),
+        expCol: 'extra',
+        showExtraExpanded: false,
+        expandedRows: new Set(),
+        histFilterPerson: 'both',
+        histFilterYear: 'all',
+        selectedChartMonth: null
+    };
+
+    /* ========================== HELPERS ========================== */
+    function infoBtn(formula) {
+        return `<span class="pc-info" tabindex="0">ⓘ<span class="pc-info-tip">${esc(formula)}</span></span>`;
+    }
+    function numericField(label, value, opts) {
+        opts = opts || {};
+        const display = opts.format ? opts.format(value) : (value != null && value !== '' ? fmtEur(value) : '—');
+        return `<div class="ip-numeric" data-action="edit-number"
+                    data-field="${opts.field}" data-person="${opts.person || ''}"
+                    data-label="${esc(label)}" data-value="${value != null ? value : ''}"
+                    data-formula="${esc(opts.formula || '')}" tabindex="0" role="button">
+            <span class="ip-numeric-label">${esc(label)} ${opts.formula ? infoBtn(opts.formula) : ''}</span>
+            <span class="ip-numeric-value">${display}</span>
+        </div>`;
+    }
+
+    /* ========================== TABS ========================== */
+    const TABS = [
+        { key: 'base', num: 1, icon: '📄', label: 'Base de Nómina' },
+        { key: 'dist', num: 2, icon: '⚖️', label: 'Gastos y Distribución' },
+        { key: 'extras', num: 3, icon: '💶', label: 'Pagas Extras' },
+        { key: 'sim', num: 4, icon: '🔮', label: 'Simulador' }
+    ];
+    function renderTabs() {
+        return `<div class="ip-tabs">${TABS.map(t =>
+            `<button class="ip-tab ${ui.tab === t.key ? 'active' : ''}" data-action="switch-tab" data-tab="${t.key}">
+                <span class="ip-tab-num">${t.num}</span>${t.icon} ${t.label}
+            </button>`).join('')}</div>`;
+    }
+
+    /* ========================== TAB 1 · BASE ========================== */
+    function renderBase() {
+        return `<div class="ip-duo">${people().map(renderBasePerson).join('')}</div>
+        <div class="ip-duo" style="margin-top:16px">
+            ${people().map(renderExtraInfoCard).join('')}
+        </div>`;
+    }
+
+    function renderBasePerson(pid) {
+        const p = state.profiles[pid] || defaultProfile();
+        const bd = computeSalary(p);
+        const person = getPerson(pid);
+        const color = person.color || '#2563eb';
+
+        const kpis = `<div class="ip-kpis">
+            <div class="ip-kpi ip-kpi-main" style="--pc:${color}">
+                <div class="ip-kpi-label">Sueldo Neto (Mensual) ${infoBtn('(Bruto mensual - SS - IRPF - deducciones)')}</div>
+                <div class="ip-kpi-value">${fmtEur(bd.monthlyNet)}</div>
+                <div class="ip-kpi-sub">Calculado con ${bd.pays} pagas totales</div>
+            </div>
+            <div class="ip-kpi" style="display:flex; flex-direction:column; justify-content:center;">
+                <div class="ip-kpi-label">Neto en ${bd.refPays} pagas</div>
+                <div class="ip-kpi-value" style="font-size:18px;color:var(--text-secondary)">${fmtEur(bd.normalizedMonthly)}</div>
+                <div class="ip-kpi-sub">normalizado a la pareja</div>
+            </div>
+        </div>`;
+
+        const inputs = `
+            ${numericField('Salario Bruto Anual', p.grossAnnual, { field: 'grossAnnual', person: pid })}
+            <div class="ip-fields-grid">
+                <div class="ip-field"><label>Nº de Pagas</label>
+                    <select data-action="change-field" data-field="paysPerYear" data-person="${pid}">
+                        ${[12, 14, 15, 16].map(n => `<option value="${n}" ${int(p.paysPerYear, 12) === n ? 'selected' : ''}>${n} pagas</option>`).join('')}
+                    </select></div>
+                <div class="ip-field"><label>Modo IRPF</label>
+                    <select data-action="change-field" data-field="irpfMode" data-person="${pid}">
+                        <option value="auto" ${(p.irpfMode || 'auto') === 'auto' ? 'selected' : ''}>Automático</option>
+                        <option value="manual" ${p.irpfMode === 'manual' ? 'selected' : ''}>Manual (%)</option>
+                    </select></div>
+            </div>
+            <div class="ip-row-split">
+                <div class="ip-half">
+                    <div class="ip-numeric" data-action="edit-number" data-field="socialSecurityPct" data-person="${pid}" data-label="SS (%)" data-value="${p.socialSecurityPct}">
+                        <span class="ip-numeric-label">Seg. Social ${infoBtn('Cotización aplicada al bruto anual. Solo sobre 12 pagas.')}</span>
+                        <span class="ip-numeric-value">${fmtPct(p.socialSecurityPct)}</span>
                     </div>
+                    <div class="ip-sub-kpi">Descuento: ${fmtEur(bd.ssPerPay)} / paga</div>
                 </div>
-            ` : ''}
-
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Distribución mensual de ${App.escapeHtml(person.name)}</div>
-                        <div class="card-subtitle">Base: ${App.formatCurrency(remaining)} restantes</div>
+                <div class="ip-half">
+                    <div class="ip-numeric" data-action="edit-number" data-field="irpfPercent" data-person="${pid}" data-label="IRPF (%)" data-value="${p.irpfMode === 'manual' ? p.irpfPercent : bd.irpfEffPct}">
+                        <span class="ip-numeric-label">IRPF ${infoBtn('Retención aplicada sobre el bruto anual.')}</span>
+                        <span class="ip-numeric-value">${fmtPct(p.irpfMode === 'manual' ? p.irpfPercent : bd.irpfEffPct)}</span>
                     </div>
-                    <div>
-                        ${isValid 
-                            ? '<span class="badge badge-success"><i class="fas fa-check"></i> Suma 100%</span>'
-                            : `<span class="badge badge-danger"><i class="fas fa-times"></i> Suma ${(dist.shared + dist.mortgage + dist.trips + dist.personal).toFixed(1)}%</span>`
-                        }
-                    </div>
+                    <div class="ip-sub-kpi">Retención: ${fmtEur(bd.irpfPerPay)} / paga</div>
                 </div>
+            </div>`;
 
-                ${!isValid ? `
-                    <div class="mm-alert warning">
-                        <i class="fas fa-exclamation-circle"></i>
-                        <div>Los porcentajes deben sumar exactamente 100% para que la distribución sea válida.</div>
+        const dedList = (p.deductions || []).map(d => `
+            <div class="ip-ded-line" data-action="edit-ded" data-person="${pid}" data-id="${d.id}">
+                <div class="ip-ded-line-name">${esc(d.name)}</div>
+                <div class="ip-ded-line-amt ${d.kind === 'complement' ? 'ip-pos' : 'ip-neg'}">
+                    ${d.kind === 'complement' ? '+' : '−'}${fmtEur(d.amount)}<span class="ip-ded-freq">/${d.freq === 'annual' ? 'año' : 'mes'}</span>
+                </div>
+            </div>`).join('');
+
+        return `<section class="ip-person" style="--pc:${color}">
+            <header class="ip-person-head">
+                <span class="ip-avatar" style="background:${color}">${esc(person.initial || '?')}</span>
+                <span class="ip-person-name">${esc(person.name)}</span>
+            </header>
+            <div class="ip-person-body">
+                ${kpis} ${inputs}
+                <div class="ip-ded-section">
+                    <div class="ip-ded-head">
+                        <strong>Deducciones</strong>
+                        <button class="ip-add-btn" data-action="add-ded" data-person="${pid}">+ Añadir</button>
                     </div>
-                ` : ''}
+                    ${dedList || '<div class="ip-empty">Sin registros</div>'}
+                </div>
+            </div>
+        </section>`;
+    }
 
-                ${items.map(it => {
-                    const amount = remaining > 0 ? remaining * (dist[it.key] / 100) : 0;
-                    return `
-                        <div class="mm-slider-row">
-                            <label>
-                                <span class="mm-dist-icon" style="background: ${it.color}; display: inline-flex; width: 20px; height: 20px; border-radius: 5px; font-size: 10px; margin-right: 6px;"><i class="fas ${it.icon}"></i></span>
-                                ${it.label}
-                            </label>
-                            <input type="range" min="0" max="100" step="1" value="${dist[it.key]}" data-dist-key="${it.key}">
-                            <div class="mm-slider-value">
-                                <div>${dist[it.key]}%</div>
-                                <div style="font-size: 11px; color: var(--text-muted); font-weight: 400;">${App.formatCurrency(amount)}</div>
-                            </div>
+    function renderExtraInfoCard(pid) {
+        const p = state.profiles[pid] || defaultProfile();
+        const person = getPerson(pid);
+        const bd = computeSalary(p);
+
+        const grossPerPay = round2(bd.grossAnnual / bd.pays);
+        const irpf = round2(grossPerPay * (bd.irpfEffPct / 100));
+        const nominaBase = round2(grossPerPay - irpf);
+
+        const today = new Date();
+        const upcoming = [];
+
+        for (let i = 0; i < 12; i++) {
+            const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+            const mk = monthKey(d);
+            const isExtraMonth = p.extraDates.some(ed => mk.endsWith(ed.slice(0, 2)));
+
+            if (isExtraMonth) {
+                const [cy, cm] = mk.split('-').map(Number);
+                const day = p.extraPayDay || '15';
+                const joinDate = new Date(p.joinDate + 'T00:00:00');
+                const payDate = new Date(cy, cm - 1, 1);
+
+                const diffTime = payDate.getTime() - joinDate.getTime();
+                const diasTrabajados = Math.max(0, Math.floor(diffTime / 86400000));
+                const diasDevengo = p.accrualPeriod === 'semiannual' ? 182 : 365;
+
+                const factor = Math.min(1, diasTrabajados / diasDevengo);
+                const netExtraFinal = round2(nominaBase * factor);
+
+                if (netExtraFinal > 0) {
+                    upcoming.push({ date: `${mk}-${day}`, label: `Extraordinaria`, amount: netExtraFinal, icon: '💶' });
+                }
+            }
+        }
+        upcoming.sort((a, b) => a.date.localeCompare(b.date));
+
+        return `<div class="ip-extra-card" style="--pc:${person.color}">
+            <div class="ip-extra-header">
+                <div class="ip-extra-title">Pagas Extraordinarias · ${esc(person.name)}</div>
+                <button class="ip-add-btn" data-action="edit-extra-config" data-person="${pid}">⚙️ Configurar</button>
+            </div>
+            <div class="ip-extra-grid" style="grid-template-columns: 1fr;">
+                <div class="ip-extra-stat">
+                    <div class="ip-kpi-label">Paga Base (Normal)</div>
+                    <div class="ip-kpi-value">${fmtEur(nominaBase)}</div>
+                </div>
+            </div>
+            <div class="ip-ded-head" style="margin-top:12px; border-top:1px dashed var(--border); padding-top:10px">
+                <strong>Próximas Pagas Extraordinarias</strong>
+            </div>
+            <div class="ip-upcoming-list">
+                ${upcoming.map(u => `
+                    <div class="ip-upcoming-row">
+                        <span class="ip-upcoming-date">${u.date}</span>
+                        <span class="ip-upcoming-label">${u.icon} ${esc(u.label)}</span>
+                        <strong class="ip-upcoming-amt">${fmtEur(u.amount)}</strong>
+                    </div>
+                `).join('') || '<div class="ip-empty">Sin pagas extra previstas</div>'}
+            </div>
+            <div class="ip-ded-head" style="margin-top:12px; border-top:1px dashed var(--border); padding-top:10px">
+                <strong>Bonus Configurados</strong>
+                <button class="ip-add-btn" data-action="add-bonus" data-person="${pid}">+ Añadir Bonus</button>
+            </div>
+            ${(p.bonuses || []).map(b => `
+                <div class="ip-ded-line" data-action="edit-bonus" data-person="${pid}" data-id="${b.id}">
+                    <div class="ip-ded-line-name">🎁 ${esc(b.name)}</div>
+                    <div class="ip-ded-line-amt ip-pos">
+                        +${fmtEur(b.amount - b.irpfDiscount)}<span class="ip-ded-freq"> / ${b.date}</span>
+                    </div>
+                </div>`).join('') || '<div class="ip-empty">Sin bonus registrados</div>'}
+        </div>`;
+    }
+
+    /* ========================== TAB 2 · DISTRIBUCIÓN ========================== */
+    function renderDist() {
+        const eq = getEquity();
+        const rules = getSharedContributionRules();
+        const aportePct = eq.totalRemaining > 0 ? round2((rules.total / eq.totalRemaining) * 100) : 0;
+
+        return `
+        <div class="ip-period-bar">
+            <button class="ip-nav-btn" data-action="prev-month">‹</button>
+            <div class="ip-period-label">${monthLabel(ui.month)}</div>
+            <button class="ip-nav-btn" data-action="next-month">›</button>
+        </div>
+
+        <div class="ip-kpis-row">
+            <div class="ip-kpi ip-kpi-main" style="--pc:var(--primary)">
+                <div class="ip-kpi-label">Aporte Común</div>
+                <div class="ip-kpi-value">${fmtEur(rules.total)}</div>
+                <div class="ip-kpi-sub">${fmtPct(aportePct)} del remanente</div>
+            </div>
+            <div class="ip-kpi ip-kpi-main" style="--pc:var(--success)">
+                <div class="ip-kpi-label">Remanente Total</div>
+                <div class="ip-kpi-value">${fmtEur(eq.totalRemaining)}</div>
+                <div class="ip-kpi-sub">Ingresos − Gastos Ind.</div>
+            </div>
+        </div>
+
+        ${renderControlTable()}
+
+        <div class="ip-duo">${people().map(renderDistPerson).join('')}</div>
+        `;
+    }
+
+    function renderControlTable() {
+        const ids = people();
+        const ctrl = state.monthlyControl[ui.month] || { theoretical: {}, real: {}, confirmed: {} };
+        return `<div class="ip-control-card">
+            <div class="ip-ded-head"><strong>Control del Mes · ${monthLabel(ui.month)}</strong></div>
+            <div class="ip-control-grid-2">
+                ${ids.map(pid => {
+                    const person = getPerson(pid);
+                    const theo = ctrl.theoretical[pid] != null ? ctrl.theoretical[pid] : theoreticalMonthly(pid, ui.month);
+                    const realVal = ctrl.real[pid] != null ? ctrl.real[pid] : null;
+                    const confirmed = !!ctrl.confirmed[pid];
+                    return `<div class="ip-control-row" style="--pc:${person.color}">
+                        <div class="ip-control-name">
+                            <span class="ip-avatar sm" style="background:${person.color}">${esc(person.initial || '?')}</span>
+                            ${esc(person.name)}
                         </div>
-                        <div style="font-size: 11px; color: var(--text-muted); margin: -8px 0 12px 172px;">${it.desc}</div>
-                    `;
+                        <div class="ip-control-theo">
+                            <div class="ip-kpi-label">Teórica</div>
+                            <strong>${fmtEur(theo)}</strong>
+                        </div>
+                        <button class="ip-tick-btn ${confirmed ? 'done' : ''}" data-action="tick-month" data-person="${pid}" title="Confirmar cobro y registrar en Dinero">✔</button>
+                        <div class="ip-control-real" data-action="edit-number" data-field="monthlyReal" data-person="${pid}" data-label="Cobro Real" data-value="${realVal != null ? realVal : ''}">
+                            <div class="ip-kpi-label">Real</div>
+                            <span class="ip-numeric-value">${realVal != null ? fmtEur(realVal) : '—'}</span>
+                        </div>
+                    </div>`;
                 }).join('')}
             </div>
-
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-title">Detalle de la distribución</div>
-                </div>
-                ${renderDistributionSummary({
-                    shared: remaining > 0 ? remaining * (dist.shared / 100) : 0,
-                    mortgage: remaining > 0 ? remaining * (dist.mortgage / 100) : 0,
-                    trips: remaining > 0 ? remaining * (dist.trips / 100) : 0,
-                    personal: remaining > 0 ? remaining * (dist.personal / 100) : 0
-                }, remaining)}
-            </div>
-        `;
-
-        // Bind sliders
-        container.querySelectorAll('input[type="range"]').forEach(slider => {
-            slider.addEventListener('input', () => {
-                const key = slider.dataset.distKey;
-                dist[key] = parseInt(slider.value);
-                renderDistContent();
-            });
-            slider.addEventListener('change', () => {
-                saveData();
-                App.showToast('Distribución actualizada');
-            });
-        });
+        </div>`;
     }
 
-    // =========================================================
-    // VISTA: PAGAS EXTRAS
-    // =========================================================
-    function renderPagas() {
-        const view = containerEl.querySelector('#mmView-pagas');
+    function renderDistPerson(pid) {
+        const person = getPerson(pid);
+        const color = person.color || '#2563eb';
+        const income = monthlyIncome(pid);
+        const expenses = individualExpensesTotal(pid);
+        const netAfterExpenses = round2(income - expenses);
+        const a = getDistributionAmounts(pid);
 
-        view.innerHTML = `
-            <div class="mm-person-tabs">
-                ${App.data.profiles.map(p => `
-                    <button class="mm-person-tab ${currentPerson === p.id ? 'active' : ''}" data-person="${p.id}">
-                        <span class="mm-person-avatar" style="background: ${p.color}30; color: ${p.color};">${p.initial}</span>
-                        ${App.escapeHtml(p.name)}
-                    </button>
-                `).join('')}
+        const expList = getIndividualExpenses(pid).map(e => `
+            <div class="ip-exp-row" data-action="edit-exp" data-person="${pid}" data-id="${e.id}">
+                <span>${esc(e.name) || 'Gasto'}</span>
+                <span class="ip-exp-amt">${fmtEur(normalizeMonthly(e.amount, e.frequency))}</span>
+                <span class="ip-ded-del">✏️</span>
+            </div>`).join('');
+
+        return `<section class="ip-person" style="--pc:${color}">
+            <header class="ip-person-head">
+                <span class="ip-avatar" style="background:${color}">${esc(person.initial || '?')}</span>
+                <span class="ip-person-name">${esc(person.name)}</span>
+                <span class="ip-equity-badge">${fmtPct(a.share)} equidad</span>
+            </header>
+            <div class="ip-person-body">
+                <div class="ip-pay-row-double">
+                    <div class="ip-pay-box">
+                        <div class="ip-kpi-label">Ingreso Real</div>
+                        <div class="ip-kpi-value">${fmtEur(income)}</div>
+                    </div>
+                    <div class="ip-pay-box ip-pay-box-minus">
+                        <div class="ip-kpi-label">Restando Gastos Ind.</div>
+                        <div class="ip-kpi-value">${fmtEur(netAfterExpenses)}</div>
+                    </div>
+                </div>
+                <div class="ip-dist-blocks">
+                    <div class="ip-dist-block">
+                        <div class="ip-dist-top">
+                            <span class="ip-dist-pct">${fmtPct(a.sharedPct)}</span>
+                            <span class="ip-dist-name">Gastos Compartidos</span>
+                            <span class="ip-dist-amt">${fmtEur(a.shared)}</span>
+                        </div>
+                        <div class="ip-bar"><div style="width:${Math.min(100, a.sharedPct)}%;background:var(--primary)"></div></div>
+                    </div>
+                    <div class="ip-dist-block">
+                        <div class="ip-dist-top">
+                            <button class="ip-pct-btn" data-action="edit-number" data-field="savingsPct" data-person="${pid}" data-label="% Ahorro Personal" data-value="${a.savingsPct}" data-suffix="%">${fmtPct(a.savingsPct)}</button>
+                            <span class="ip-dist-name">Ahorro Personal</span>
+                            <span class="ip-dist-amt">${fmtEur(a.savings)}</span>
+                        </div>
+                        <div class="ip-bar"><div style="width:${Math.min(100, a.savingsPct)}%;background:var(--success)"></div></div>
+                    </div>
+                    <div class="ip-dist-block ${a.free < 0 ? 'ip-dist-warn' : ''}">
+                        <div class="ip-dist-top">
+                            <span class="ip-dist-pct">${fmtPct(a.freePct)}</span>
+                            <span class="ip-dist-name">Dinero Libre</span>
+                            <span class="ip-dist-amt">${fmtEur(a.free)}</span>
+                        </div>
+                        <div class="ip-bar"><div style="width:${Math.max(0, Math.min(100, a.freePct))}%;background:${a.free < 0 ? 'var(--danger)' : 'var(--warning)'}"></div></div>
+                    </div>
+                </div>
+                <div class="ip-exp-section">
+                    <div class="ip-ded-head">
+                        <strong>Gastos Individuales</strong>
+                        <button class="ip-add-btn" data-action="add-exp" data-person="${pid}">+ Añadir</button>
+                    </div>
+                    ${expList || '<div class="ip-empty">Sin gastos</div>'}
+                </div>
             </div>
-
-            <div id="mmPagasContent"></div>
-        `;
-
-        view.querySelectorAll('.mm-person-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                currentPerson = tab.dataset.person;
-                view.querySelectorAll('.mm-person-tab').forEach(t => t.classList.toggle('active', t === tab));
-                renderPagasContent();
-            });
-        });
-
-        renderPagasContent();
+        </section>`;
     }
 
-    function renderPagasContent() {
-        const container = containerEl.querySelector('#mmPagasContent');
-        const person = getPersonProfile(currentPerson);
-        const profile = myData.salaryProfiles[currentPerson];
-        const extraDist = myData.extraPayDistribution[currentPerson];
-        const isValid = validateDistribution(extraDist);
+    /* ========================== TAB 3 · EXTRAS ========================== */
+    function renderExtras() {
+        const ex = getExtraDistribution();
+        const ids = people();
 
-        const personPays = myData.extraPays.filter(p => p.personId === currentPerson);
-        const totalReceived = personPays.filter(p => p.status === 'received').reduce((s, p) => s + (p.realAmount || 0), 0);
+        const monthExtras = ids.map(pid => ({ pid, items: getMonthExtras(pid, ui.month) }));
+        const hasAnyExtraThisMonth = monthExtras.some(me => me.items.length > 0);
 
-        // Importe estimado de cada paga extra
-        const netAnnual = getEstimatedNetAnnual(currentPerson);
-        const estimatedPerExtraPay = netAnnual / (profile.paysPerYear || 14);
+        return `
+        <div class="ip-period-bar">
+            <button class="ip-nav-btn" data-action="prev-month">‹</button>
+            <div class="ip-period-label">${monthLabel(ui.month)}</div>
+            <button class="ip-nav-btn" data-action="next-month">›</button>
+        </div>
 
-        // Próximas pagas extras
-        const upcomingExtras = (profile.extraPayDates || [])
-            .filter(d => d >= '2026-10-30')
-            .map(d => ({
-                date: d,
-                amount: estimatedPerExtraPay,
-                registered: personPays.find(p => p.date === d)
-            }));
-
-        container.innerHTML = `
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Distribución de pagas extras · ${App.escapeHtml(person.name)}</div>
-                        <div class="card-subtitle">Porcentajes independientes de la distribución mensual</div>
-                    </div>
-                    <div>
-                        ${isValid 
-                            ? '<span class="badge badge-success"><i class="fas fa-check"></i> Suma 100%</span>'
-                            : `<span class="badge badge-danger"><i class="fas fa-times"></i> Suma ${(extraDist.shared + extraDist.mortgage + extraDist.trips + extraDist.personal).toFixed(1)}%</span>`
-                        }
-                    </div>
-                </div>
-
-                ${!isValid ? `
-                    <div class="mm-alert warning">
-                        <i class="fas fa-exclamation-circle"></i>
-                        <div>Los porcentajes deben sumar exactamente 100%.</div>
-                    </div>
-                ` : ''}
-
-                <div class="mm-slider-row">
-                    <label><i class="fas fa-users" style="color: var(--primary); margin-right: 6px;"></i>Gastos compartidos</label>
-                    <input type="range" min="0" max="100" step="1" value="${extraDist.shared}" data-extra-key="shared">
-                    <div class="mm-slider-value">${extraDist.shared}%</div>
-                </div>
-                <div class="mm-slider-row">
-                    <label><i class="fas fa-home" style="color: var(--success); margin-right: 6px;"></i>Ahorro hipoteca</label>
-                    <input type="range" min="0" max="100" step="1" value="${extraDist.mortgage}" data-extra-key="mortgage">
-                    <div class="mm-slider-value">${extraDist.mortgage}%</div>
-                </div>
-                <div class="mm-slider-row">
-                    <label><i class="fas fa-plane" style="color: var(--info); margin-right: 6px;"></i>Viajes</label>
-                    <input type="range" min="0" max="100" step="1" value="${extraDist.trips}" data-extra-key="trips">
-                    <div class="mm-slider-value">${extraDist.trips}%</div>
-                </div>
-                <div class="mm-slider-row">
-                    <label><i class="fas fa-user" style="color: var(--warning); margin-right: 6px;"></i>Dinero personal</label>
-                    <input type="range" min="0" max="100" step="1" value="${extraDist.personal}" data-extra-key="personal">
-                    <div class="mm-slider-value">${extraDist.personal}%</div>
-                </div>
+        <div class="ip-card">
+            <div class="ip-ded-head"><strong>Reparto Global de Extras</strong></div>
+            <div class="ip-extra-dist">
+                <div class="ip-extra-item"><span>% Ahorro</span><button class="ip-pct-btn" data-action="edit-number" data-field="extraSavings" data-value="${ex.savings}" data-suffix="%">${fmtPct(ex.savings)}</button></div>
+                <div class="ip-extra-item"><span>% Viajes</span><button class="ip-pct-btn" data-action="edit-number" data-field="extraTrips" data-value="${ex.trips}" data-suffix="%">${fmtPct(ex.trips)}</button></div>
+                <div class="ip-extra-item"><span>% Personal</span><div class="ip-pct-static">${fmtPct(ex.personal)}</div></div>
             </div>
+        </div>
 
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Próximas pagas extras</div>
-                        <div class="card-subtitle">Importe estimado: ${App.formatCurrency(estimatedPerExtraPay)} por paga</div>
-                    </div>
-                </div>
-                ${upcomingExtras.length === 0 ? `
-                    <div class="mm-empty">
-                        <i class="fas fa-gift"></i>
-                        <h3>Sin pagas extras próximas</h3>
-                    </div>
-                ` : upcomingExtras.map(p => `
-                    <div class="mm-pay-item">
-                        <div class="mm-pay-date" style="background: ${person.color}20; color: ${person.color};">
-                            <div class="d">${new Date(p.date + 'T00:00:00').getDate()}</div>
-                            <div class="m">${['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][new Date(p.date + 'T00:00:00').getMonth()]}</div>
-                        </div>
-                        <div class="mm-pay-info">
-                            <div class="mm-pay-title">Paga extra</div>
-                            <div class="mm-pay-meta">
-                                ${App.formatDate(p.date)} · 
-                                ${p.registered 
-                                    ? `<span class="badge badge-success">Cobrada: ${App.formatCurrency(p.registered.realAmount)}</span>`
-                                    : '<em style="color: var(--warning);">Prevista</em>'
-                                }
-                            </div>
-                        </div>
-                        <div class="mm-pay-amount" style="color: var(--success);">${App.formatCurrency(p.amount)}</div>
-                        ${!p.registered ? `<button class="btn btn-sm btn-primary" data-register-extra="${p.date}"><i class="fas fa-check"></i> Cobrada</button>` : ''}
-                    </div>
-                `).join('')}
-            </div>
+        ${hasAnyExtraThisMonth ? `
+        <div class="ip-card">
+            <div class="ip-ded-head"><strong>Confirmación de Cobros</strong></div>
+            <div class="ip-control-grid-2">
+                ${monthExtras.map(({ pid, items }) => {
+                    const person = getPerson(pid);
+                    const totalTeorico = items.reduce((s,e)=>s+e.amount,0);
+                    const totalForBars = totalTeorico;
 
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Historial de pagas extras</div>
-                        <div class="card-subtitle">Total cobrado: ${App.formatCurrency(totalReceived)}</div>
-                    </div>
-                    <button class="btn btn-sm btn-primary" data-register-new-extra="${currentPerson}"><i class="fas fa-plus"></i> Registrar paga</button>
-                </div>
-                ${personPays.length === 0 ? `
-                    <div class="mm-empty">
-                        <i class="fas fa-history"></i>
-                        <p>Sin pagas extras registradas</p>
-                    </div>
-                ` : personPays.map(p => `
-                    <div class="mm-pay-item">
-                        <div class="mm-pay-date">
-                            <div class="d">${new Date(p.date + 'T00:00:00').getDate()}</div>
-                            <div class="m">${['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][new Date(p.date + 'T00:00:00').getMonth()]}</div>
-                        </div>
-                        <div class="mm-pay-info">
-                            <div class="mm-pay-title">Paga extra ${new Date(p.date + 'T00:00:00').getFullYear()}</div>
-                            <div class="mm-pay-meta">
-                                ${App.formatDate(p.date)} · 
-                                ${p.status === 'received' ? '<span class="badge badge-success">Cobrada</span>' : '<span class="badge badge-warning">Pendiente</span>'}
-                                ${p.notes ? ` · ${App.escapeHtml(p.notes)}` : ''}
+                    const s = round2(totalForBars * ex.savings / 100);
+                    const t = round2(totalForBars * ex.trips / 100);
+                    const p = round2(totalForBars * ex.personal / 100);
+
+                    const rows = items.filter(e => e.type !== 'equiparacion').map(e => {
+                        const ov = (state.extraPayments[ui.month]?.[pid]?.realItems || {})[e.id];
+                        return `<div class="ip-confirm-row">
+                            <div class="ip-confirm-label">${esc(e.label)}</div>
+                            <div class="ip-confirm-theo">${fmtEur(e.amount)}</div>
+                            <button class="ip-tick-btn sm ${ov != null ? 'done' : ''}" data-action="tick-extra-item" data-person="${pid}" data-item="${e.id}" data-theo="${e.amount}" title="Confirmar cobro y distribuir">✔</button>
+                            <div class="ip-confirm-real" data-action="edit-extra-item-real" data-person="${pid}" data-item="${e.id}" data-real="${ov != null ? ov : ''}">
+                                ${ov != null ? fmtEur(ov) : '—'}
                             </div>
-                        </div>
+                        </div>`;
+                    }).join('') || '<div style="font-size:11px;color:var(--text-muted)">Sin cobros extra</div>';
+
+                    return `<div class="ip-control-row" style="--pc:${person.color}; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start;">
                         <div>
-                            <div class="mm-pay-amount" style="color: var(--success);">${App.formatCurrency(p.realAmount || p.estimatedAmount)}</div>
-                            ${p.realAmount && p.estimatedAmount && Math.abs(p.realAmount - p.estimatedAmount) > 0.01 ? `
-                                <div style="font-size: 10px; color: var(--text-muted); text-align: right;">Estimado: ${App.formatCurrency(p.estimatedAmount)}</div>
-                            ` : ''}
+                            <div class="ip-control-name" style="margin-bottom:8px">
+                                <span class="ip-avatar sm" style="background:${person.color}">${esc(person.initial || '?')}</span>
+                                ${esc(person.name)}
+                            </div>
+                            ${rows}
+                        </div>
+                        <div style="text-align:right; border-left:1px dashed var(--border); padding-left:12px">
+                            <div class="ip-mini-bars">
+                                <div class="ip-mini-bar"><span>Ahorro</span><div style="width:${ex.savings}%;background:var(--success)"></div><b>${fmtEur(s)}</b></div>
+                                <div class="ip-mini-bar"><span>Viajes</span><div style="width:${ex.trips}%;background:var(--info)"></div><b>${fmtEur(t)}</b></div>
+                                <div class="ip-mini-bar"><span>Personal</span><div style="width:${ex.personal}%;background:var(--warning)"></div><b>${fmtEur(p)}</b></div>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>` : `<div class="ip-card"><div class="ip-empty">No hay pagas extras ni bonus en ${monthLabel(ui.month)}</div></div>`}
+
+        <div class="ip-card">
+            <div class="ip-ded-head">
+                <strong>Proyección Anual</strong>
+                ${(ui.showExtraExpanded || ui.expCol !== 'extra') ? `<button class="ip-btn ghost" data-action="reset-col">← Volver a vista general</button>` : ''}
+            </div>
+            ${renderTable(ids, ex)}
+        </div>
+
+        <div class="ip-card">
+            <div class="ip-ded-head" style="flex-wrap: wrap;">
+                <strong style="flex: none;">Histórico</strong>
+                <div class="ip-hist-filters" style="margin-left: auto; display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                    <select class="ip-select-sm" data-action="hist-year">
+                        <option value="all" ${ui.histFilterYear === 'all' ? 'selected' : ''}>Todos los años</option>
+                        ${getHistoryYears().map(y => `<option value="${y}" ${ui.histFilterYear == y ? 'selected' : ''}>${y}</option>`).join('')}
+                    </select>
+                    <div class="ip-hist-chips" style="display: flex; gap: 4px;">
+                        <button class="ip-fchip ${ui.histFilterPerson === 'both' ? 'sel' : ''}" data-action="set-hist-person" data-val="both">Ambos</button>
+                        ${ids.map(id => `<button class="ip-fchip ${ui.histFilterPerson === id ? 'sel' : ''}" data-action="set-hist-person" data-val="${id}">${esc(getPerson(id).name)}</button>`).join('')}
+                    </div>
+                </div>
+            </div>
+            ${renderChart()}
+        </div>`;
+    }
+
+    function renderTable(ids, ex) {
+        const isExpanded = ui.expCol !== 'extra';
+        const isExtraExpanded = ui.showExtraExpanded;
+
+        let expName = '';
+        if (isExpanded) expName = { savings: 'Ahorro', trips: 'Viajes', personal: 'Personal' }[ui.expCol];
+        if (isExtraExpanded) expName = 'Paga Extra';
+
+        const now = new Date();
+        const monthsData = [];
+        for (let i = 0; i < 12; i++) {
+            const mk = addMonths(monthKey(now), i);
+            const rowData = { month: mk, theoretical: {}, real: {}, savings: {}, trips: {}, personal: {}, breakdown: {} };
+            let hasAny = false;
+
+            ids.forEach(pid => {
+                const items = getMonthExtras(pid, mk);
+                if (items.length) hasAny = true;
+
+                const totalTeorico = items.reduce((s,e)=>s+e.amount,0);
+                const overrides = state.extraPayments[mk]?.[pid] || {};
+                const realVal = overrides.realTotal != null ? overrides.realTotal : null;
+                const valFinal = realVal != null ? realVal : totalTeorico;
+
+                rowData.theoretical[pid] = totalTeorico;
+                rowData.real[pid] = realVal;
+                rowData.savings[pid] = round2(valFinal * ex.savings / 100);
+                rowData.trips[pid] = round2(valFinal * ex.trips / 100);
+                rowData.personal[pid] = round2(valFinal * ex.personal / 100);
+                rowData.breakdown[pid] = items;
+            });
+            if (hasAny) monthsData.push(rowData);
+        }
+
+        const sum = (f, id) => monthsData.reduce((s, r) => s + (r[f][id] || 0), 0);
+        const sumAll = f => ids.reduce((s, id) => s + sum(f, id), 0);
+
+        let headHtml = '';
+        if (!isExpanded && !isExtraExpanded) {
+            headHtml = `
+            <tr>
+                <th rowspan="2" style="text-align:left;padding-left:12px">Mes</th>
+                <th rowspan="2" class="ip-th-clickable" data-action="expand-extra-col">Paga Extra ↕</th>
+                <th rowspan="2" class="ip-th-clickable" data-action="expand-col" data-col="savings">Ahorro ↕</th>
+                <th rowspan="2" class="ip-th-clickable" data-action="expand-col" data-col="trips">Viajes ↕</th>
+                <th rowspan="2" class="ip-th-clickable" data-action="expand-col" data-col="personal">Personal ↕</th>
+            </tr>`;
+        } else {
+            headHtml = `
+            <tr>
+                <th style="text-align:left;padding-left:12px">Mes</th>
+                <th>${esc(getPerson(ids[0]).name)}</th>
+                <th>${esc(getPerson(ids[1]).name)}</th>
+                <th class="ip-td-total">Total ${expName}</th>
+            </tr>`;
+        }
+
+        return `<div class="ip-table-scroll">
+            <table class="ip-proj-table">
+                <thead>${headHtml}</thead>
+                <tbody>
+                    ${monthsData.map(row => {
+                        const isExpandedRow = ui.expandedRows.has(row.month);
+                        const hasMultiple = ids.some(id => (row.breakdown[id] || []).length > 1);
+
+                        let html = `<tr class="${isExpandedRow ? 'ip-row-expanded' : ''}">
+                            <td class="ip-td-month">
+                                ${monthLabel(row.month)}
+                                ${hasMultiple ? `<button class="ip-expand-row" data-action="toggle-row" data-month="${row.month}">${isExpandedRow ? '▲' : '▼'}</button>` : ''}
+                            </td>`;
+
+                        if (!isExpanded && !isExtraExpanded) {
+                            html += `
+                                <td class="ip-td-total">${fmtEur(ids.reduce((s,id)=>s+(row.real[id]!=null?row.real[id]:row.theoretical[id]),0))}</td>
+                                <td>${fmtEur(ids.reduce((s,id)=>s+row.savings[id],0))}</td>
+                                <td>${fmtEur(ids.reduce((s,id)=>s+row.trips[id],0))}</td>
+                                <td>${fmtEur(ids.reduce((s,id)=>s+row.personal[id],0))}</td>
+                            `;
+                        } else {
+                            let colKey = isExtraExpanded ? 'extra' : ui.expCol;
+                            ids.forEach(id => {
+                                let val = 0;
+                                if (colKey === 'extra') val = row.real[id] != null ? row.real[id] : row.theoretical[id];
+                                else val = row[colKey][id];
+                                html += `<td>${fmtEur(val)}</td>`;
+                            });
+
+                            let totalVal = 0;
+                            if (colKey === 'extra') totalVal = ids.reduce((s,id)=>s+(row.real[id]!=null?row.real[id]:row.theoretical[id]),0);
+                            else totalVal = ids.reduce((s,id)=>s+row[colKey][id],0);
+
+                            html += `<td class="ip-td-total">${fmtEur(totalVal)}</td>`;
+                        }
+
+                        html += `</tr>`;
+
+                        if (isExpandedRow) {
+                            const labels = new Set();
+                            ids.forEach(id => {
+                                (row.breakdown[id] || []).forEach(b => labels.add(b.label));
+                            });
+
+                            labels.forEach(label => {
+                                html += `<tr class="ip-row-sub">
+                                    <td style="text-align:right; color:var(--text-secondary); font-style:italic;">${esc(label)}</td>`;
+
+                                if (!isExpanded && !isExtraExpanded) {
+                                    let totalVal = 0;
+                                    ids.forEach(id => {
+                                        const b = (row.breakdown[id] || []).find(x => x.label === label);
+                                        if (b) {
+                                            const isReal = row.real[id] != null;
+                                            totalVal += isReal ? (b.amount / (row.theoretical[id]||1)) * row.real[id] : b.amount;
+                                        }
+                                    });
+                                    html += `
+                                        <td>${fmtEur(totalVal)}</td>
+                                        <td>${fmtEur(totalVal * ex.savings / 100)}</td>
+                                        <td>${fmtEur(totalVal * ex.trips / 100)}</td>
+                                        <td>${fmtEur(totalVal * ex.personal / 100)}</td>
+                                    `;
+                                } else {
+                                    let totalVal = 0;
+                                    let colKey = isExtraExpanded ? 'extra' : ui.expCol;
+
+                                    ids.forEach(id => {
+                                        const b = (row.breakdown[id] || []).find(x => x.label === label);
+                                        let val = 0;
+                                        if (b) {
+                                            const isReal = row.real[id] != null;
+                                            const rawVal = isReal ? (b.amount / (row.theoretical[id]||1)) * row.real[id] : b.amount;
+                                            if (colKey === 'extra') val = rawVal;
+                                            else val = round2(rawVal * ex[colKey] / 100);
+                                        }
+                                        html += `<td>${val > 0 ? fmtEur(val) : '—'}</td>`;
+                                        totalVal += val;
+                                    });
+                                    html += `<td class="ip-td-total">${fmtEur(totalVal)}</td>`;
+                                }
+                                html += `</tr>`;
+                            });
+                        }
+                        return html;
+                    }).join('')}
+                </tbody>
+                <tfoot>
+                    <tr class="ip-proj-totals">
+                        <td>TOTALES</td>
+                        ${!isExpanded && !isExtraExpanded ? `
+                        <td>${fmtEur(sumAll('real') || sumAll('theoretical'))}</td>
+                        <td>${fmtEur(sumAll('savings'))}</td>
+                        <td>${fmtEur(sumAll('trips'))}</td>
+                        <td>${fmtEur(sumAll('personal'))}</td>
+                        ` : `
+                        ${ids.map(id => {
+                            if (isExtraExpanded) return `<td>${fmtEur(sum('real', id) || sum('theoretical', id))}</td>`;
+                            return `<td>${fmtEur(sum(ui.expCol, id))}</td>`;
+                        }).join('')}
+                        <td>${fmtEur(isExtraExpanded ? (sumAll('real') || sumAll('theoretical')) : sumAll(ui.expCol))}</td>
+                        `}
+                    </tr>
+                </tfoot>
+            </table>
+        </div>`;
+    }
+
+    function renderChart() {
+        const hist = generateHistoryData();
+        const ids = ui.histFilterPerson === 'both' ? people() : [ui.histFilterPerson];
+        const targetYear = ui.histFilterYear;
+
+        const chartData = hist[people()[0]].map((_, i) => {
+            const mk = hist[people()[0]][i].mk;
+            if (targetYear !== 'all' && !mk.startsWith(targetYear)) return null;
+
+            const row = { mk, savings: 0, trips: 0, personal: 0, monthly: 0, totalExtra: 0, eq: 0, ex: 0, bo: 0 };
+            ids.forEach(pid => {
+                row.savings += hist[pid][i].savings;
+                row.trips += hist[pid][i].trips;
+                row.personal += hist[pid][i].personal;
+                row.monthly += hist[pid][i].monthly;
+                row.eq += hist[pid][i].equiparacion;
+                row.ex += hist[pid][i].extraordinaria;
+                row.bo += hist[pid][i].bonus;
+            });
+            row.totalExtra = row.eq + row.ex + row.bo;
+            return row;
+        }).filter(Boolean);
+
+        if (!chartData.length) return '<div class="ip-empty">Sin datos para el filtro seleccionado.</div>';
+
+        if (!ui.selectedChartMonth || !chartData.some(d => d.mk === ui.selectedChartMonth)) {
+            ui.selectedChartMonth = chartData[chartData.length - 1].mk;
+        }
+
+        const selectedData = chartData.find(d => d.mk === ui.selectedChartMonth);
+        const maxVal = Math.max(...chartData.map(d => Math.max(d.savings + d.trips + d.personal, d.monthly)), 100);
+        const max = maxVal * 1.1;
+
+        const w = chartData.length * 55;
+        let svgPath = '';
+        let svgCircles = '';
+
+        chartData.forEach((d, i) => {
+            const x = i * 55 + 20;
+            const y = 200 - (d.monthly / max) * 200;
+            if (i === 0) svgPath += `M ${x} ${y} `;
+            else svgPath += `L ${x} ${y} `;
+            svgCircles += `<circle cx="${x}" cy="${y}" r="3" fill="var(--bg-card)" stroke="var(--text-muted)" stroke-width="2"/>`;
+        });
+
+        setTimeout(() => {
+            const container = document.querySelector('.ip-chart-scroll');
+            if (container) container.scrollLeft = container.scrollWidth;
+        }, 100);
+
+        return `<div class="ip-chart-layout">
+            <div class="ip-chart-main">
+                <div class="ip-chart-scroll">
+                    <div class="ip-chart-container" style="min-width: ${w + 100}px;">
+                        <div class="ip-chart-y-axis">
+                            <span>${fmtEur(max)}</span>
+                            <span>${fmtEur(max/2)}</span>
+                            <span>0</span>
+                        </div>
+                        <div class="ip-chart-area">
+                            <svg class="ip-chart-line-svg" height="200" width="${w}" style="position:absolute; bottom:0; left:0; pointer-events:none; z-index:1;">
+                                <path d="${svgPath}" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-dasharray="4 4" />
+                                ${svgCircles}
+                            </svg>
+                            ${chartData.map(d => {
+                                const hS = (d.savings / max) * 100;
+                                const hT = (d.trips / max) * 100;
+                                const hP = (d.personal / max) * 100;
+                                const isSelected = d.mk === ui.selectedChartMonth;
+                                return `<div class="ip-chart-col ${isSelected ? 'selected' : ''}" data-action="select-chart-month" data-month="${d.mk}">
+                                    <div class="ip-chart-bars">
+                                        <div class="ip-chart-bar" style="height:${hS}%;background:var(--success)"></div>
+                                        <div class="ip-chart-bar" style="height:${hT}%;background:var(--info)"></div>
+                                        <div class="ip-chart-bar" style="height:${hP}%;background:var(--warning)"></div>
+                                    </div>
+                                    <div class="ip-chart-label">${monthLabel(d.mk, true)}</div>
+                                </div>`;
+                            }).join('')}
                         </div>
                     </div>
-                `).join('')}
+                </div>
+                <div class="ip-chart-legend">
+                    <span><i style="background:var(--success)"></i> Ahorro</span>
+                    <span><i style="background:var(--info)"></i> Viajes</span>
+                    <span><i style="background:var(--warning)"></i> Personal</span>
+                    <span><i style="background:var(--text-muted);height:2px;width:12px;border-radius:0;border-top:2px dashed var(--text-muted)"></i> Nómina mensual</span>
+                </div>
             </div>
-        `;
-
-        // Bind sliders
-        container.querySelectorAll('input[type="range"]').forEach(slider => {
-            slider.addEventListener('input', () => {
-                const key = slider.dataset.extraKey;
-                extraDist[key] = parseInt(slider.value);
-                renderPagasContent();
-            });
-            slider.addEventListener('change', () => {
-                saveData();
-                App.showToast('Distribución de pagas extras actualizada');
-            });
-        });
-
-        container.querySelectorAll('[data-register-extra]').forEach(btn => {
-            btn.addEventListener('click', () => openExtraPayModal(null, currentPerson, btn.dataset.registerExtra));
-        });
-        container.querySelector(`[data-register-new-extra="${currentPerson}"]`)?.addEventListener('click', () => openExtraPayModal(null, currentPerson));
+            <div class="ip-chart-panel">
+                <div class="ip-ded-head" style="margin-bottom:12px; font-size:14px; font-weight:800; color:var(--primary);">
+                    ${monthLabel(ui.selectedChartMonth)}
+                </div>
+                <div class="ip-panel-row"><span>Nómina mensual</span><b>${fmtEur(selectedData.monthly)}</b></div>
+                <div class="ip-panel-row" style="margin-top:8px; border-top:1px dashed var(--border); padding-top:8px;">
+                    <span>Total Paga Extra</span><b>${fmtEur(selectedData.totalExtra)}</b>
+                </div>
+                <div class="ip-panel-sub">
+                    <div><span>Equiparación:</span><b>${fmtEur(selectedData.eq)}</b></div>
+                    <div><span>Extraordinaria:</span><b>${fmtEur(selectedData.ex)}</b></div>
+                    <div><span>Bonus:</span><b>${fmtEur(selectedData.bo)}</b></div>
+                </div>
+                <div class="ip-panel-row" style="margin-top:8px; border-top:1px dashed var(--border); padding-top:8px;">
+                    <span>Ahorro</span><b style="color:var(--success)">${fmtEur(selectedData.savings)}</b>
+                </div>
+                <div class="ip-panel-row">
+                    <span>Viajes</span><b style="color:var(--info)">${fmtEur(selectedData.trips)}</b>
+                </div>
+                <div class="ip-panel-row">
+                    <span>Personal</span><b style="color:var(--warning)">${fmtEur(selectedData.personal)}</b>
+                </div>
+            </div>
+        </div>`;
     }
 
-    // =========================================================
-    // MODAL: PAGAS EXTRAS
-    // =========================================================
-    function openExtraPayModal(id = null, personId = null, preselectedDate = null) {
-        const modal = containerEl.querySelector('#mmExtraPayModal');
-        const body = containerEl.querySelector('#mmExtraPayModalBody');
-        const pay = id ? myData.extraPays.find(p => p.id === id) : null;
-        const pid = personId || (pay ? pay.personId : currentPerson);
-        const person = getPersonProfile(pid);
-
-        containerEl.querySelector('#mmExtraPayModalTitle').textContent = pay ? 'Editar paga extra' : `Registrar paga extra · ${person.name}`;
-
-        body.innerHTML = `
-            <input type="hidden" id="extraPayEditId" value="${id || ''}">
-            <input type="hidden" id="extraPayPersonId" value="${pid}">
-            
-            <div class="mm-form-row">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Fecha de cobro *</label>
-                    <input type="date" class="mm-form-input" id="extraPayDate" value="${pay ? pay.date : (preselectedDate || '')}" required>
-                    <div class="mm-form-error">Obligatorio</div>
-                </div>
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Estado</label>
-                    <select class="mm-form-select" id="extraPayStatus">
-                        <option value="received" ${pay && pay.status === 'received' ? 'selected' : (!pay ? 'selected' : '')}>Cobrada</option>
-                        <option value="pending" ${pay && pay.status === 'pending' ? 'selected' : ''}>Pendiente</option>
-                    </select>
-                </div>
-            </div>
-            <div class="mm-form-row">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Importe estimado (€)</label>
-                    <input type="number" step="0.01" min="0" class="mm-form-input" id="extraPayEstimated" value="${pay ? pay.estimatedAmount : (getEstimatedNetAnnual(pid) / (myData.salaryProfiles[pid].paysPerYear || 14))}">
-                </div>
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Importe REAL cobrado (€)</label>
-                    <input type="number" step="0.01" min="0" class="mm-form-input" id="extraPayReal" value="${pay ? (pay.realAmount || '') : ''}">
-                    <div class="mm-form-hint">Si se introduce, se usará para la distribución definitiva</div>
-                </div>
-            </div>
-            <div class="mm-form-row single">
-                <div class="mm-form-group">
-                    <label class="mm-form-label">Notas</label>
-                    <textarea class="mm-form-textarea" id="extraPayNotes">${pay ? App.escapeHtml(pay.notes || '') : ''}</textarea>
-                </div>
-            </div>
-        `;
-
-        modal.classList.add('active');
+    /* ========================== TAB 4 · SIMULADOR ========================== */
+    function renderSim() {
+        return `<div class="ip-duo">${people().map(renderSimPerson).join('')}</div>`;
     }
 
-    function saveExtraPay() {
-        const body = containerEl.querySelector('#mmExtraPayModalBody');
-        const id = body.querySelector('#extraPayEditId').value;
-        const personId = body.querySelector('#extraPayPersonId').value;
-        const date = body.querySelector('#extraPayDate').value;
+    function renderSimPerson(pid) {
+        const person = getPerson(pid);
+        const drafts = (state.drafts || []).filter(d => d.personId === pid);
 
-        body.querySelectorAll('.mm-form-group').forEach(g => g.classList.remove('error'));
-        if (!date) {
-            body.querySelector('#extraPayDate').closest('.mm-form-group').classList.add('error');
-            return;
-        }
+        return `<section class="ip-person" style="--pc:${person.color}">
+            <header class="ip-person-head">
+                <span class="ip-avatar" style="background:${person.color}">${esc(person.initial || '?')}</span>
+                <span class="ip-person-name">${esc(person.name)}</span>
+                <button class="ip-add-btn" data-action="new-draft" data-person="${pid}">+ Nuevo escenario</button>
+            </header>
+            <div class="ip-person-body">
+                ${drafts.map(d => {
+                    const pv = previewDraft(d);
+                    return `<div class="ip-draft ${d.applied ? 'applied' : ''}">
+                        <div class="ip-draft-head">
+                            <strong>${esc(d.label)}</strong>
+                            ${d.applied ? '<span class="ip-badge ok">Aplicado</span>' : '<span class="ip-badge pending">Simulación</span>'}
+                        </div>
+                        <div class="ip-sim-hero">
+                            <div class="ip-sim-col">
+                                <div class="ip-kpi-label">Sueldo Neto (${pv.profile.paysPerYear} pagas)</div>
+                                <div class="ip-kpi-value">${fmtEur(pv.netPerPay)}</div>
+                            </div>
+                            <div class="ip-sim-col">
+                                <div class="ip-kpi-label">Normalizado (${pv.refPays} pagas)</div>
+                                <div class="ip-kpi-value" style="color:var(--primary)">${fmtEur(pv.normalizedMonthly)}</div>
+                            </div>
+                        </div>
+                        <div class="ip-sim-comparison">
+                            <div class="ip-sim-bar-wrap">
+                                <div class="ip-sim-bar-label">Actual: ${fmtEur(previewDraft({personId: pid, profile: {}}).netPerPay)}</div>
+                                <div class="ip-bar-h"><div style="width:${(previewDraft({personId: pid, profile: {}}).netPerPay / Math.max(pv.netPerPay, previewDraft({personId: pid, profile: {}}).netPerPay)) * 100}%;background:var(--text-muted)"></div></div>
+                            </div>
+                            <div class="ip-sim-bar-wrap">
+                                <div class="ip-sim-bar-label" style="color:var(--primary)">Simulado: ${fmtEur(pv.netPerPay)}</div>
+                                <div class="ip-bar-h"><div style="width:${(pv.netPerPay / Math.max(pv.netPerPay, previewDraft({personId: pid, profile: {}}).netPerPay)) * 100}%;background:var(--primary)"></div></div>
+                            </div>
+                        </div>
+                        <div class="ip-sim-breakdown">
+                            <div class="ip-sim-data"><span>Inicio:</span> <b>${esc(d.startDate)}</b></div>
+                            <div class="ip-sim-data"><span>SS:</span> <b>${fmtEur(pv.bd.ssPerPay)}</b></div>
+                            <div class="ip-sim-data"><span>IRPF:</span> <b>${fmtPct(pv.bd.irpfEffPct)}</b></div>
+                            <div class="ip-sim-data"><span>Paga Extra:</span> <b>${fmtEur(pv.bd.netPerExtra)}</b></div>
+                        </div>
+                        ${pv.proration.days != null ? `
+                        <div class="ip-sim-proration">
+                            <b>Primer mes:</b> ${pv.proration.days}/${pv.proration.totalDays} días → <b>${fmtEur(pv.firstMonth)}</b>
+                        </div>` : ''}
+                        <div class="ip-draft-actions">
+                            <button class="ip-btn ghost" data-action="edit-draft" data-id="${d.id}">✏️ Editar</button>
+                            <button class="ip-btn danger" data-action="del-draft" data-id="${d.id}">🗑️ Borrar</button>
+                            ${d.applied
+                                ? `<button class="ip-btn warn" data-action="revert-draft" data-id="${d.id}">↩ Revertir</button>`
+                                : `<button class="ip-btn success" data-action="apply-draft" data-id="${d.id}">▶ Aplicar</button>`}
+                        </div>
+                    </div>`;
+                }).join('') || '<div class="ip-empty">Crea un escenario para simular un cambio laboral.</div>'}
+            </div>
+        </section>`;
+    }
 
-        const estimatedVal = parseFloat(body.querySelector('#extraPayEstimated').value);
-        const realVal = body.querySelector('#extraPayReal').value;
-
-        const payData = {
-            personId,
-            date,
-            type: 'extraordinary',
-            estimatedAmount: isNaN(estimatedVal) ? 0 : estimatedVal,
-            realAmount: realVal === '' ? null : parseFloat(realVal),
-            status: body.querySelector('#extraPayStatus').value,
-            notes: body.querySelector('#extraPayNotes').value.trim()
+    function previewDraft(d) {
+        const profile = Object.assign({}, state.profiles[d.personId] || defaultProfile(), d.profile || {});
+        const bd = computeSalary(profile);
+        const pr = firstMonthProration(d.startDate || todayISO());
+        return {
+            netPerPay: bd.netPerPay,
+            normalizedMonthly: bd.normalizedMonthly,
+            refPays: bd.refPays,
+            bd: bd,
+            proration: pr,
+            firstMonth: round2(bd.netPerPay * pr.factor),
+            profile
         };
-
-        if (id) {
-            const pay = myData.extraPays.find(p => p.id === id);
-            Object.assign(pay, payData);
-            App.showToast('Paga extra actualizada');
-        } else {
-            payData.id = App.generateId('ep');
-            myData.extraPays.push(payData);
-            App.showToast('Paga extra registrada');
-        }
-
-        saveData();
-        containerEl.querySelector('#mmExtraPayModal').classList.remove('active');
-        renderPagasContent();
+    }
+    function firstMonthProration(startDate) {
+        const d = new Date(String(startDate) + 'T00:00:00');
+        if (isNaN(d.getTime())) return { days: null, totalDays: null, factor: 1 };
+        const totalDays = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        const days = Math.max(1, totalDays - d.getDate() + 1);
+        return { days, totalDays, factor: div0(days, totalDays) };
     }
 
-    // =========================================================
-    // VISTA: CONFIGURACIÓN
-    // =========================================================
-    function renderConfiguracion() {
-        const view = containerEl.querySelector('#mmView-configuracion');
-        const s = myData.settings;
+    /* ========================== MODALES ========================== */
+    let modalRoot = null;
+    function closeModal() { if (modalRoot) { modalRoot.remove(); modalRoot = null; } }
 
-        view.innerHTML = `
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Configuración de Mi dinero</div>
-                        <div class="card-subtitle">Personaliza el comportamiento</div>
-                    </div>
-                </div>
-
-                <div class="mm-config-section">
-                    <h3><i class="fas fa-calculator"></i> Cálculos</h3>
-                    <div class="mm-config-row">
-                        <span class="label">Mostrar estimación cuando no hay ingreso real</span>
-                        <label class="mm-switch"><input type="checkbox" id="cfgShowEstimated" ${s.showEstimatedWhenNoReal ? 'checked' : ''}><span class="mm-slider"></span></label>
-                    </div>
-                    <div class="mm-config-row">
-                        <span class="label">Avisar cuando el dinero restante sea negativo</span>
-                        <label class="mm-switch"><input type="checkbox" id="cfgWarnNegative" ${s.warningNegativeRemaining ? 'checked' : ''}><span class="mm-slider"></span></label>
-                    </div>
-                </div>
-
-                <div class="mm-config-section">
-                    <h3><i class="fas fa-info-circle"></i> Información</h3>
-                    <div class="mm-config-row">
-                        <span class="label">Referencia común de pagas actual</span>
-                        <span style="font-weight: 600;">${getCommonPaysReference()} pagas/año</span>
-                    </div>
-                    <div class="mm-config-row">
-                        <span class="label">Personas registradas</span>
-                        <span style="font-weight: 600;">${App.data.profiles.length}</span>
-                    </div>
-                    <div class="mm-config-row">
-                        <span class="label">Gastos individuales activos</span>
-                        <span style="font-weight: 600;">${myData.individualExpenses.filter(e => e.active !== false).length}</span>
-                    </div>
-                </div>
-
-                <div class="mm-config-section">
-                    <h3><i class="fas fa-database"></i> Datos</h3>
-                    <div class="mm-config-row">
-                        <span class="label">Exportar datos a JSON</span>
-                        <button class="btn btn-sm btn-secondary" id="cfgExportJson"><i class="fas fa-file-code"></i> Descargar</button>
-                    </div>
-                    <div class="mm-config-row">
-                        <span class="label">Restaurar datos de demostración</span>
-                        <button class="btn btn-sm btn-danger" id="cfgResetData"><i class="fas fa-undo"></i> Restaurar</button>
-                    </div>
+    function openNumberModal(opts) {
+        closeModal();
+        let done = false;
+        const commit = () => {
+            if (done) return; done = true;
+            const input = modalRoot && modalRoot.querySelector('#ipNumInput');
+            if (input && opts.onSave) opts.onSave(num(input.value, 0));
+            closeModal();
+        };
+        modalRoot = document.createElement('div');
+        modalRoot.className = 'ip-modal-overlay active';
+        modalRoot.innerHTML = `<div class="ip-modal">
+            <div class="ip-modal-header"><h3 class="ip-modal-title">✏️ ${esc(opts.label || 'Editar')}</h3><button class="ip-modal-close" data-action="close-modal">×</button></div>
+            <div class="ip-modal-body">
+                <div class="ip-input-group">
+                    <label class="ip-input-label">Valor${opts.suffix === '%' ? ' (%)' : ''}</label>
+                    <input class="ip-input" id="ipNumInput" type="number" step="${opts.step || '0.01'}" value="${num(opts.value, 0)}">
                 </div>
             </div>
-        `;
-
-        view.querySelector('#cfgShowEstimated').addEventListener('change', (e) => {
-            myData.settings.showEstimatedWhenNoReal = e.target.checked;
-            saveData();
-        });
-        view.querySelector('#cfgWarnNegative').addEventListener('change', (e) => {
-            myData.settings.warningNegativeRemaining = e.target.checked;
-            saveData();
-        });
-
-        view.querySelector('#cfgExportJson').addEventListener('click', () => {
-            const json = JSON.stringify(myData, null, 2);
-            const blob = new Blob(['\ufeff' + json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'mi-dinero-backup.json'; a.click();
-            URL.revokeObjectURL(url);
-            App.showToast('JSON exportado');
-        });
-
-        view.querySelector('#cfgResetData').addEventListener('click', () => {
-            App.showConfirm(
-                'Restaurar datos',
-                '¿Seguro que quieres restaurar los datos de demostración? Se perderán todos los cambios.',
-                () => {
-                    myData = JSON.parse(JSON.stringify(DEFAULT_MY_MONEY_DATA));
-                    saveData();
-                    renderConfiguracion();
-                    App.showToast('Datos restaurados');
-                }
-            );
+            <div class="ip-modal-footer">
+                <button class="btn btn-secondary" data-action="close-modal">Cancelar</button>
+                <button class="btn btn-primary" data-action="confirm-number">Confirmar</button>
+            </div>
+        </div>`;
+        document.body.appendChild(modalRoot);
+        const input = modalRoot.querySelector('#ipNumInput');
+        setTimeout(() => { input.focus(); input.select(); }, 50);
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') closeModal(); });
+        modalRoot.addEventListener('click', e => {
+            if (e.target === modalRoot) return closeModal();
+            if (e.target.closest('[data-action="close-modal"]')) return closeModal();
+            if (e.target.closest('[data-action="confirm-number"]')) return commit();
         });
     }
 
-    // =========================================================
-    // INIT
-    // =========================================================
-    function init() {
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.mm-action-menu')) {
-                containerEl && containerEl.querySelectorAll('.mm-action-dropdown.open').forEach(m => m.classList.remove('open'));
+    function openExpenseModal(pid, expId) {
+        const existing = expId ? getIndividualExpenses(pid).find(x => x.id === expId) : null;
+        closeModal();
+        modalRoot = document.createElement('div');
+        modalRoot.className = 'ip-modal-overlay active';
+        modalRoot.innerHTML = `<div class="ip-modal">
+            <div class="ip-modal-header"><h3 class="ip-modal-title">${existing ? 'Editar' : 'Nuevo'} Gasto</h3><button class="ip-modal-close" data-action="close-modal">×</button></div>
+            <div class="ip-modal-body">
+                <div class="ip-input-group"><label class="ip-input-label">Concepto</label><input class="ip-input" id="eName" value="${existing ? esc(existing.name) : ''}"></div>
+                <div class="ip-input-group"><label class="ip-input-label">Importe (€)</label><input class="ip-input" id="eAmount" type="number" step="0.01" value="${existing ? existing.amount : ''}"></div>
+                <div class="ip-input-group"><label class="ip-input-label">Frecuencia</label>
+                    <select class="ip-input" id="eFreq"><option value="monthly" ${existing && existing.frequency === 'monthly' ? 'selected' : ''}>Mensual</option><option value="annual" ${existing && existing.frequency === 'annual' ? 'selected' : ''}>Anual</option></select></div>
+            </div>
+            <div class="ip-modal-footer">
+                ${existing ? `<button class="btn btn-secondary" style="margin-right:auto; color:var(--danger)" data-action="del-exp-modal">🗑️ Eliminar</button>` : ''}
+                <button class="btn btn-secondary" data-action="close-modal">Cancelar</button>
+                <button class="btn btn-primary" data-action="save-exp" data-id="${existing ? existing.id : ''}" data-person="${pid}">Guardar</button>
+            </div>
+        </div>`;
+        document.body.appendChild(modalRoot);
+        modalRoot.addEventListener('click', e => {
+            if (e.target === modalRoot || e.target.closest('[data-action="close-modal"]')) closeModal();
+            if (e.target.closest('[data-action="del-exp-modal"]')) {
+                const exp = getIndividualExpenses(pid).find(x => x.id === expId);
+                if (exp) { exp.active = false; saveIndividualExpense(pid, exp); closeModal(); render(); }
+            }
+            if (e.target.closest('[data-action="save-exp"]')) {
+                const exp = existing || { id: null, active: true };
+                exp.name = modalRoot.querySelector('#eName').value.trim() || 'Gasto';
+                exp.amount = Math.max(0, num(modalRoot.querySelector('#eAmount').value));
+                exp.frequency = modalRoot.querySelector('#eFreq').value;
+                saveIndividualExpense(pid, exp); closeModal(); render();
             }
         });
     }
 
-    function onThemeChange() {
-        // Los gráficos usarían colores del tema, pero esta vista no tiene gráficos Chart.js
+    function saveIndividualExpense(pid, exp) {
+        if (!state.individualExpenses[ui.month]) state.individualExpenses[ui.month] = {};
+        if (!state.individualExpenses[ui.month][pid]) state.individualExpenses[ui.month][pid] = [];
+        const list = state.individualExpenses[ui.month][pid];
+        if (exp.id) {
+            const idx = list.findIndex(x => x.id === exp.id);
+            if (idx !== -1) list[idx] = exp;
+            else list.push(exp);
+        } else {
+            exp.id = uid('exp');
+            list.push(exp);
+        }
+        notify({ reason: 'expense-saved' });
     }
 
-    // =========================================================
-    // API PÚBLICA
-    // =========================================================
-    return {
-        render,
-        init,
-        onThemeChange,
-        // API para integración con otras secciones
-        getMonthlyIncomeUsed,
-        getDistribution,
-        getRemainingMonthly,
-        getSavings: () => myData.savings
+    function openDeductionModal(pid, dedId) {
+        const p = state.profiles[pid] || defaultProfile();
+        const existing = dedId ? (p.deductions || []).find(d => d.id === dedId) : null;
+        closeModal();
+        modalRoot = document.createElement('div');
+        modalRoot.className = 'ip-modal-overlay active';
+        modalRoot.innerHTML = `<div class="ip-modal">
+            <div class="ip-modal-header"><h3 class="ip-modal-title">${existing ? 'Editar' : 'Nueva'} Deducción</h3><button class="ip-modal-close" data-action="close-modal">×</button></div>
+            <div class="ip-modal-body">
+                <div class="ip-input-group"><label class="ip-input-label">Concepto</label><input class="ip-input" id="dName" value="${existing ? esc(existing.name) : ''}"></div>
+                <div class="ip-input-group"><label class="ip-input-label">Importe (€)</label><input class="ip-input" id="dAmount" type="number" step="0.01" value="${existing ? existing.amount : ''}"></div>
+                <div class="ip-input-group"><label class="ip-input-label">Tipo</label>
+                    <select class="ip-input" id="dKind"><option value="deduction" ${existing && existing.kind === 'deduction' ? 'selected' : ''}>Deducción</option><option value="complement" ${existing && existing.kind === 'complement' ? 'selected' : ''}>Complemento</option></select></div>
+                <div class="ip-input-group"><label class="ip-input-label">Frecuencia</label>
+                    <select class="ip-input" id="dFreq"><option value="monthly" ${existing && existing.freq === 'monthly' ? 'selected' : ''}>Mensual</option><option value="annual" ${existing && existing.freq === 'annual' ? 'selected' : ''}>Anual</option></select></div>
+            </div>
+            <div class="ip-modal-footer">
+                ${existing ? `<button class="btn btn-secondary" style="margin-right:auto; color:var(--danger)" data-action="del-ded-modal">🗑️ Eliminar</button>` : ''}
+                <button class="btn btn-secondary" data-action="close-modal">Cancelar</button>
+                <button class="btn btn-primary" data-action="save-ded" data-id="${existing ? existing.id : ''}" data-person="${pid}">Guardar</button>
+            </div>
+        </div>`;
+        document.body.appendChild(modalRoot);
+        modalRoot.addEventListener('click', e => {
+            if (e.target === modalRoot || e.target.closest('[data-action="close-modal"]')) closeModal();
+            if (e.target.closest('[data-action="del-ded-modal"]')) {
+                state.profiles[pid].deductions = (state.profiles[pid].deductions || []).filter(d => d.id !== dedId);
+                closeModal(); notify({ reason: 'ded-removed' }); render();
+            }
+            if (e.target.closest('[data-action="save-ded"]')) {
+                const name = modalRoot.querySelector('#dName').value.trim() || 'Deducción';
+                const amount = Math.max(0, num(modalRoot.querySelector('#dAmount').value));
+                const kind = modalRoot.querySelector('#dKind').value;
+                const freq = modalRoot.querySelector('#dFreq').value;
+                if (existing) { existing.name = name; existing.amount = amount; existing.kind = kind; existing.freq = freq; }
+                else { p.deductions = p.deductions || []; p.deductions.push({ id: uid('ded'), name, amount, kind, freq }); }
+                closeModal(); notify({ reason: 'ded-saved' }); render();
+            }
+        });
+    }
+
+    function openExtraConfigModal(pid) {
+        const p = state.profiles[pid] || defaultProfile();
+        const datesStr = (p.extraDates || []).join(', ');
+        closeModal();
+        modalRoot = document.createElement('div');
+        modalRoot.className = 'ip-modal-overlay active';
+        modalRoot.innerHTML = `<div class="ip-modal">
+            <div class="ip-modal-header"><h3 class="ip-modal-title">Configurar Pagas Extra</h3><button class="ip-modal-close" data-action="close-modal">×</button></div>
+            <div class="ip-modal-body">
+                <div class="ip-input-group"><label class="ip-input-label">Fechas de Cobro (Mes)</label>
+                    <input class="ip-input" id="exDates" value="${datesStr}" placeholder="Ej. 03, 06, 12"></div>
+                <div class="ip-input-group"><label class="ip-input-label">Día de pago habitual</label>
+                    <input class="ip-input" id="exPayDay" type="number" min="1" max="31" value="${p.extraPayDay || 15}"></div>
+                <div class="ip-input-group"><label class="ip-input-label">Fecha de entrada a la empresa</label>
+                    <input class="ip-input" id="exJoinDate" type="date" value="${p.joinDate || '2020-01-01'}"></div>
+                <div class="ip-input-group"><label class="ip-input-label">Periodo de Devengo</label>
+                    <select class="ip-input" id="exAccrual"><option value="annual" ${p.accrualPeriod === 'annual' ? 'selected' : ''}>Anual</option><option value="semiannual" ${p.accrualPeriod === 'semiannual' ? 'selected' : ''}>Semestral</option></select></div>
+            </div>
+            <div class="ip-modal-footer">
+                <button class="btn btn-secondary" data-action="close-modal">Cancelar</button>
+                <button class="btn btn-primary" data-action="save-extra-config" data-person="${pid}">Guardar</button>
+            </div>
+        </div>`;
+        document.body.appendChild(modalRoot);
+        modalRoot.addEventListener('click', e => {
+            if (e.target === modalRoot || e.target.closest('[data-action="close-modal"]')) closeModal();
+            if (e.target.closest('[data-action="save-extra-config"]')) {
+                const str = modalRoot.querySelector('#exDates').value;
+                p.extraDates = str.split(',').map(s => s.trim().padStart(2, '0')).filter(s => /^\d{2}$/.test(s));
+                p.accrualPeriod = modalRoot.querySelector('#exAccrual').value;
+                p.extraPayDay = Math.max(1, Math.min(31, int(modalRoot.querySelector('#exPayDay').value, 15)));
+                p.joinDate = modalRoot.querySelector('#exJoinDate').value || '2020-01-01';
+                closeModal(); notify({ reason: 'extra-config' }); render();
+            }
+        });
+    }
+
+    function openBonusModal(pid, bonusId) {
+        const p = state.profiles[pid] || defaultProfile();
+        const existing = bonusId ? (p.bonuses || []).find(b => b.id === bonusId) : null;
+        closeModal();
+        modalRoot = document.createElement('div');
+        modalRoot.className = 'ip-modal-overlay active';
+        modalRoot.innerHTML = `<div class="ip-modal">
+            <div class="ip-modal-header"><h3 class="ip-modal-title">${existing ? 'Editar' : 'Añadir'} Bonus</h3><button class="ip-modal-close" data-action="close-modal">×</button></div>
+            <div class="ip-modal-body">
+                <div class="ip-input-group"><label class="ip-input-label">Concepto</label><input class="ip-input" id="bName" value="${existing ? esc(existing.name) : ''}" placeholder="Ej. Bonus anual"></div>
+                <div class="ip-input-group"><label class="ip-input-label">Fecha de pago aprox.</label><input class="ip-input" id="bDate" type="date" value="${existing ? existing.date : todayISO()}"></div>
+                <div class="ip-input-group"><label class="ip-input-label">Importe Bruto (€)</label><input class="ip-input" id="bAmount" type="number" step="0.01" value="${existing ? existing.amount : ''}"></div>
+                <div class="ip-input-group"><label class="ip-input-label">IRPF a descontar (€) <span style="font-weight:normal;font-size:10px;color:var(--text-muted)">Dejar en 0 si la empresa ya lo retiene</span></label><input class="ip-input" id="bIrpf" type="number" step="0.01" value="${existing ? existing.irpfDiscount : '0'}"></div>
+            </div>
+            <div class="ip-modal-footer">
+                ${existing ? `<button class="btn btn-secondary" style="margin-right:auto; color:var(--danger)" data-action="del-bonus-modal">🗑️ Eliminar</button>` : ''}
+                <button class="btn btn-secondary" data-action="close-modal">Cancelar</button>
+                <button class="btn btn-primary" data-action="save-bonus" data-id="${existing ? existing.id : ''}" data-person="${pid}">Guardar</button>
+            </div>
+        </div>`;
+        document.body.appendChild(modalRoot);
+        modalRoot.addEventListener('click', e => {
+            if (e.target === modalRoot || e.target.closest('[data-action="close-modal"]')) closeModal();
+            if (e.target.closest('[data-action="del-bonus-modal"]')) {
+                p.bonuses = (p.bonuses || []).filter(b => b.id !== bonusId);
+                closeModal(); notify({ reason: 'bonus-removed' }); render();
+            }
+            if (e.target.closest('[data-action="save-bonus"]')) {
+                const name = modalRoot.querySelector('#bName').value.trim() || 'Bonus';
+                const date = modalRoot.querySelector('#bDate').value;
+                const amount = Math.max(0, num(modalRoot.querySelector('#bAmount').value));
+                const irpfDiscount = Math.max(0, num(modalRoot.querySelector('#bIrpf').value));
+                if (existing) { existing.name = name; existing.date = date; existing.amount = amount; existing.irpfDiscount = irpfDiscount; }
+                else { p.bonuses = p.bonuses || []; p.bonuses.push({ id: uid('bon'), name, date, amount, irpfDiscount }); }
+                closeModal(); notify({ reason: 'bonus-saved' }); render();
+            }
+        });
+    }
+
+    function openDraftModal(pid, draftId) {
+        const existing = draftId ? (state.drafts || []).find(d => d.id === draftId) : null;
+        const base = existing ? Object.assign({}, state.profiles[pid] || defaultProfile(), existing.profile || {}) : (state.profiles[pid] || defaultProfile());
+        const defDate = existing ? existing.startDate : (addMonths(monthKey(new Date()), 1) + '-01');
+        closeModal();
+        modalRoot = document.createElement('div');
+        modalRoot.className = 'ip-modal-overlay active';
+        modalRoot.innerHTML = `<div class="ip-modal ip-modal-wide">
+            <div class="ip-modal-header"><h3 class="ip-modal-title">${existing ? 'Modificar' : 'Nuevo'} Escenario</h3><button class="ip-modal-close" data-action="close-modal">×</button></div>
+            <div class="ip-modal-body">
+                <div class="ip-input-group"><label class="ip-input-label">Etiqueta</label><input class="ip-input" id="dLabel" value="${esc(existing ? existing.label : '')}" placeholder="Ej. Nuevo trabajo"></div>
+                <div class="ip-input-group"><label class="ip-input-label">Fecha de inicio</label><input class="ip-input" id="dStart" type="date" value="${defDate}" min="${todayISO()}"></div>
+                <div class="ip-fields-grid">
+                    <div class="ip-input-group"><label class="ip-input-label">Bruto anual (€)</label><input class="ip-input" id="dGross" type="number" value="${num(base.grossAnnual)}" step="100"></div>
+                    <div class="ip-input-group"><label class="ip-input-label">Nº pagas</label><select class="ip-input" id="dPays">${[12, 14, 15, 16].map(n => `<option value="${n}" ${int(base.paysPerYear, 12) === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+                    <div class="ip-input-group"><label class="ip-input-label">SS %</label><input class="ip-input" id="dSS" type="number" value="${num(base.socialSecurityPct, 6.5)}" step="0.01"></div>
+                    <div class="ip-input-group"><label class="ip-input-label">IRPF %</label><input class="ip-input" id="dIrpf" type="number" value="${num(base.irpfPercent, 15)}" step="0.1"></div>
+                </div>
+            </div>
+            <div class="ip-modal-footer">
+                <button class="btn btn-secondary" data-action="close-modal">Cancelar</button>
+                <button class="btn btn-primary" data-action="save-draft" data-person="${pid}" data-id="${existing ? existing.id : ''}">💾 Guardar</button>
+            </div>
+        </div>`;
+        document.body.appendChild(modalRoot);
+        modalRoot.addEventListener('click', e => {
+            if (e.target === modalRoot || e.target.closest('[data-action="close-modal"]')) closeModal();
+            const btn = e.target.closest('[data-action="save-draft"]');
+            if (btn) {
+                const label = modalRoot.querySelector('#dLabel').value.trim();
+                const startDate = modalRoot.querySelector('#dStart').value;
+                if (!label || !startDate) return;
+                const profile = {
+                    grossAnnual: Math.max(0, num(modalRoot.querySelector('#dGross').value)),
+                    paysPerYear: int(modalRoot.querySelector('#dPays').value, 12),
+                    socialSecurityPct: clamp(modalRoot.querySelector('#dSS').value, 0, 100),
+                    irpfPercent: clamp(modalRoot.querySelector('#dIrpf').value, 0, 100),
+                    irpfMode: 'manual'
+                };
+                if (existing) { existing.label = label; existing.startDate = startDate; existing.profile = profile; }
+                else { state.drafts.push({ id: uid('dr'), personId: pid, label, startDate, profile, applied: false }); }
+                closeModal(); notify({ reason: 'draft-saved' }); render();
+            }
+        });
+    }
+
+    /* ========================== RENDER PRINCIPAL ========================== */
+    let containerEl = null;
+    function render(container) {
+        if (container) containerEl = container;
+        if (!containerEl) return;
+        ensureState();
+        let body = '';
+        switch (ui.tab) {
+            case 'base': body = renderBase(); break;
+            case 'dist': body = renderDist(); break;
+            case 'extras': body = renderExtras(); break;
+            case 'sim': body = renderSim(); break;
+        }
+        containerEl.innerHTML = `<div class="ip-wrap">${renderTabs()}<div class="ip-tab-body">${body}</div></div>`;
+        bindEvents();
+    }
+
+    /* ========================== EVENTOS ========================== */
+    function bindEvents() {
+        if (!containerEl || containerEl._ipBound) return;
+        containerEl._ipBound = true;
+        containerEl.addEventListener('click', onClick);
+        containerEl.addEventListener('change', onChange);
+    }
+
+    function onClick(e) {
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
+        const action = target.dataset.action;
+        const pid = target.dataset.person;
+        const id = target.dataset.id;
+
+        switch (action) {
+            case 'switch-tab':
+                ui.tab = target.dataset.tab;
+                render();
+                break;
+            case 'prev-month':
+                ui.month = addMonths(ui.month, -1);
+                render();
+                break;
+            case 'next-month':
+                ui.month = addMonths(ui.month, 1);
+                render();
+                break;
+            case 'edit-number':
+                e.stopPropagation();
+                openNumberModal({
+                    label: target.dataset.label,
+                    value: target.dataset.value,
+                    suffix: target.dataset.suffix || '',
+                    onSave: val => applyNumericField(target.dataset.field, pid, val)
+                });
+                break;
+            case 'add-ded':
+                openDeductionModal(pid);
+                break;
+            case 'edit-ded':
+                openDeductionModal(pid, id);
+                break;
+            case 'add-exp':
+                openExpenseModal(pid);
+                break;
+            case 'edit-exp':
+                openExpenseModal(pid, id);
+                break;
+            case 'select-chart-month':
+                ui.selectedChartMonth = target.dataset.month;
+                render();
+                break;
+
+            /* FASE 3 · Confirmar cobro mensual → registra en Dinero */
+            case 'tick-month': {
+                const theo = theoreticalMonthly(pid, ui.month);
+                if (!state.monthlyControl[ui.month]) state.monthlyControl[ui.month] = { theoretical: {}, real: {}, confirmed: {} };
+                state.monthlyControl[ui.month].theoretical[pid] = theo;
+                state.monthlyControl[ui.month].real[pid] = theo;
+                state.monthlyControl[ui.month].confirmed[pid] = true;
+
+                if (window.App && typeof App.registerIncomeMovement === 'function') {
+                    const profile = state.profiles[pid] || defaultProfile();
+                    const day = String(profile.extraPayDay || 15).padStart(2, '0');
+                    const person = getPerson(pid);
+                    try {
+                        App.registerIncomeMovement({
+                            amount: theo,
+                            date: `${ui.month}-${day}`,
+                            concept: `Nómina ${monthLabel(ui.month)} · ${person.name}`,
+                            accountId: defaultAccountFor(pid),
+                            link: { kind: 'salary', id: `salary-${pid}-${ui.month}` }
+                        });
+                    } catch (err) { /* noop */ }
+                }
+
+                notify({ reason: 'month-tick' });
+                render();
+                break;
+            }
+
+            /* FASE 3 · Confirmar extra/bonus → ingreso + distribución automática */
+            case 'tick-extra-item': {
+                const itemId = target.dataset.item;
+                const theo = num(target.dataset.theo);
+                if (!state.extraPayments[ui.month]) state.extraPayments[ui.month] = {};
+                if (!state.extraPayments[ui.month][pid]) state.extraPayments[ui.month][pid] = { realItems: {} };
+                if (!state.extraPayments[ui.month][pid].realItems) state.extraPayments[ui.month][pid].realItems = {};
+                state.extraPayments[ui.month][pid].realItems[itemId] = theo;
+
+                if (window.App && typeof App.registerIncomeMovement === 'function') {
+                    const profile = state.profiles[pid] || defaultProfile();
+                    const day = String(profile.extraPayDay || 15).padStart(2, '0');
+                    const person = getPerson(pid);
+                    const date = `${ui.month}-${day}`;
+                    const items = getMonthExtras(pid, ui.month);
+                    const item = items.find(x => x.id === itemId);
+                    const linkId = `extra-${pid}-${ui.month}-${itemId}`;
+
+                    if (item) {
+                        // 1. Ingreso principal (toda la paga extra en cuenta del titular)
+                        try {
+                            App.registerIncomeMovement({
+                                amount: theo,
+                                date,
+                                concept: `${item.label} · ${person.name}`,
+                                accountId: defaultAccountFor(pid),
+                                link: { kind: 'extra-payment', id: linkId }
+                            });
+                        } catch (err) { /* noop */ }
+
+                        // 2. Distribución según reparto configurado
+                        const ex = getExtraDistribution();
+                        const savingsAmt = round2(theo * ex.savings / 100);
+                        const tripsAmt = round2(theo * ex.trips / 100);
+
+                        // 2a. Ahorro: transferencia interna a cuenta de inversión
+                        if (savingsAmt > 0 && typeof App.registerExpenseMovement === 'function') {
+                            const savingsAccId = 'acc-tr';
+                            const accounts = (window.App && typeof App.getAccounts === 'function') ? App.getAccounts() : [];
+                            if (accounts.find(a => a.id === savingsAccId)) {
+                                try {
+                                    App.registerExpenseMovement({
+                                        amount: savingsAmt,
+                                        date,
+                                        concept: `${item.label} → Ahorro (salida)`,
+                                        accountId: defaultAccountFor(pid),
+                                        link: { kind: 'extra-savings-out', id: linkId }
+                                    });
+                                    App.registerIncomeMovement({
+                                        amount: savingsAmt,
+                                        date,
+                                        concept: `${item.label} → Ahorro (entrada)`,
+                                        accountId: savingsAccId,
+                                        link: { kind: 'extra-savings-in', id: linkId }
+                                    });
+                                } catch (err) { /* noop */ }
+                            }
+                        }
+
+                        // 2b. Viajes: aportación al fondo de viajes (goal g-trip-fund)
+                        if (tripsAmt > 0 && typeof App.addTripSavingsContribution === 'function') {
+                            try {
+                                App.addTripSavingsContribution({
+                                    amount: tripsAmt,
+                                    date,
+                                    note: `${item.label} · Viajes`,
+                                    payer: person.name
+                                });
+                            } catch (err) { /* noop */ }
+                        }
+                    }
+                }
+
+                notify({ reason: 'extra-item-tick' });
+                render();
+                break;
+            }
+
+            case 'edit-extra-item-real': {
+                const itemId = target.dataset.item;
+                openNumberModal({
+                    label: `Real ${getPerson(pid).name}`,
+                    value: target.dataset.real || 0,
+                    onSave: val => {
+                        if (!state.extraPayments[ui.month]) state.extraPayments[ui.month] = {};
+                        if (!state.extraPayments[ui.month][pid]) state.extraPayments[ui.month][pid] = { realItems: {} };
+                        if (!state.extraPayments[ui.month][pid].realItems) state.extraPayments[ui.month][pid].realItems = {};
+                        state.extraPayments[ui.month][pid].realItems[itemId] = val;
+                        notify({ reason: 'extra-item-real' });
+                        render();
+                    }
+                });
+                break;
+            }
+
+            case 'expand-col':
+                ui.expCol = target.dataset.col;
+                ui.showExtraExpanded = false;
+                render();
+                break;
+            case 'reset-col':
+                ui.expCol = 'extra';
+                ui.showExtraExpanded = false;
+                render();
+                break;
+            case 'expand-extra-col':
+                ui.showExtraExpanded = true;
+                ui.expCol = 'extra';
+                render();
+                break;
+            case 'reset-extra-col':
+                ui.showExtraExpanded = false;
+                render();
+                break;
+            case 'toggle-row': {
+                const mk = target.dataset.month;
+                if (ui.expandedRows.has(mk)) ui.expandedRows.delete(mk);
+                else ui.expandedRows.add(mk);
+                render();
+                break;
+            }
+            case 'set-hist-person':
+                ui.histFilterPerson = target.dataset.val;
+                render();
+                break;
+            case 'new-draft':
+                openDraftModal(pid);
+                break;
+            case 'edit-draft':
+                openDraftModal(pid, id);
+                break;
+            case 'del-draft':
+                if (confirm('¿Eliminar escenario?')) {
+                    state.drafts = state.drafts.filter(d => d.id !== id);
+                    notify({ reason: 'draft-del' });
+                    render();
+                }
+                break;
+            case 'apply-draft': {
+                const d = state.drafts.find(x => x.id === id);
+                if (d && confirm('¿Aplicar?')) {
+                    if (!d.beforeProfile) d.beforeProfile = JSON.parse(JSON.stringify(state.profiles[d.personId] || {}));
+                    Object.assign(state.profiles[d.personId], d.profile);
+                    d.applied = true;
+                    notify({ reason: 'draft-applied' });
+                    render();
+                }
+                break;
+            }
+            case 'revert-draft': {
+                const d = state.drafts.find(x => x.id === id);
+                if (d && d.beforeProfile && confirm('¿Revertir?')) {
+                    state.profiles[d.personId] = d.beforeProfile;
+                    d.applied = false;
+                    delete d.beforeProfile;
+                    notify({ reason: 'draft-reverted' });
+                    render();
+                }
+                break;
+            }
+            case 'edit-extra-config':
+                openExtraConfigModal(pid);
+                break;
+            case 'add-bonus':
+                openBonusModal(pid);
+                break;
+            case 'edit-bonus':
+                openBonusModal(pid, id);
+                break;
+        }
+    }
+
+    function onChange(e) {
+        const target = e.target.closest('[data-action]');
+        if (!target) return;
+        if (target.dataset.action === 'change-field') {
+            const pid = target.dataset.person, field = target.dataset.field;
+            const p = state.profiles[pid];
+            if (!p) return;
+            let val = target.value;
+            if (field === 'paysPerYear') val = int(val, 12);
+            p[field] = val;
+            notify({ reason: 'profile-changed' });
+            render();
+        } else if (target.dataset.action === 'hist-year') {
+            ui.histFilterYear = target.value;
+            render();
+        }
+    }
+
+    function applyNumericField(field, pid, val) {
+        ensureState();
+        switch (field) {
+            case 'grossAnnual': state.profiles[pid].grossAnnual = Math.max(0, num(val)); break;
+            case 'socialSecurityPct': state.profiles[pid].socialSecurityPct = clamp(val, 0, 100); break;
+            case 'irpfPercent': state.profiles[pid].irpfMode = 'manual'; state.profiles[pid].irpfPercent = clamp(val, 0, 100); break;
+            case 'savingsPct': state.distribution[pid].savingsPct = clamp(val, 0, 100); break;
+            case 'monthlyReal': {
+                const mk = ui.month;
+                if (!state.monthlyControl[mk]) state.monthlyControl[mk] = { theoretical: {}, real: {}, confirmed: {} };
+                state.monthlyControl[mk].real[pid] = Math.max(0, num(val));
+                break;
+            }
+            case 'extraSavings': {
+                state.extraDistribution.savings = clamp(val, 0, 100);
+                if (state.extraDistribution.savings + state.extraDistribution.trips > 100) state.extraDistribution.trips = 100 - state.extraDistribution.savings;
+                break;
+            }
+            case 'extraTrips': {
+                state.extraDistribution.trips = clamp(val, 0, 100);
+                if (state.extraDistribution.savings + state.extraDistribution.trips > 100) state.extraDistribution.savings = 100 - state.extraDistribution.trips;
+                break;
+            }
+        }
+        notify({ reason: 'numeric-updated' });
+        render();
+    }
+
+    /* ========================== LISTENER app:module-changed ========================== */
+    let _ingresosBound = false;
+    function bindModuleChange() {
+        if (_ingresosBound) return;
+        document.addEventListener('app:module-changed', (e) => {
+            const src = e.detail && e.detail.source;
+            if (!src || src === MODULE) return;
+            const cont = document.querySelector('#sec-ingresos-personales');
+            if (cont && cont.isConnected && cont.innerHTML.trim()) {
+                try { render(cont); } catch (err) { /* noop */ }
+            }
+        });
+        _ingresosBound = true;
+    }
+
+    function init(container) {
+        if (container) containerEl = container;
+        state = ensureState();
+        save();
+        bindModuleChange();
+    }
+    function onThemeChange() {}
+
+        return {
+        render, init, onThemeChange,
+        computeSalary, estimateIrpf, getMaxPays,
+        getEquity, getDistributionAmounts, getSharedContributionRules, getPcNeeds,
+        getState: () => { ensureState(); return JSON.parse(JSON.stringify(state)); },
+
+        /* ============ FASE 2 · API del puente ============ */
+        getSalary,
+        getIncomeForMonth,
+        getIndividualExpenses,
+
+        /* ============ FASE 3 · Confirmación desde el calendario ============ */
+        getMonthExtras: (pid, mk) => getMonthExtras(pid, mk || ui.month),
+
+        confirmIncomeReceipt: (pid, mk, amount) => {
+            const val = Math.max(0, num(amount));
+            if (!state.monthlyControl[mk]) state.monthlyControl[mk] = { theoretical: {}, real: {}, confirmed: {} };
+            state.monthlyControl[mk].theoretical[pid] = theoreticalMonthly(pid, mk);
+            state.monthlyControl[mk].real[pid] = val;
+            state.monthlyControl[mk].confirmed[pid] = true;
+
+            const profile = state.profiles[pid] || defaultProfile();
+            const day = String(profile.extraPayDay || 15).padStart(2, '0');
+            const person = getPerson(pid);
+
+            if (window.App && typeof App.registerIncomeMovement === 'function') {
+                try {
+                    App.registerIncomeMovement({
+                        amount: val,
+                        date: `${mk}-${day}`,
+                        concept: `Nómina ${monthLabel(mk)} · ${person.name}`,
+                        accountId: defaultAccountFor(pid),
+                        link: { kind: 'salary', id: `salary-${pid}-${mk}` }
+                    });
+                } catch (err) { /* noop */ }
+            }
+            save();
+            return true;
+        },
+
+        confirmExtraReceipt: (pid, mk, itemId, amount) => {
+            const val = Math.max(0, num(amount));
+            if (!state.extraPayments[mk]) state.extraPayments[mk] = {};
+            if (!state.extraPayments[mk][pid]) state.extraPayments[mk][pid] = { realItems: {} };
+            if (!state.extraPayments[mk][pid].realItems) state.extraPayments[mk][pid].realItems = {};
+            state.extraPayments[mk][pid].realItems[itemId] = val;
+
+            const profile = state.profiles[pid] || defaultProfile();
+            const day = String(profile.extraPayDay || 15).padStart(2, '0');
+            const person = getPerson(pid);
+            const items = getMonthExtras(pid, mk);
+            const item = items.find(x => x.id === itemId);
+            const date = `${mk}-${day}`;
+            const linkId = `extra-${pid}-${mk}-${itemId}`;
+
+            if (item && window.App && typeof App.registerIncomeMovement === 'function') {
+                // 1 · Ingreso principal
+                try {
+                    App.registerIncomeMovement({
+                        amount: val,
+                        date,
+                        concept: `${item.label} · ${person.name}`,
+                        accountId: defaultAccountFor(pid),
+                        link: { kind: 'extra-payment', id: linkId }
+                    });
+                } catch (err) { /* noop */ }
+
+                // 2 · Distribución: ahorro (transferencia) + viajes (fondo)
+                const ex = getExtraDistribution();
+                const savingsAmt = round2(val * ex.savings / 100);
+                const tripsAmt = round2(val * ex.trips / 100);
+
+                if (savingsAmt > 0 && typeof App.registerExpenseMovement === 'function') {
+                    const accounts = (window.App && typeof App.getAccounts === 'function') ? App.getAccounts() : [];
+                    if (accounts.find(a => a.id === 'acc-tr')) {
+                        try {
+                            App.registerExpenseMovement({
+                                amount: savingsAmt, date,
+                                concept: `${item.label} → Ahorro (salida)`,
+                                accountId: defaultAccountFor(pid),
+                                link: { kind: 'extra-savings-out', id: linkId }
+                            });
+                            App.registerIncomeMovement({
+                                amount: savingsAmt, date,
+                                concept: `${item.label} → Ahorro (entrada)`,
+                                accountId: 'acc-tr',
+                                link: { kind: 'extra-savings-in', id: linkId }
+                            });
+                        } catch (err) { /* noop */ }
+                    }
+                }
+                if (tripsAmt > 0 && typeof App.addTripSavingsContribution === 'function') {
+                    try {
+                        App.addTripSavingsContribution({
+                            amount: tripsAmt, date,
+                            note: `${item.label} · Viajes`,
+                            payer: person.name
+                        });
+                    } catch (err) { /* noop */ }
+                }
+            }
+            save();
+            return true;
+        }
     };
 })();
 
-// Registrar sección (LEGADO: la sección «mi-dinero» queda redefinida
-// por el rediseño v2 del módulo Dinero → ver dinero.js / DineroApp)
-App.registerSection('ingresos-personales', MyMoneyApp);
-
-window.MyMoneyApp = MyMoneyApp;
+window.IngresosModulo = IngresosModulo;
+if (window.App) {
+    if (typeof App.registerSection === 'function') App.registerSection('ingresos-personales', IngresosModulo);
+    if (typeof App.registerModule === 'function') App.registerModule('ingresos-personales', IngresosModulo);
+}

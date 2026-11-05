@@ -1,366 +1,39 @@
 /* =============================================================================
-   VIAJES.JS  ·  Módulo de Planificación de Viajes (reescrito desde cero)
+   VIAJES.JS · v2 — Módulo de Planificación de Viajes conectado al puente App
    -----------------------------------------------------------------------------
-   · Vanilla JS (ES6+) — sin librerías externas.
-   · Gráficas nativas con Canvas HTML5.
-   · Estilos CSS inyectados dinámicamente en el <head>.
-   · Se exporta como window.TripManager y se conecta al DOM a través de app.js.
-   · Contenedor principal: #trip-manager-app
+   Cambios clave respecto a la v1:
+     · savedTotal() → App.getTripSavings() (fuente única: dinero.js g-trip-fund)
+     · _render_ahorro() y _privateFundHTML() leen del bridge
+     · openContributionModal() → App.addTripSavingsContribution()
+     · _submitPayment() → App.registerTripPayment() + syncTripCommitments()
+     · _submitEditTrip() → syncTripGoal() + syncTripCommitments()
+     · mountApp() hace un sync inicial de todos los viajes al puente
+     · getState() expuesto para el puente
+     · Listener app:module-changed → re-render automático
    ============================================================================= */
 (function () {
     'use strict';
 
     /* =========================================================================
        1. DATOS FICTICIOS (mockData)
+       NOTA: savings se conserva por compatibilidad visual pero ya NO se usa
+       como fuente. La fuente real es dinero.loans[goal g-trip-fund].
        ========================================================================= */
     const mockData = {
         savings: {
-            goalTotal: 7200,          // Objetivo de ahorro conjunto de todos los viajes
-            contributions: [
-                { id: 'sc-1', date: '2026-06-05', amount: 400, payer: 'Ana',   note: 'Apertura del fondo' },
-                { id: 'sc-2', date: '2026-07-03', amount: 300, payer: 'Luis',  note: 'Aportación mensual' },
-                { id: 'sc-3', date: '2026-08-04', amount: 300, payer: 'Ana',   note: 'Aportación mensual' },
-                { id: 'sc-4', date: '2026-09-02', amount: 350, payer: 'Luis',  note: 'Aportación mensual' },
-                { id: 'sc-5', date: '2026-09-20', amount: 500, payer: 'Ana',   note: 'Extra: nómina de septiembre' },
-                { id: 'sc-6', date: '2026-10-05', amount: 350, payer: 'Luis',  note: 'Aportación mensual' },
-                { id: 'sc-7', date: '2026-10-15', amount: 200, payer: 'Ana',   note: 'Venta de bicicleta antigua' },
-                { id: 'sc-8', date: '2026-11-02', amount: 400, payer: 'Luis',  note: 'Aportación mensual' }
-            ]
+            /* Fuente real: dinero.goals[g-trip-fund]. Este bloque se mantiene
+               vacío por compatibilidad estructural con la clase TripManager. */
+            goalTotal: 0,
+            contributions: []
         },
-        trips: [
-            /* -----------------------------------------------------------------
-               VIAJE 1 · Japón — Próximo (dentro de ~130 días)
-               ----------------------------------------------------------------- */
-            {
-                id: 'jp-2026',
-                name: 'Japón Inolvidable',
-                destination: 'Tokio · Kioto · Osaka, Japón',
-                image: 'https://images.unsplash.com/photo-1493976045277-9855ac817ce3?auto=format&fit=crop&w=1200&q=80',
-                startDate: '2027-03-15',
-                endDate: '2027-03-28',
-                travelers: ['Ana', 'Luis'],
-                budgetLimit: 6800,
-                notes: 'Viaje de 14 días. Vuelos comprados en promoción; JR Pass pendiente de compra definitiva.',
-                categories: [
-                    {
-                        id: 'jp-transporte', name: 'Transporte', icon: '✈️',
-                        items: [
-                            {
-                                id: 'jp-vuelos', subcategory: 'Vuelos Madrid–Tokio (ida y vuelta)',
-                                provider: 'Iberia', city: 'Madrid / Tokio', total: 2140, dueDate: '2026-12-01',
-                                payments: [
-                                    { id: 'jp-v-p1', amount: 1070, date: '2026-08-12', payer: 'Ana',  method: 'Tarjeta de crédito' },
-                                    { id: 'jp-v-p2', amount: 540,  date: '2026-10-03', payer: 'Luis', method: 'Bizum' }
-                                ]
-                            },
-                            {
-                                id: 'jp-jrpass', subcategory: 'JR Pass 14 días (trenes bala)',
-                                provider: 'Japan Rail', city: 'Tokio', total: 660, dueDate: '2027-01-15',
-                                payments: []
-                            },
-                            {
-                                id: 'jp-metro', subcategory: 'Abonos de metro y transfers locales',
-                                provider: 'Varios (Suica / ICOCA)', city: 'Kioto / Osaka', total: 120, dueDate: null,
-                                payments: []
-                            }
-                        ]
-                    },
-                    {
-                        id: 'jp-hospedaje', name: 'Hospedaje', icon: '🏨',
-                        items: [
-                            {
-                                id: 'jp-hotel-tokio', subcategory: 'Hotel Shinjuku 5 noches',
-                                provider: 'Hotel Gracery', city: 'Tokio', total: 890, dueDate: '2027-02-20',
-                                payments: [
-                                    { id: 'jp-h-p1', amount: 445, date: '2026-09-28', payer: 'Luis', method: 'Transferencia' }
-                                ]
-                            },
-                            {
-                                id: 'jp-ryokan', subcategory: 'Ryokan tradicional 3 noches',
-                                provider: 'Yuzuya Ryokan', city: 'Kioto', total: 780, dueDate: '2027-01-30',
-                                payments: []
-                            },
-                            {
-                                id: 'jp-osaka', subcategory: 'Apartamento Namba 3 noches',
-                                provider: 'Airbnb', city: 'Osaka', total: 420, dueDate: '2027-02-01',
-                                payments: [
-                                    { id: 'jp-o-p1', amount: 150, date: '2026-10-20', payer: 'Ana', method: 'Tarjeta de débito' }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        id: 'jp-comida', name: 'Comida', icon: '🍜',
-                        items: [
-                            {
-                                id: 'jp-reservas-gastro', subcategory: 'Reservas gastronómicas (omakase + kaiseki)',
-                                provider: 'Sushi Saito / Kikunoi', city: 'Tokio / Kioto', total: 480, dueDate: '2027-02-10',
-                                payments: []
-                            },
-                            {
-                                id: 'jp-comida-diaria', subcategory: 'Presupuesto de comidas diarias',
-                                provider: 'Efectivo / IC cards', city: 'General', total: 700, dueDate: null,
-                                payments: []
-                            }
-                        ]
-                    },
-                    {
-                        id: 'jp-actividades-cat', name: 'Actividades', icon: '🎟️',
-                        items: [
-                            {
-                                id: 'jp-disney', subcategory: 'Entradas Tokyo DisneySea (2 pax)',
-                                provider: 'Disney', city: 'Tokio', total: 160, dueDate: '2027-01-10',
-                                payments: [
-                                    { id: 'jp-d-p1', amount: 160, date: '2026-10-28', payer: 'Ana', method: 'Tarjeta de crédito' }
-                                ]
-                            },
-                            {
-                                id: 'jp-teamlab', subcategory: 'teamLab Planets + Ghibli Museum',
-                                provider: 'Varios', city: 'Tokio', total: 95, dueDate: '2027-01-10',
-                                payments: []
-                            },
-                            {
-                                id: 'jp-tours', subcategory: 'Tour de templos y experiencia té',
-                                provider: 'Magical Trip', city: 'Kioto', total: 140, dueDate: null,
-                                payments: []
-                            }
-                        ]
-                    },
-                    {
-                        id: 'jp-otros', name: 'Otros', icon: '🧳',
-                        items: [
-                            {
-                                id: 'jp-seguro', subcategory: 'Seguro de viaje 15 días',
-                                provider: 'InterMundial', city: '—', total: 85, dueDate: '2027-02-28',
-                                payments: []
-                            },
-                            {
-                                id: 'jp-esim', subcategory: 'eSIM datos + propinas varios',
-                                provider: 'Airalo', city: '—', total: 60, dueDate: null,
-                                payments: [
-                                    { id: 'jp-e-p1', amount: 30, date: '2026-11-01', payer: 'Luis', method: 'Bizum' }
-                                ]
-                            }
-                        ]
-                    }
-                ],
-                days: [
-                    { date: '2027-03-15', items: [
-                        { concept: 'Taxi aeropuerto Barajas', budgeted: 35, real: 38 },
-                        { concept: 'Snack y café en el vuelo', budgeted: 20, real: 18 }
-                    ]},
-                    { date: '2027-03-16', items: [
-                        { concept: 'Narita Express a Tokio', budgeted: 60, real: 0 },
-                        { concept: 'Cena ramen en Shinjuku', budgeted: 30, real: 0 }
-                    ]},
-                    { date: '2027-03-17', items: [
-                        { concept: 'Entrada teamLab Planets', budgeted: 48, real: 0 },
-                        { concept: 'Comida callejera Harajuku', budgeted: 25, real: 0 }
-                    ]},
-                    { date: '2027-03-18', items: [
-                        { concept: 'Templo Senso-ji + souvenirs', budgeted: 40, real: 0 },
-                        { concept: 'Crucero por la bahía de Tokio', budgeted: 35, real: 0 }
-                    ]},
-                    { date: '2027-03-19', items: [
-                        { concept: 'Palacio Imperial y jardines', budgeted: 20, real: 0 },
-                        { concept: 'Almuerzo mercado Tsukiji', budgeted: 45, real: 0 }
-                    ]},
-                    { date: '2027-03-20', items: [
-                        { concept: 'Tren bala a Kioto', budgeted: 110, real: 0 },
-                        { concept: 'Fushimi Inari al atardecer', budgeted: 15, real: 0 }
-                    ]},
-                    { date: '2027-03-21', items: [
-                        { concept: 'Tour de templos guiado', budgeted: 70, real: 0 },
-                        { concept: 'Experiencia de té matcha', budgeted: 35, real: 0 }
-                    ]},
-                    { date: '2027-03-22', items: [
-                        { concept: 'Excursión a Nara', budgeted: 55, real: 0 },
-                        { concept: 'Cena kaiseki (complemento)', budgeted: 90, real: 0 }
-                    ]},
-                    { date: '2027-03-23', items: [
-                        { concept: 'Barco a Osaka + metro', budgeted: 45, real: 0 },
-                        { concept: 'Street food Dotonbori', budgeted: 30, real: 0 }
-                    ]},
-                    { date: '2027-03-24', items: [
-                        { concept: 'Castillo de Osaka', budgeted: 25, real: 0 },
-                        { concept: 'Mirador Umeda Sky', budgeted: 30, real: 0 }
-                    ]},
-                    { date: '2027-03-25', items: [
-                        { concept: 'Museo Ghibli (traslado incluido)', budgeted: 50, real: 0 },
-                        { concept: 'Comida en Kichijoji', budgeted: 25, real: 0 }
-                    ]},
-                    { date: '2027-03-26', items: [
-                        { concept: 'Día libre DisneySea (extras)', budgeted: 80, real: 0 },
-                        { concept: 'Cena despedida izakaya', budgeted: 60, real: 0 }
-                    ]},
-                    { date: '2027-03-27', items: [
-                        { concept: 'Compras de último momento', budgeted: 70, real: 0 },
-                        { concept: 'Lavandería hotel', budgeted: 15, real: 0 }
-                    ]},
-                    { date: '2027-03-28', items: [
-                        { concept: 'Airport transfer Haneda', budgeted: 40, real: 0 },
-                        { concept: 'Comida en aeropuerto', budgeted: 25, real: 0 }
-                    ]}
-                ],
-                activities: [
-                    { id: 'jp-a1', title: 'teamLab Planets', day: '2027-03-17', time: '14:00 – 16:30', location: 'Toyosu, Tokio', cost: 96, paid: true,  payer: 'Ana',  notes: 'Entradas ya confirmadas por e-mail. Llegar 15 min antes.' },
-                    { id: 'jp-a2', title: 'Tour de templos y ceremonia del té', day: '2027-03-21', time: '09:30 – 14:00', location: 'Kioto', cost: 140, paid: false, payer: 'Luis', notes: 'Punto de encuentro: estación de Kioto, salida oeste.' },
-                    { id: 'jp-a3', title: 'Excursión a Nara', day: '2027-03-22', time: '08:45 – 18:00', location: 'Nara', cost: 55, paid: false, payer: 'Ambos', notes: 'Kinkaku-ji no entra en esta ruta; queda para el día libre.' },
-                    { id: 'jp-a4', title: 'Tokyo DisneySea', day: '2027-03-26', time: '09:00 – 21:00', location: 'Urayasu, Chiba', cost: 160, paid: true,  payer: 'Ana',  notes: 'Tickets de 1 día comprados con descuento anticipado.' },
-                    { id: 'jp-a5', title: 'Crucero nocturno por la bahía', day: '2027-03-18', time: '19:30 – 21:00', location: 'Odaiba, Tokio', cost: 70, paid: false, payer: 'Luis', notes: 'Reserva hecha, pago a la llegada al muelle.' },
-                    { id: 'jp-a6', title: 'Desayuno tsukiji + mercado exterior', day: '2027-03-19', time: '08:00 – 11:00', location: 'Tsukiji, Tokio', cost: 45, paid: false, payer: 'Ambos', notes: 'Llevamos efectivo: algunos puestos no aceptan tarjeta.' }
-                ]
-            },
-
-            /* -----------------------------------------------------------------
-               VIAJE 2 · Italia — Realizado (finalizado en junio 2026)
-               ----------------------------------------------------------------- */
-            {
-                id: 'it-2026',
-                name: 'Roma & Florencia Clásica',
-                destination: 'Roma · Florencia, Italia',
-                image: 'https://images.unsplash.com/photo-1552832230-c0197dd311b0?auto=format&fit=crop&w=1200&q=80',
-                startDate: '2026-06-05',
-                endDate: '2026-06-12',
-                travelers: ['Ana', 'Luis'],
-                budgetLimit: 2600,
-                notes: 'Escapada de 8 días. Viaje terminado: gastos reales cerrados.',
-                categories: [
-                    {
-                        id: 'it-transporte', name: 'Transporte', icon: '✈️',
-                        items: [
-                            {
-                                id: 'it-vuelos', subcategory: 'Vuelos Madrid–Roma / Florencia–Madrid',
-                                provider: 'ITA Airways', city: 'Madrid / Roma', total: 420, dueDate: '2026-03-01',
-                                payments: [
-                                    { id: 'it-v-p1', amount: 420, date: '2026-03-02', payer: 'Ana', method: 'Tarjeta de crédito' }
-                                ]
-                            },
-                            {
-                                id: 'it-trenitalia', subcategory: 'Treno alta velocidad Roma–Florencia',
-                                provider: 'Trenitalia', city: 'Roma / Florencia', total: 90, dueDate: '2026-05-15',
-                                payments: [
-                                    { id: 'it-t-p1', amount: 90, date: '2026-05-10', payer: 'Luis', method: 'Tarjeta de débito' }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        id: 'it-hospedaje', name: 'Hospedaje', icon: '🏨',
-                        items: [
-                            {
-                                id: 'it-hotel-roma', subcategory: 'Hotel Cavour 4 noches',
-                                provider: 'Hotel Cavour', city: 'Roma', total: 640, dueDate: '2026-05-20',
-                                payments: [
-                                    { id: 'it-h-p1', amount: 200, date: '2026-04-18', payer: 'Ana', method: 'Tarjeta de crédito' },
-                                    { id: 'it-h-p2', amount: 440, date: '2026-06-05', payer: 'Luis', method: 'Tarjeta de débito' }
-                                ]
-                            },
-                            {
-                                id: 'it-agriturismo', subcategory: 'Agriturismo toscano 3 noches',
-                                provider: 'La Torricina', city: 'Florencia', total: 450, dueDate: '2026-05-25',
-                                payments: [
-                                    { id: 'it-a-p1', amount: 450, date: '2026-05-22', payer: 'Ana', method: 'Transferencia' }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        id: 'it-comida', name: 'Comida', icon: '🍝',
-                        items: [
-                            {
-                                id: 'it-ristorantes', subcategory: 'Comidas y cenas (trattorias)',
-                                provider: 'Varios', city: 'Roma / Florencia', total: 480, dueDate: null,
-                                payments: [
-                                    { id: 'it-r-p1', amount: 480, date: '2026-06-12', payer: 'Ambos', method: 'Efectivo' }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        id: 'it-actividades-cat', name: 'Actividades', icon: '🎟️',
-                        items: [
-                            {
-                                id: 'it-coliseo', subcategory: 'Coliseo + Foro Romano (tour guiado)',
-                                provider: 'Walks of Italy', city: 'Roma', total: 130, dueDate: '2026-05-01',
-                                payments: [
-                                    { id: 'it-c-p1', amount: 130, date: '2026-04-28', payer: 'Luis', method: 'Tarjeta de crédito' }
-                                ]
-                            },
-                            {
-                                id: 'it-uffizi', subcategory: 'Galería Uffizi + Palazzo Pitti',
-                                provider: 'B-ticket', city: 'Florencia', total: 76, dueDate: '2026-05-28',
-                                payments: [
-                                    { id: 'it-u-p1', amount: 76, date: '2026-05-26', payer: 'Ana', method: 'Bizum' }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        id: 'it-otros', name: 'Otros', icon: '🧳',
-                        items: [
-                            {
-                                id: 'it-souvenirs', subcategory: 'Souvenirs y extras',
-                                provider: 'Varios', city: 'General', total: 120, dueDate: null,
-                                payments: [
-                                    { id: 'it-s-p1', amount: 120, date: '2026-06-12', payer: 'Ambos', method: 'Efectivo' }
-                                ]
-                            }
-                        ]
-                    }
-                ],
-                days: [
-                    { date: '2026-06-05', items: [
-                        { concept: 'Metro + taxi al hotel', budgeted: 25, real: 28 },
-                        { concept: 'Cena trattoria Trastevere', budgeted: 55, real: 62 }
-                    ]},
-                    { date: '2026-06-06', items: [
-                        { concept: 'Tour Coliseo y Foro', budgeted: 65, real: 65 },
-                        { concept: 'Gelatos y aperitivo', budgeted: 20, real: 24 }
-                    ]},
-                    { date: '2026-06-07', items: [
-                        { concept: 'Vaticano (entradas fuera del día)', budgeted: 0, real: 0 },
-                        { concept: 'Comida en Prati', budgeted: 50, real: 47 }
-                    ]},
-                    { date: '2026-06-08', items: [
-                        { concept: 'Treno a Florencia', budgeted: 45, real: 45 },
-                        { concept: 'Pícnic río Arno', budgeted: 25, real: 22 }
-                    ]},
-                    { date: '2026-06-09', items: [
-                        { concept: 'Uffizi y Duomo', budgeted: 38, real: 38 },
-                        { concept: 'Cena bistecca fiorentina', budgeted: 80, real: 92 }
-                    ]},
-                    { date: '2026-06-10', items: [
-                        { concept: 'Excursión Siena (bus)', budgeted: 40, real: 40 },
-                        { concept: 'Comidas excursión', budgeted: 35, real: 33 }
-                    ]},
-                    { date: '2026-06-11', items: [
-                        { concept: 'Mercado Central y souvenirs', budgeted: 60, real: 71 },
-                        { concept: 'Cena despedida', budgeted: 70, real: 68 }
-                    ]},
-                    { date: '2026-06-12', items: [
-                        { concept: 'Traslado aeropuerto FLR', budgeted: 30, real: 30 },
-                        { concept: 'Comida en aeropuerto', budgeted: 25, real: 20 }
-                    ]}
-                ],
-                activities: [
-                    { id: 'it-a1', title: 'Tour guiado Coliseo + Foro', day: '2026-06-06', time: '09:30 – 13:30', location: 'Piazza del Colosseo, Roma', cost: 130, paid: true, payer: 'Luis', notes: 'Incluye acceso prioritario y guía en español.' },
-                    { id: 'it-a2', title: 'Galería Uffizi', day: '2026-06-09', time: '10:00 – 13:00', location: 'Piazzale degli Uffizi, Florencia', cost: 76, paid: true, payer: 'Ana', notes: 'Reserva online con hora fijada.' },
-                    { id: 'it-a3', title: 'Excursión a Siena', day: '2026-06-10', time: '08:30 – 18:00', location: 'Salida: SITA Bus, Florencia', cost: 40, paid: true, payer: 'Ambos', notes: 'Billetes de ida y vuelta comprados en la estación de Santa Maria Novella.' },
-                    { id: 'it-a4', title: 'Cena típica Trattoria da Benito', day: '2026-06-05', time: '20:30 – 22:30', location: 'Trastevere, Roma', cost: 62, paid: true, payer: 'Ana', notes: 'Mesa reservada a nombre de Ana.' }
-                ]
-            }
-        ]
+        trips: []
     };
 
     /* =========================================================================
-       2. INYECCIÓN DINÁMICA DE ESTILOS CSS EN EL <head>
+       2. CSS DEL MÓDULO
        ========================================================================= */
     const CSS_ID = 'trip-manager-styles';
-
-    // CSS del módulo → inyección estandarizada (App.injectStylesheet)
     function moduleCSS() { return `
-        /* ===== Variables propias del módulo (con fallback al tema global) ===== */
         .tm-root {
             --tm-primary: var(--primary, #2563eb);
             --tm-bg-card: var(--bg-card, #ffffff);
@@ -374,85 +47,39 @@
             --tm-warning: var(--warning, #f59e0b);
             --tm-danger: var(--danger, #ef4444);
             --tm-info: var(--info, #06b6d4);
-            font-family: inherit;
-            color: var(--tm-text);
+            font-family: inherit; color: var(--tm-text);
         }
-        [data-theme="dark"] .tm-root { filter: none; }
-
-        /* ===== Cabecera ===== */
-        .tm-header {
-            display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
-            justify-content: space-between; margin-bottom: 18px;
-        }
+        .tm-header { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
         .tm-title-group h2 { font-size: 20px; margin: 0 0 2px; }
         .tm-title-group p { margin: 0; font-size: 13px; color: var(--tm-text-secondary); }
         .tm-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        .tm-select {
-            padding: 9px 12px; border-radius: var(--tm-radius); border: 1px solid var(--tm-border);
-            background: var(--tm-bg-card); color: var(--tm-text); font-size: 13px; cursor: pointer;
-            min-width: 220px; font-family: inherit;
-        }
-        .tm-btn {
-            padding: 9px 14px; border-radius: var(--tm-radius); border: 1px solid transparent;
-            font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s ease;
-            font-family: inherit; display: inline-flex; align-items: center; gap: 6px;
-        }
+        .tm-select { padding: 9px 12px; border-radius: var(--tm-radius); border: 1px solid var(--tm-border); background: var(--tm-bg-card); color: var(--tm-text); font-size: 13px; cursor: pointer; min-width: 220px; font-family: inherit; }
+        .tm-btn { padding: 9px 14px; border-radius: var(--tm-radius); border: 1px solid transparent; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s ease; font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
         .tm-btn-primary { background: var(--tm-primary); color: #fff; }
         .tm-btn-primary:hover { opacity: .9; transform: translateY(-1px); }
         .tm-btn-ghost { background: transparent; color: var(--tm-text-secondary); border-color: var(--tm-border); }
         .tm-btn-ghost:hover { color: var(--tm-text); border-color: var(--tm-text-muted); }
-        .tm-btn-danger { background: var(--tm-danger); color: #fff; }
         .tm-btn-sm { padding: 6px 10px; font-size: 12px; }
-
-        /* ===== Tabs internas ===== */
-        .tm-tabs {
-            display: flex; gap: 4px; border-bottom: 1px solid var(--tm-border);
-            margin-bottom: 22px; overflow-x: auto; scrollbar-width: thin;
-        }
-        .tm-tab {
-            padding: 11px 16px; background: none; border: none; color: var(--tm-text-secondary);
-            font-size: 13.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
-            border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all .15s;
-            font-family: inherit; display: inline-flex; align-items: center; gap: 7px;
-        }
+        .tm-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--tm-border); margin-bottom: 22px; overflow-x: auto; scrollbar-width: thin; }
+        .tm-tab { padding: 11px 16px; background: none; border: none; color: var(--tm-text-secondary); font-size: 13.5px; font-weight: 500; cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all .15s; font-family: inherit; display: inline-flex; align-items: center; gap: 7px; }
         .tm-tab:hover { color: var(--tm-text); }
         .tm-tab.active { color: var(--tm-primary); border-bottom-color: var(--tm-primary); font-weight: 600; }
         .tm-view { display: none; animation: tmFade .25s ease; }
         .tm-view.active { display: block; }
         @keyframes tmFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-
-        /* ===== Badges ===== */
-        .tm-badge {
-            display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
-            border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .3px;
-            text-transform: uppercase;
-        }
+        .tm-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
         .tm-badge-proximo   { background: rgba(245,158,11,.15); color: #b45309; }
         .tm-badge-en-curso  { background: rgba(16,185,129,.15); color: #047857; }
         .tm-badge-realizado { background: rgba(100,116,139,.15); color: #64748b; }
         .tm-badge-pagado    { background: rgba(16,185,129,.15); color: #047857; }
         .tm-badge-pendiente { background: rgba(239,68,68,.14);  color: #b91c1c; }
-        [data-theme="dark"] .tm-badge-proximo   { color: #fcd34d; }
-        [data-theme="dark"] .tm-badge-en-curso,
-        [data-theme="dark"] .tm-badge-pagado    { color: #6ee7b7; }
-        [data-theme="dark"] .tm-badge-realizado { color: #cbd5e1; }
-        [data-theme="dark"] .tm-badge-pendiente { color: #fca5a5; }
-
-        /* ===== Grid de tarjetas de viaje ===== */
         .tm-trips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 18px; }
-        .tm-trip-card {
-            background: var(--tm-bg-card); border: 1px solid var(--tm-border); border-radius: var(--tm-radius);
-            overflow: hidden; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease;
-            display: flex; flex-direction: column;
-        }
+        .tm-trip-card { background: var(--tm-bg-card); border: 1px solid var(--tm-border); border-radius: var(--tm-radius); overflow: hidden; cursor: pointer; transition: transform .18s ease, box-shadow .18s ease; display: flex; flex-direction: column; }
         .tm-trip-card:hover { transform: translateY(-4px); box-shadow: var(--tm-shadow); }
         .tm-trip-img { position: relative; height: 150px; background: linear-gradient(135deg,#1e3a8a,#7c3aed); }
         .tm-trip-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .tm-trip-img .tm-badge { position: absolute; top: 10px; right: 10px; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
-        .tm-trip-countdown {
-            position: absolute; left: 10px; bottom: 10px; background: rgba(15,23,42,.72); color: #fff;
-            padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; backdrop-filter: blur(4px);
-        }
+        .tm-trip-countdown { position: absolute; left: 10px; bottom: 10px; background: rgba(15,23,42,.72); color: #fff; padding: 4px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; backdrop-filter: blur(4px); }
         .tm-trip-body { padding: 14px 16px 16px; flex: 1; display: flex; flex-direction: column; gap: 10px; }
         .tm-trip-name { font-size: 16px; font-weight: 700; margin: 0; }
         .tm-trip-meta { font-size: 12.5px; color: var(--tm-text-secondary); display: flex; gap: 12px; flex-wrap: wrap; }
@@ -464,39 +91,24 @@
         .tm-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--tm-primary), #7c3aed); transition: width .4s ease; }
         .tm-progress-fill.warn { background: linear-gradient(90deg, var(--tm-warning), var(--tm-danger)); }
         .tm-progress-label { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--tm-text-secondary); margin-top: 5px; }
-
-        /* ===== Panel de alertas ===== */
         .tm-alerts { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; }
-        .tm-alert {
-            display: flex; gap: 12px; align-items: flex-start; padding: 13px 16px; border-radius: var(--tm-radius);
-            border: 1px solid var(--tm-border); background: var(--tm-bg-card);
-        }
+        .tm-alert { display: flex; gap: 12px; align-items: flex-start; padding: 13px 16px; border-radius: var(--tm-radius); border: 1px solid var(--tm-border); background: var(--tm-bg-card); }
         .tm-alert-icon { font-size: 18px; line-height: 1.2; }
         .tm-alert strong { display: block; font-size: 13.5px; margin-bottom: 2px; }
         .tm-alert span { font-size: 12.5px; color: var(--tm-text-secondary); }
         .tm-alert-warning { border-left: 4px solid var(--tm-warning); }
         .tm-alert-danger  { border-left: 4px solid var(--tm-danger); }
         .tm-alert-ok      { border-left: 4px solid var(--tm-success); }
-
-        /* ===== Layout de dashboard (card + gráfica) ===== */
         .tm-dash-row { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; }
-        .tm-panel {
-            background: var(--tm-bg-card); border: 1px solid var(--tm-border);
-            border-radius: var(--tm-radius); padding: 18px;
-        }
+        .tm-panel { background: var(--tm-bg-card); border: 1px solid var(--tm-border); border-radius: var(--tm-radius); padding: 18px; }
         .tm-panel h3 { margin: 0 0 14px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
         .tm-chart-wrap { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
         .tm-chart-legend { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; }
         .tm-legend-item { display: flex; align-items: center; gap: 8px; color: var(--tm-text-secondary); }
         .tm-legend-dot { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
-
-        /* ===== Acordeón de categorías ===== */
         .tm-accordion { display: flex; flex-direction: column; gap: 12px; }
         .tm-acc-item { background: var(--tm-bg-card); border: 1px solid var(--tm-border); border-radius: var(--tm-radius); overflow: hidden; }
-        .tm-acc-head {
-            width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 16px;
-            background: none; border: none; cursor: pointer; color: var(--tm-text); font-family: inherit;
-        }
+        .tm-acc-head { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: none; border: none; cursor: pointer; color: var(--tm-text); font-family: inherit; }
         .tm-acc-head:hover { background: rgba(148,163,184,.07); }
         .tm-acc-icon { font-size: 18px; }
         .tm-acc-title { font-weight: 600; font-size: 14.5px; flex: 1; text-align: left; }
@@ -505,24 +117,15 @@
         .tm-acc-item.open .tm-acc-chev { transform: rotate(90deg); }
         .tm-acc-body { display: none; border-top: 1px solid var(--tm-border); padding: 6px 16px 12px; }
         .tm-acc-item.open .tm-acc-body { display: block; }
-        .tm-subcat-row {
-            display: flex; align-items: center; gap: 12px; padding: 12px 4px;
-            border-bottom: 1px dashed var(--tm-border);
-        }
+        .tm-subcat-row { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px dashed var(--tm-border); }
         .tm-subcat-row:last-child { border-bottom: none; }
         .tm-subcat-info { flex: 1; min-width: 0; }
         .tm-subcat-name { font-size: 13.5px; font-weight: 600; }
         .tm-subcat-detail { font-size: 12px; color: var(--tm-text-muted); margin-top: 2px; }
         .tm-subcat-total { font-size: 14px; font-weight: 700; white-space: nowrap; }
         .tm-subcat-paid { font-size: 11.5px; color: var(--tm-success); white-space: nowrap; }
-        .tm-pay-arrow {
-            width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--tm-border);
-            background: var(--tm-bg-card); color: var(--tm-primary); font-size: 15px; cursor: pointer;
-            display: inline-flex; align-items: center; justify-content: center; transition: all .15s; flex-shrink: 0;
-        }
+        .tm-pay-arrow { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--tm-border); background: var(--tm-bg-card); color: var(--tm-primary); font-size: 15px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .15s; flex-shrink: 0; }
         .tm-pay-arrow:hover { background: var(--tm-primary); color: #fff; transform: scale(1.08); }
-
-        /* ===== Planificación diaria ===== */
         .tm-days-grid { display: flex; flex-direction: column; gap: 14px; max-width: 860px; }
         .tm-day-card { background: var(--tm-bg-card); border: 1px solid var(--tm-border); border-radius: var(--tm-radius); padding: 16px; }
         .tm-day-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -531,69 +134,31 @@
         .tm-day-remain { font-size: 12.5px; font-weight: 700; }
         .tm-day-remain.pos { color: var(--tm-success); }
         .tm-day-remain.neg { color: var(--tm-danger); }
-        .tm-expense-row {
-            display: grid; grid-template-columns: 1fr 120px 120px 34px; gap: 10px; align-items: center;
-            padding: 8px 0; border-top: 1px dashed var(--tm-border); font-size: 13px;
-        }
-        .tm-expense-concept { color: var(--tm-text); }
-        .tm-input {
-            width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--tm-border);
-            background: transparent; color: var(--tm-text); font-size: 13px; font-family: inherit;
-        }
+        .tm-input { width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--tm-border); background: transparent; color: var(--tm-text); font-size: 13px; font-family: inherit; }
         .tm-input:focus { outline: 2px solid var(--tm-primary); outline-offset: -1px; }
         .tm-del { background: none; border: none; color: var(--tm-text-muted); cursor: pointer; font-size: 14px; }
         .tm-del:hover { color: var(--tm-danger); }
-        .tm-day-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 10px; flex-wrap: wrap; }
-        .tm-balance-banner {
-            display: flex; gap: 18px; flex-wrap: wrap; align-items: center; padding: 14px 18px; margin-bottom: 18px;
-            background: var(--tm-bg-card); border: 1px solid var(--tm-border); border-radius: var(--tm-radius);
-        }
-        .tm-balance-item small { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--tm-text-muted); }
-        .tm-balance-item strong { font-size: 17px; }
-
-        /* ===== Actividades ===== */
         .tm-act-card { background: var(--tm-bg-card); border: 1px solid var(--tm-border); border-radius: var(--tm-radius); padding: 16px; }
         .tm-act-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-        .tm-act-row {
-            display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 8px;
-            border: 1px solid var(--tm-border); cursor: pointer; transition: all .15s; background: transparent;
-        }
+        .tm-act-row { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 8px; border: 1px solid var(--tm-border); cursor: pointer; transition: all .15s; background: transparent; }
         .tm-act-row:hover { border-color: var(--tm-primary); box-shadow: var(--tm-shadow); transform: translateX(3px); }
         .tm-act-time { font-size: 12px; color: var(--tm-text-muted); white-space: nowrap; font-weight: 600; }
         .tm-act-name { flex: 1; font-size: 13.5px; font-weight: 600; }
         .tm-act-cost { font-size: 13px; font-weight: 700; white-space: nowrap; }
-
-        /* ===== Ahorro ===== */
         .tm-save-hero { text-align: center; padding: 26px 18px; }
         .tm-save-hero .tm-big { font-size: 34px; font-weight: 800; letter-spacing: -1px; }
         .tm-save-bar { height: 14px; border-radius: 999px; background: rgba(148,163,184,.25); overflow: hidden; margin: 18px 0 8px; }
         .tm-save-bar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--tm-success), #34d399); transition: width .5s ease; }
         .tm-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
         .tm-list { list-style: none; margin: 0; padding: 0; }
-        .tm-list li {
-            display: flex; justify-content: space-between; gap: 10px; padding: 10px 4px;
-            border-bottom: 1px dashed var(--tm-border); font-size: 13px;
-        }
+        .tm-list li { display: flex; justify-content: space-between; gap: 10px; padding: 10px 4px; border-bottom: 1px dashed var(--tm-border); font-size: 13px; }
         .tm-list li:last-child { border-bottom: none; }
         .tm-list .muted { color: var(--tm-text-muted); font-size: 12px; }
-
-        /* ===== Modales flotantes ===== */
-        .tm-modal-overlay {
-            position: fixed; inset: 0; background: rgba(15,23,42,.55); backdrop-filter: blur(3px);
-            display: none; align-items: center; justify-content: center; z-index: 1000; padding: 18px;
-        }
+        .tm-modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.55); backdrop-filter: blur(3px); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 18px; }
         .tm-modal-overlay.active { display: flex; animation: tmFade .2s ease; }
-        .tm-modal {
-            background: var(--tm-bg-card); color: var(--tm-text); border-radius: 14px; width: 100%;
-            max-width: 560px; max-height: 88vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,.35);
-            border: 1px solid var(--tm-border); animation: tmPop .22s ease;
-        }
+        .tm-modal { background: var(--tm-bg-card); color: var(--tm-text); border-radius: 14px; width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,.35); border: 1px solid var(--tm-border); animation: tmPop .22s ease; }
         @keyframes tmPop { from { transform: scale(.96) translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
-        .tm-modal-head {
-            display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
-            padding: 18px 20px 14px; border-bottom: 1px solid var(--tm-border);
-            position: sticky; top: 0; background: var(--tm-bg-card); z-index: 2;
-        }
+        .tm-modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 20px 14px; border-bottom: 1px solid var(--tm-border); position: sticky; top: 0; background: var(--tm-bg-card); z-index: 2; }
         .tm-modal-head h3 { margin: 0; font-size: 16px; }
         .tm-modal-head p { margin: 3px 0 0; font-size: 12.5px; color: var(--tm-text-muted); }
         .tm-modal-close { background: none; border: none; font-size: 20px; color: var(--tm-text-muted); cursor: pointer; line-height: 1; }
@@ -602,57 +167,16 @@
         .tm-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .tm-field label { display: block; font-size: 11.5px; font-weight: 600; color: var(--tm-text-secondary); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .3px; }
         .tm-field.full { grid-column: 1 / -1; }
-        .tm-payment-history { margin: 0 0 16px; }
         .tm-kv { display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 13.5px; margin-bottom: 14px; }
         .tm-kv dt { color: var(--tm-text-muted); }
         .tm-kv dd { margin: 0; font-weight: 600; }
-
-        /* ===== Estado vacío / banner "dentro del viaje" ===== */
-        .tm-inside-banner {
-            display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 18px;
-            background: linear-gradient(90deg, rgba(37,99,235,.10), rgba(124,58,237,.10));
-            border: 1px solid var(--tm-border); border-radius: var(--tm-radius);
-        }
-        .tm-inside-banner strong { font-size: 14px; }
         .tm-empty { text-align: center; padding: 40px 20px; color: var(--tm-text-muted); font-size: 13.5px; }
-
-        /* ===== Responsive ===== */
-        @media (max-width: 900px) {
-            .tm-dash-row, .tm-two-col { grid-template-columns: 1fr; }
-        }
-        @media (max-width: 640px) {
-            .tm-metrics { grid-template-columns: 1fr; }
-            .tm-expense-row { grid-template-columns: 1fr 1fr; }
-            .tm-expense-concept { grid-column: 1 / -1; }
-            .tm-form-grid { grid-template-columns: 1fr; }
-            .tm-select { min-width: 160px; }
-            /* Cabecera apilada y modal a pantalla completa en móvil */
-            .tm-header { flex-direction: column; align-items: stretch; gap: 10px; }
-            .tm-controls { justify-content: space-between; }
-            .tm-modal { width: 100%; max-width: 100vw; max-height: 92vh; border-radius: 18px 18px 0 0; margin: auto 0 0 0; overflow-y: auto; }
-            .tm-tabs { -webkit-overflow-scrolling: touch; }
-            .tm-detail-hero { flex-direction: column; }
-            .tm-detail-hero img, .tm-detail-hero .tm-hero-img { height: 160px; width: 100%; }
-            .tm-detail-metrics { grid-template-columns: 1fr 1fr; }
-            .tm-mini-cal-row { flex-wrap: wrap; }
-        }
-
-        /* ================================================================
-           ESTILOS DE LA VISTA GLOBAL COMPACTA + PANTALLA DE CONFIGURACIÓN
-           ================================================================ */
-        /* Cabecera compacta: sin título grande ni descripción */
-        .tm-header-compact { margin-bottom: 10px; justify-content: flex-end; }
-        .tm-header-compact .tm-select { min-width: 200px; }
-
-        /* Barra de filtros + segmentado */
         .tm-filterbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
         .tm-seg { display: inline-flex; background: rgba(148,163,184,.14); border: 1px solid var(--tm-border); border-radius: 999px; padding: 3px; gap: 2px; }
         .tm-seg-btn { border: none; background: transparent; color: var(--tm-text-secondary); font-size: 12.5px; font-weight: 600; padding: 7px 14px; border-radius: 999px; cursor: pointer; font-family: inherit; transition: all .15s ease; white-space: nowrap; }
         .tm-seg-btn:hover { color: var(--tm-text); }
         .tm-seg-btn.active { background: var(--tm-bg-card); color: var(--tm-primary); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
         .tm-select-sm { padding: 7px 10px; font-size: 12.5px; min-width: 170px; }
-
-        /* Tabla cruzada categorías × viajes */
         .tm-xscroll { overflow-x: auto; scrollbar-width: thin; }
         .tm-xtable { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 560px; }
         .tm-xtable th, .tm-xtable td { padding: 10px 12px; border-bottom: 1px solid var(--tm-border); text-align: left; white-space: nowrap; }
@@ -662,11 +186,8 @@
         .tm-td-num.tm-strong { font-weight: 800; }
         .tm-xrow { cursor: pointer; transition: background .12s ease; }
         .tm-xrow:hover { background: rgba(37,99,235,.06); }
-        .tm-xrow small.tm-muted { color: var(--tm-text-muted); font-size: 11px; }
         .tm-xtotal td { font-weight: 800; border-top: 2px solid var(--tm-border); border-bottom: none; background: rgba(148,163,184,.07); }
         .tm-hint { font-size: 12px; color: var(--tm-text-muted); margin: 10px 2px 0; }
-
-        /* Hero del detalle: foto arriba, portada con degradado */
         .tm-detail-hero { position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--tm-border); background: var(--tm-bg-card); margin-bottom: 16px; box-shadow: var(--tm-shadow); }
         .tm-detail-hero > img { display: block; width: 100%; height: 210px; object-fit: cover; }
         .tm-detail-hero-body { padding: 16px 20px 18px; }
@@ -678,15 +199,11 @@
         .tm-detail-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
         .tm-detail-section { margin-bottom: 26px; }
         .tm-detail-section h3 { margin: 0 0 12px; font-size: 15.5px; display: flex; align-items: center; gap: 8px; }
-
-        /* Pestañas internas de la pantalla de configuración del viaje */
         .tm-subtabs { display: inline-flex; gap: 4px; background: rgba(148,163,184,.14); border: 1px solid var(--tm-border); border-radius: 999px; padding: 4px; margin-bottom: 18px; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
         .tm-subtabs::-webkit-scrollbar { display: none; }
         .tm-subtab { border: none; background: transparent; color: var(--tm-text-secondary); font-size: 12.5px; font-weight: 600; padding: 8px 16px; border-radius: 999px; cursor: pointer; font-family: inherit; transition: all .15s ease; white-space: nowrap; }
         .tm-subtab:hover { color: var(--tm-text); }
         .tm-subtab.active { background: var(--tm-bg-card); color: var(--tm-primary); box-shadow: 0 1px 4px rgba(0,0,0,.12); }
-
-        /* Mini calendario mensual */
         .tm-mini-cal-row { display: flex; gap: 14px; flex-wrap: wrap; }
         .tm-mini-cal { background: rgba(148,163,184,.08); border: 1px solid var(--tm-border); border-radius: 10px; padding: 8px 10px; }
         .tm-mini-cal-title { font-size: 11px; font-weight: 700; text-transform: capitalize; color: var(--tm-text-secondary); margin-bottom: 5px; text-align: center; }
@@ -695,15 +212,11 @@
         .tm-cal-day { font-size: 10px; line-height: 22px; text-align: center; border-radius: 6px; color: var(--tm-text-secondary); }
         .tm-cal-day.in { background: rgba(37,99,235,.16); color: var(--tm-primary); font-weight: 700; }
         .tm-cal-day.edge { background: var(--tm-primary); color: #fff; font-weight: 800; }
-
-        /* Chips de categorías presupuestadas */
         .tm-cat-chips { display: flex; gap: 10px; flex-wrap: wrap; }
         .tm-cat-chip { display: flex; align-items: center; gap: 9px; border: 1px solid var(--tm-border); border-left: 4px solid var(--chip, var(--tm-primary)); background: var(--tm-bg-card); border-radius: 10px; padding: 8px 12px; min-width: 150px; }
         .tm-cat-chip-icon { font-size: 17px; }
         .tm-cat-chip strong { display: block; font-size: 12.5px; }
         .tm-cat-chip small { font-size: 11px; color: var(--tm-text-secondary); font-variant-numeric: tabular-nums; }
-
-        /* Carrusel horizontal de tarjetas (días y actividades) */
         .tm-carousel { display: flex; align-items: center; gap: 10px; }
         .tm-car-track { display: flex; gap: 14px; overflow-x: auto; scroll-behavior: smooth; padding: 4px 2px 10px; scrollbar-width: thin; flex: 1; min-width: 0; }
         .tm-car-track::-webkit-scrollbar { height: 6px; }
@@ -712,9 +225,6 @@
         .tm-car-arrow:hover { background: var(--tm-primary); color: #fff; transform: scale(1.06); }
         .tm-carousel .tm-car-arrow.right { order: 1; }
         .tm-day-card-h { flex: 0 0 340px; width: 340px; display: flex; flex-direction: column; vertical-align: top; }
-        .tm-day-card-h .tm-day-title { font-size: 12.5px; }
-
-        /* Líneas de gasto diario dentro de la tarjeta */
         .tm-dline { display: grid; grid-template-columns: 1fr 62px 62px 22px; gap: 6px; align-items: center; padding: 6px 0; border-top: 1px dashed var(--tm-border); font-size: 12px; }
         .tm-dline-head { border-top: none; padding: 2px 0 4px; font-size: 9.5px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: var(--tm-text-muted); }
         .tm-dline.over .tm-dline-cat, .tm-dline.over .tm-input.neg { color: var(--tm-danger); }
@@ -723,11 +233,6 @@
         .tm-dline-cat::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--dot, var(--tm-primary)); flex: none; }
         .tm-input-xs { padding: 4px 6px; font-size: 12px; border-radius: 6px; text-align: right; }
         .tm-input-xs.neg { border-color: var(--tm-danger); color: var(--tm-danger); font-weight: 700; }
-
-        /* Filas de actividades dentro del carrusel */
-        .tm-act-row .tm-badge { font-size: 9.5px; padding: 2px 7px; }
-
-        /* Reglas y avisos (pantalla Configuración) */
         .tm-rule-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px dashed var(--tm-border); font-size: 13px; }
         .tm-rule-row:first-of-type { border-top: none; }
         .tm-rule-icon { font-size: 18px; flex: none; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: rgba(148,163,184,.12); }
@@ -744,8 +249,6 @@
         .tm-alert-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid rgba(239,68,68,.35); background: rgba(239,68,68,.06); border-radius: 10px; margin-bottom: 8px; font-size: 13px; }
         .tm-alert-item.warn { border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.07); }
         .tm-alert-item strong { margin-left: auto; white-space: nowrap; }
-
-        /* Ahorro y financiación del viaje (rediseño) */
         .tm-fund-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
         .tm-fund-card { background: var(--tm-bg-card); border: 1px solid var(--tm-border); border-radius: 12px; padding: 14px 16px; }
         .tm-fund-card small { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--tm-text-muted); margin-bottom: 4px; }
@@ -756,16 +259,28 @@
         .tm-fund-split > span { display: block; height: 100%; }
         .tm-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--tm-text-secondary); margin-top: 6px; }
         .tm-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; }
+        @media (max-width: 900px) { .tm-dash-row, .tm-two-col { grid-template-columns: 1fr; } }
+        @media (max-width: 640px) {
+            .tm-metrics { grid-template-columns: 1fr; }
+            .tm-form-grid { grid-template-columns: 1fr; }
+            .tm-select { min-width: 160px; }
+            .tm-header { flex-direction: column; align-items: stretch; gap: 10px; }
+            .tm-controls { justify-content: space-between; }
+            .tm-modal { width: 100%; max-width: 100vw; max-height: 92vh; border-radius: 18px 18px 0 0; margin: auto 0 0 0; overflow-y: auto; }
+            .tm-tabs { -webkit-overflow-scrolling: touch; }
+            .tm-detail-hero { flex-direction: column; }
+            .tm-detail-hero img, .tm-detail-hero .tm-hero-img { height: 160px; width: 100%; }
+            .tm-detail-metrics { grid-template-columns: 1fr 1fr; }
+            .tm-mini-cal-row { flex-wrap: wrap; }
+        }
+        .tm-header-compact { margin-bottom: 10px; justify-content: flex-end; }
+        .tm-header-compact .tm-select { min-width: 200px; }
     `; }
 
     /* =========================================================================
        3. CLASE PRINCIPAL TripManager
        ========================================================================= */
     class TripManager {
-        /**
-         * @param {HTMLElement|string} mountOrSelector Contenedor o selector (p.ej. '#trip-manager-app')
-         * @param {object}             options         { data, onChange(trip) }
-         */
         constructor(mountOrSelector, options = {}) {
             this.mount = typeof mountOrSelector === 'string'
                 ? document.querySelector(mountOrSelector)
@@ -777,17 +292,51 @@
 
             this.state = {
                 activeTab: 'resumen',
-                detailTab: 'config',      // pestaña interna del detalle: config | diario | actividades | ahorro
-                selectedTripId: null,     // null → vista global (Resumen General)
-                openCategories: {},       // { tripId|categoryId: true } estado acordeón
+                detailTab: 'config',
+                selectedTripId: null,
+                openCategories: {},
                 expandedDays: {},
-                statusFilter: 'proximos', // 'proximos' | 'finalizados'
-                monthFilter: '',          // '' | 'YYYY-MM'
-                dayScroll: 0,             // desplazamiento del carrusel diario (detail)
-                actScroll: 0              // desplazamiento del carrusel de actividades (detail)
+                statusFilter: 'proximos',
+                monthFilter: '',
+                dayScroll: 0,
+                actScroll: 0
             };
 
             this._onKeydown = (e) => { if (e.key === 'Escape') this.closeModal(); };
+
+            // Listener de cambios externos
+            this._onModuleChange = (e) => {
+                const src = e && e.detail && e.detail.source;
+                if (!src || src === 'viajes') return;
+                if (this.mounted && this.mount && this.mount.isConnected) {
+                    try { this.render(); } catch (err) {}
+                }
+            };
+            document.addEventListener('app:module-changed', this._onModuleChange);
+
+            // Persistencia
+            try {
+                const persisted = localStorage.getItem('finanzas_viajes_v2');
+                if (persisted) {
+                    const parsed = JSON.parse(persisted);
+                    if (parsed && Array.isArray(parsed.trips)) this.data = parsed;
+                }
+            } catch (e) {}
+
+            this._persistTimer = null;
+            this._persist = () => {
+                if (window.App && typeof App.saveStored === 'function') {
+                    App.saveStored('finanzas_viajes_v2', this.data);
+                } else {
+                    try { localStorage.setItem('finanzas_viajes_v2', JSON.stringify(this.data)); } catch (e) {}
+                }
+            };
+            this._schedulePersist = () => {
+                clearTimeout(this._persistTimer);
+                this._persistTimer = setTimeout(() => this._persist(), 800);
+            };
+            window.addEventListener('beforeunload', () => this._persist());
+
             this.mounted = false;
         }
 
@@ -829,12 +378,10 @@
         get selectedTrip() {
             return this.trips.find(t => t.id === this.state.selectedTripId) || null;
         }
-        /** Trips que se muestran según si estamos "dentro" de un viaje o en vista global. */
-        get visibleTrips() {
-            const t = this.selectedTrip;
-            return t ? [t] : this.trips;
-        }
-        /** Lista de viajes para la vista GLOBAL con los filtros aplicados. */
+
+        /** Estado expuesto al puente */
+        getState() { return JSON.parse(JSON.stringify(this.data)); }
+
         filteredTrips() {
             let list = [...this.trips];
             if (this.state.statusFilter === 'finalizados') list = list.filter(t => this.statusOf(t) === 'realizado');
@@ -842,7 +389,6 @@
             if (this.state.monthFilter) list = list.filter(t => this._tripMonths(t).includes(this.state.monthFilter));
             return list.sort((a, b) => a.startDate.localeCompare(b.startDate));
         }
-        /** Meses (YYYY-MM) tocados por el rango de fechas del viaje. */
         _tripMonths(trip) {
             const months = [];
             const s = TripManager.parseDate(trip.startDate), e = TripManager.parseDate(trip.endDate);
@@ -853,7 +399,6 @@
             }
             return months;
         }
-        /** Opciones de mes/año para el filtro (de todos los viajes). */
         _monthOptions() {
             const set = new Set();
             this.trips.forEach(t => this._tripMonths(t).forEach(m => set.add(m)));
@@ -871,11 +416,9 @@
         }
         daysUntil(trip) { return TripManager.daysBetween(this.today, trip.startDate); }
 
-        /** Total presupuestado (planificado) de todas las subcategorías del viaje. */
         plannedOf(trip) {
             return trip.categories.reduce((s, c) => s + c.items.reduce((x, i) => x + (i.total || 0), 0), 0);
         }
-        /** Total ya pagado (suma de movimientos parciales). */
         paidOf(trip) {
             return trip.categories.reduce((s, c) => s + c.items.reduce(
                 (x, i) => x + i.payments.reduce((p, q) => p + (q.amount || 0), 0), 0), 0);
@@ -883,7 +426,6 @@
         pendingOf(trip) { return Math.max(this.plannedOf(trip) - this.paidOf(trip), 0); }
         dailyBudgetedOf(trip) { return trip.days.reduce((s, d) => s + d.items.reduce((x, i) => x + (i.budgeted || 0), 0), 0); }
         dailyRealOf(trip) { return trip.days.reduce((s, d) => s + d.items.reduce((x, i) => x + (i.real || 0), 0), 0); }
-        /** Gastado/Planificado = grandes pagos planificados + presupuesto diario ajustable. */
         spentPlannedOf(trip) { return this.plannedOf(trip) + this.dailyBudgetedOf(trip); }
 
         categoryTotals(trip) {
@@ -893,11 +435,15 @@
             })).filter(c => c.value > 0);
         }
 
+        /** FASE 4 · Delegado al puente */
         savedTotal() {
-            return this.data.savings.contributions.reduce((s, c) => s + c.amount, 0);
+            if (window.App && typeof App.getTripSavings === 'function') {
+                const ts = App.getTripSavings();
+                return Number(ts.saved) || 0;
+            }
+            return 0;
         }
 
-        /** Pagos pendientes próximos (para alertas y vencimientos). */
         upcomingPayments(trip = null) {
             const list = [];
             const trips = trip ? [trip] : this.trips;
@@ -917,9 +463,11 @@
         /* --------------------- Ciclo de vida --------------------- */
         mountApp() {
             if (this.mounted) return this;
-            // Se usa window.App explícito: dentro de este IIFE 'App' no está definido
-            // y lanzaba ReferenceError → el módulo nunca se montaba (pantalla en blanco).
-            const shell = window.App || App;
+            const shell = window.App;
+            if (!shell) {
+                console.error('[TripManager] window.App no está disponible');
+                return this;
+            }
             shell.injectStylesheet(CSS_ID, moduleCSS());
             this.mount.classList.add('tm-root');
             this.mount.innerHTML = `
@@ -941,7 +489,6 @@
                     <div class="tm-modal" role="dialog" aria-modal="true"><div id="tm-modal-inner"></div></div>
                 </div>`;
 
-            // Delegación de eventos única (sustituye a los bindings por render)
             this.mount.addEventListener('click', (e) => this._onClick(e));
             this.mount.addEventListener('input', (e) => this._onInput(e));
             this.mount.addEventListener('change', (e) => this._onChange(e));
@@ -952,13 +499,59 @@
 
             this.mounted = true;
             this.render();
+
+            // FASE 4 · Sync inicial al puente
+            this.trips.forEach(t => this._syncTripToBridge(t));
+
             return this;
         }
 
         destroy() {
             document.removeEventListener('keydown', this._onKeydown);
+            if (this._onModuleChange) {
+                document.removeEventListener('app:module-changed', this._onModuleChange);
+                this._onModuleChange = null;
+            }
             if (this.mount) this.mount.innerHTML = '';
             this.mounted = false;
+        }
+
+        /* =========================================================
+           FASE 4 · Sincronización con el puente
+           ========================================================= */
+        _syncTripToBridge(trip) {
+            if (!window.App) return;
+            // 1 · Goal del viaje
+            if (typeof App.syncTripGoal === 'function') {
+                try {
+                    App.syncTripGoal({
+                        tripId: trip.id,
+                        name: `Viaje: ${trip.name}`,
+                        target: trip.budgetLimit,
+                        spent: this.plannedOf(trip),
+                        paid: this.paidOf(trip)
+                    });
+                } catch (err) { /* noop */ }
+            }
+            // 2 · Compromisos pendientes con fecha
+            if (typeof App.syncTripCommitments === 'function') {
+                const pendings = [];
+                trip.categories.forEach(cat => cat.items.forEach(item => {
+                    const paid = item.payments.reduce((s, p) => s + p.amount, 0);
+                    const remaining = (item.total || 0) - paid;
+                    if (remaining > 0.005 && item.dueDate) {
+                        pendings.push({
+                            id: `trip-${trip.id}-${item.id}`,
+                            name: `${item.subcategory} · ${trip.name}`,
+                            amount: remaining,
+                            dueDate: item.dueDate,
+                            tripId: trip.id,
+                            itemId: item.id
+                        });
+                    }
+                }));
+                try { App.syncTripCommitments(trip.id, pendings); } catch (err) { /* noop */ }
+            }
         }
 
         /* --------------------- Navegación interna --------------------- */
@@ -976,8 +569,8 @@
             if (!this.mounted) return;
             this._renderHeader();
             this._renderTabs();
-            // La pantalla de configuración del viaje sustituye a las pestañas
             this['_render_' + this.state.activeTab]();
+            this._schedulePersist();
         }
 
         _renderHeader() {
@@ -990,7 +583,6 @@
 
         _renderTabs() {
             const global = this.state.activeTab !== 'detail';
-            this.mount.querySelectorAll('.tm-tabs, .tm-header').forEach(el => { /* header siempre visible (botón volver) */ });
             this.mount.querySelector('.tm-tabs').style.display = global ? '' : 'none';
             this.mount.querySelectorAll('.tm-tab').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.tab === this.state.activeTab);
@@ -1001,7 +593,7 @@
         }
 
         /* =========================================================
-           TAB 1 · RESUMEN GENERAL (vista global: filtros + tarjetas)
+           TAB 1 · RESUMEN
            ========================================================= */
         _filtersBarHTML() {
             const msel = new Intl.DateTimeFormat('es-ES', { month: 'long' });
@@ -1018,38 +610,54 @@
                     <button type="button" class="tm-seg-btn ${this.state.statusFilter === 'finalizados' ? 'active' : ''}" data-action="status-filter" data-val="finalizados">✅ Finalizados</button>
                 </div>
                 <select class="tm-select tm-select-sm" data-action="month-filter" aria-label="Filtrar por mes y año">${opts.join('')}</select>
+                <button type="button" class="tm-btn tm-btn-primary tm-btn-sm" data-action="new-trip" style="margin-left:auto">
+                    <i class="fas fa-plus"></i> Nuevo viaje
+                </button>
             </div>`;
         }
 
         _render_resumen() {
-            const view = this.mount.querySelector('#tm-view-resumen');
-            const trips = this.filteredTrips();
-            const cards = trips.map(t => this._tripCardHTML(t)).join('');
-            const pieTrip = trips.slice().sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+    const view = this.mount.querySelector('#tm-view-resumen');
+    const trips = this.filteredTrips();
+    const cards = trips.map(t => this._tripCardHTML(t)).join('');
+    const pieTrip = trips.slice().sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
 
-            view.innerHTML = `
-                ${this._filtersBarHTML()}
-                <div class="tm-trips-grid">${cards || '<div class="tm-empty">No hay viajes con los filtros seleccionados.</div>'}</div>
-                ${pieTrip ? `
-                <div class="tm-dash-row">
-                    <div class="tm-panel">
-                        <h3>🥧 Distribución del gasto por categoría</h3>
-                        <div class="tm-chart-wrap">
-                            <canvas id="tm-pie-canvas" width="220" height="220" aria-label="Gráfica de rosco por categoría"></canvas>
-                            <div class="tm-chart-legend" id="tm-pie-legend"></div>
-                        </div>
-                        <p style="font-size:12px;color:var(--tm-text-muted);margin:12px 0 0;">
-                            Datos del viaje: <strong>${TripManager.esc(pieTrip.name)}</strong>
-                        </p>
-                    </div>
-                    <div class="tm-panel">
-                        <h3>🔔 Alertas inteligentes</h3>
-                        <div class="tm-alerts" style="margin-top:0;">${this._alertsHTML()}</div>
-                    </div>
-                </div>` : ''}`;
+    view.innerHTML = `
+        ${this._filtersBarHTML()}
+        <div class="tm-trips-grid">${cards || this._emptyTripsState()}</div>
+        ${pieTrip ? `
+        <div class="tm-dash-row">
+            <div class="tm-panel">
+                <h3>🥧 Distribución del gasto por categoría</h3>
+                <div class="tm-chart-wrap">
+                    <canvas id="tm-pie-canvas" width="220" height="220" aria-label="Gráfica de rosco por categoría"></canvas>
+                    <div class="tm-chart-legend" id="tm-pie-legend"></div>
+                </div>
+                <p style="font-size:12px;color:var(--tm-text-muted);margin:12px 0 0;">
+                    Datos del viaje: <strong>${TripManager.esc(pieTrip.name)}</strong>
+                </p>
+            </div>
+            <div class="tm-panel">
+                <h3>🔔 Alertas inteligentes</h3>
+                <div class="tm-alerts" style="margin-top:0;">${this._alertsHTML()}</div>
+            </div>
+        </div>` : ''}`;
 
-            if (pieTrip) this._drawPie(pieTrip);
-        }
+    if (pieTrip) this._drawPie(pieTrip);
+}
+
+/* FASE NUEVA · Empty state enriquecido */
+_emptyTripsState() {
+    return `
+    <div class="tm-empty" style="padding:48px 24px;text-align:center;grid-column:1/-1">
+        <div style="font-size:56px;margin-bottom:16px;line-height:1">✈️</div>
+        <div style="font-size:17px;font-weight:700;margin-bottom:8px;color:var(--tm-text)">No hay viajes todavía</div>
+        <div style="margin-bottom:20px;color:var(--tm-text-muted);max-width:360px;margin-left:auto;margin-right:auto">
+            Crea tu primer viaje para empezar a planificar: presupuesto, pagos parciales, actividades y ahorro compartido.
+        </div>
+        <button type="button" class="tm-btn tm-btn-primary" data-action="new-trip">✈️ Crear mi primer viaje</button>
+    </div>`;
+}
 
         _tripCardHTML(trip) {
             const st = this.statusOf(trip);
@@ -1100,45 +708,19 @@
                 const pendings = this.upcomingPayments(t);
                 const pendingSum = pendings.reduce((s, p) => s + p.pending, 0);
                 if (days < 45 && pendingSum > 0) {
-                    alerts.push(`
-                        <div class="tm-alert tm-alert-danger">
-                            <span class="tm-alert-icon">🚨</span>
-                            <div>
-                                <strong>«${TripManager.esc(t.name)}»: quedan ${days} días y hay ${TripManager.fmt(pendingSum)} pendientes de abonar</strong>
-                                <span>${pendings.length} reserva(s) con pagos pendientes. Próximo vencimiento: ${TripManager.esc(pendings[0].item.subcategory)} — ${TripManager.shortDate(pendings[0].dueDate)}.</span>
-                            </div>
-                        </div>`);
+                    alerts.push(`<div class="tm-alert tm-alert-danger"><span class="tm-alert-icon">🚨</span><div><strong>«${TripManager.esc(t.name)}»: quedan ${days} días y hay ${TripManager.fmt(pendingSum)} pendientes de abonar</strong><span>${pendings.length} reserva(s) con pagos pendientes.</span></div></div>`);
                 } else if (days < 45) {
-                    alerts.push(`
-                        <div class="tm-alert tm-alert-warning">
-                            <span class="tm-alert-icon">⏰</span>
-                            <div>
-                                <strong>«${TripManager.esc(t.name)}» empieza en ${days} días</strong>
-                                <span>Todos los pagos registrados están al corriente. ¡A preparar la maleta!</span>
-                            </div>
-                        </div>`);
+                    alerts.push(`<div class="tm-alert tm-alert-warning"><span class="tm-alert-icon">⏰</span><div><strong>«${TripManager.esc(t.name)}» empieza en ${days} días</strong><span>Todos los pagos registrados están al corriente.</span></div></div>`);
                 } else if (pendingSum > 0) {
-                    alerts.push(`
-                        <div class="tm-alert tm-alert-warning">
-                            <span class="tm-alert-icon">📌</span>
-                            <div>
-                                <strong>«${TripManager.esc(t.name)}»: ${TripManager.fmt(pendingSum)} pendientes</strong>
-                                <span>Faltan ${days} días para la salida. Planifica los pagos parciales restantes.</span>
-                            </div>
-                        </div>`);
+                    alerts.push(`<div class="tm-alert tm-alert-warning"><span class="tm-alert-icon">📌</span><div><strong>«${TripManager.esc(t.name)}»: ${TripManager.fmt(pendingSum)} pendientes</strong><span>Faltan ${days} días para la salida.</span></div></div>`);
                 }
             });
             if (!alerts.length) {
-                alerts.push(`
-                    <div class="tm-alert tm-alert-ok">
-                        <span class="tm-alert-icon">✅</span>
-                        <div><strong>Sin alertas activas</strong><span>Ningún viaje próximo con urgencia de pagos.</span></div>
-                    </div>`);
+                alerts.push(`<div class="tm-alert tm-alert-ok"><span class="tm-alert-icon">✅</span><div><strong>Sin alertas activas</strong><span>Ningún viaje próximo con urgencia de pagos.</span></div></div>`);
             }
             return alerts.join('');
         }
 
-        /** Gráfica de rosco nativa en Canvas HTML5. */
         _drawPie(trip) {
             const canvas = this.mount.querySelector('#tm-pie-canvas');
             if (!canvas || typeof canvas.getContext !== 'function') return;
@@ -1149,35 +731,29 @@
             canvas.width = size * dpr; canvas.height = size * dpr;
             canvas.style.width = size + 'px'; canvas.style.height = size + 'px';
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
             const palette = ['#2563eb', '#7c3aed', '#06b6d4', '#f59e0b', '#10b981', '#ef4444'];
             const slices = this.categoryTotals(trip);
             const total = slices.reduce((s, x) => s + x.value, 0);
-
             ctx.clearRect(0, 0, size, size);
             const cx = size / 2, cy = size / 2, r = size / 2 - 8, inner = r * 0.58;
             let angle = -Math.PI / 2;
             slices.forEach((sl, idx) => {
                 const sliceAngle = total > 0 ? (sl.value / total) * Math.PI * 2 : 0;
-                ctx.beginPath();
-                ctx.moveTo(cx, cy);
+                ctx.beginPath(); ctx.moveTo(cx, cy);
                 ctx.arc(cx, cy, r, angle, angle + sliceAngle);
                 ctx.closePath();
                 ctx.fillStyle = palette[idx % palette.length];
                 ctx.fill();
                 angle += sliceAngle;
             });
-            // Agujero central (efecto donut)
             ctx.globalCompositeOperation = 'destination-out';
             ctx.beginPath(); ctx.arc(cx, cy, inner, 0, Math.PI * 2); ctx.fill();
             ctx.globalCompositeOperation = 'source-over';
-            // Texto central
             ctx.fillStyle = getComputedStyle(document.body).getPropertyValue('--text') || '#0f172a';
             ctx.font = '700 15px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText(TripManager.fmt(total), cx, cy - 8);
             ctx.font = '500 10px sans-serif'; ctx.fillStyle = '#94a3b8';
             ctx.fillText('TOTAL PLANIFICADO', cx, cy + 10);
-
             const legend = this.mount.querySelector('#tm-pie-legend');
             legend.innerHTML = slices.map((sl, idx) => `
                 <div class="tm-legend-item">
@@ -1188,24 +764,29 @@
         }
 
         /* =========================================================
-           TAB 2 · CATEGORÍAS (vista global: tabla categorías × viajes)
+           TAB 2 · CATEGORÍAS
            ========================================================= */
         _render_categorias() {
             const view = this.mount.querySelector('#tm-view-categorias');
             const trips = this.filteredTrips();
-            if (!trips.length) { view.innerHTML = '<div class="tm-empty">No hay viajes con los filtros seleccionados.</div>'; return; }
+            if (!trips.length) {
+                view.innerHTML = `
+                <div class="tm-empty" style="padding:48px 24px;text-align:center">
+                    <div style="font-size:48px;margin-bottom:12px;line-height:1">🗂️</div>
+                    <div style="font-size:16px;font-weight:700;margin-bottom:8px;color:var(--tm-text)">No hay viajes</div>
+                    <div style="margin-bottom:20px;color:var(--tm-text-muted)">Crea un viaje para ver el desglose de categorías</div>
+                    <button type="button" class="tm-btn tm-btn-primary" data-action="new-trip">＋ Nuevo viaje</button>
+                </div>`;
+                return;
+            }
 
-            // Columnas = todas las categorías presentes (Avión separado de Transporte)
             const colMap = new Map();
             trips.forEach(t => t.categories.forEach(c => {
                 if (!colMap.has(c.name)) colMap.set(c.name, { name: c.name, icon: c.icon });
             }));
             const cols = [...colMap.values()];
-
-            const cellValue = (trip, catName) => trip.categories
-                .filter(c => c.name === catName)
+            const cellValue = (trip, catName) => trip.categories.filter(c => c.name === catName)
                 .reduce((s, c) => s + c.items.reduce((x, i) => x + (i.total || 0), 0), 0);
-
             const head = `<tr><th>VIAJE</th>${cols.map(c => `<th class="tm-th-num">${c.icon} ${TripManager.esc(c.name)}</th>`).join('')}<th class="tm-th-num">TOTAL</th></tr>`;
             const rows = trips.map(t => {
                 const total = this.plannedOf(t);
@@ -1225,13 +806,11 @@
                 <p class="tm-hint">💡 Pincha en un viaje para abrir su configuración y el desglose de pagos parciales por categoría.</p>`;
         }
 
-        /* helpers de detalle ------------------------------------------------- */
         _catColor(name) {
             const palette = ['#2563eb', '#7c3aed', '#06b6d4', '#f59e0b', '#10b981', '#ef4444', '#0ea5e9', '#a855f7'];
             let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
             return palette[h % palette.length];
         }
-        /** Categorías del viaje con "Vuelos/Avión" separada de "Transporte". */
         _splitCategories(trip) {
             const FL = /vuel|flight|av[ió]n|iberia|ryanair|vueling/i;
             const out = [];
@@ -1253,7 +832,7 @@
             const [y, m] = monthIso.split('-').map(Number);
             const first = new Date(y, m - 1, 1);
             const dim = new Date(y, m, 0).getDate();
-            const startW = (first.getDay() + 6) % 7; // lunes = 0
+            const startW = (first.getDay() + 6) % 7;
             const inRange = d => { const iso = TripManager.iso(d); return iso >= cal.start && iso <= cal.end; };
             let cells = ['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(w => `<span class="tm-cal-dow">${w}</span>`).join('');
             for (let i = 0; i < startW; i++) cells += '<span></span>';
@@ -1271,12 +850,12 @@
         }
 
         /* =========================================================
-           PANTALLA DE CONFIGURACIÓN DEL VIAJE (no modal, con volver)
+           CONFIGURACIÓN DEL VIAJE
            ========================================================= */
         openTripDetail(id) {
             this.state.selectedTripId = id;
             this.state.activeTab = 'detail';
-            this.state.detailTab = 'config';   // siempre arranca en la 1ª pestaña
+            this.state.detailTab = 'config';
             this.state.dayScroll = 0;
             this.state.actScroll = 0;
             this.render();
@@ -1363,8 +942,8 @@
 
                 ${sectionHTML}`;
 
-            // restaurar desplazamientos de los carruseles
             this._applyScroll('day'); this._applyScroll('act');
+            this._schedulePersist();
         }
 
         _catAccordionHTML(trip) {
@@ -1403,7 +982,6 @@
             }).join('');
         }
 
-        /* Carrusel horizontal genérico (flechas ‹ ›) */
         _carouselHTML(kind, inner, hint) {
             return `
             <div class="tm-carousel" data-carousel="${kind}">
@@ -1475,16 +1053,20 @@
             track.scrollTo({ left: this.state[kind + 'Scroll'], behavior: 'smooth' });
         }
 
-        /* Ahorro y financiación PRIVATIZADA al viaje (rediseño) */
+        /* FASE 4 · Financiación privada del viaje (lee del bridge) */
         _privateFundHTML(trip) {
+            const ts = (window.App && typeof App.getTripSavings === 'function')
+                ? App.getTripSavings()
+                : { goalTotal: 0, saved: 0, contributions: [] };
+            const saved = Number(ts.saved) || 0;
             const planned = this.plannedOf(trip);
             const paid = this.paidOf(trip);
             const remaining = Math.max(planned - paid, 0);
-            const saved = this.savedTotal();
             const coverage = remaining > 0 ? Math.min(Math.round(saved / remaining * 100), 999) : 100;
             const fundPct = remaining > 0 ? Math.min(Math.round(Math.min(saved, remaining) / remaining * 100), 100) : 100;
-            const contribs = this.data.savings.contributions.slice().reverse().slice(0, 6).map(c => `
-                <li><span>${TripManager.shortDate(c.date)} · ${TripManager.esc(c.note)} <span class="muted">(${TripManager.esc(c.payer)})</span></span>
+            const contribs = [...(ts.contributions || [])].slice(-6).reverse().map(c => `
+                <li><span>${TripManager.shortDate(c.date)} · ${TripManager.esc(c.note || 'Aportación')}
+                    ${c.payer ? `<span class="muted">(${TripManager.esc(c.payer)})</span>` : ''}</span>
                     <strong style="color:var(--tm-success)">+${TripManager.fmt(c.amount)}</strong></li>`).join('');
             return `
                 <div class="tm-fund-grid">
@@ -1493,7 +1075,6 @@
                     <div class="tm-fund-card"><small>Restante por financiar</small><strong style="color:var(--tm-danger)">${TripManager.fmt(remaining)}</strong></div>
                     <div class="tm-fund-card"><small>Fondo de ahorro disponible</small><strong>${TripManager.fmt(saved)}</strong></div>
                 </div>
-
                 <div class="tm-panel" style="padding:16px 18px;">
                     <h3 style="font-size:13.5px;margin:0 0 4px;">Cobertura del fondo sobre «${TripManager.esc(trip.name)}»</h3>
                     <div class="tm-fund-bar"><div class="tm-fund-bar-fill" style="width:${fundPct}%"></div></div>
@@ -1505,7 +1086,6 @@
                         <button type="button" class="tm-btn tm-btn-primary tm-btn-sm" data-action="contribution-modal">＋ Registrar aportación al fondo</button>
                     </div>
                 </div>
-
                 <div class="tm-panel" style="padding:16px 18px;margin-top:14px;">
                     <h3 style="font-size:13.5px;margin:0 0 8px;">Últimas aportaciones</h3>
                     <ul class="tm-list">${contribs || '<li><span class="muted">Sin aportaciones todavía.</span></li>'}</ul>
@@ -1531,10 +1111,8 @@
                     this.data.rules.push({ id: def.id, enabled: true, days: 60 });
                 }
             });
-            // limpiar reglas fuera del catálogo
             this.data.rules = this.data.rules.filter(r => catalog.some(d => d.id === r.id));
         }
-        /** Devuelve {def, rule, pending, dueDate|null} por regla aplicable a un viaje. */
         _ruleStatusForTrip(trip) {
             this._ensureRules();
             return this.RULE_CATALOG().map(def => {
@@ -1574,7 +1152,6 @@
                 </div>`;
             }).join('');
 
-            // Avisos activos para este viaje
             let alerts = '';
             if (st !== 'realizado') {
                 const items = statuses.map(({ def, rule, pending, dueDate }) => {
@@ -1600,19 +1177,23 @@
         }
 
         /* =========================================================
-           TAB 3 · AHORRO Y FINANCIACIÓN (global)
+           TAB 3 · AHORRO Y FINANCIACIÓN (global · lee del bridge)
            ========================================================= */
         _render_ahorro() {
             const view = this.mount.querySelector('#tm-view-ahorro');
-            const saved = this.savedTotal();
-            const goal = this.data.savings.goalTotal;
+            const ts = (window.App && typeof App.getTripSavings === 'function')
+                ? App.getTripSavings()
+                : { goalTotal: 0, saved: 0, contributions: [] };
+            const saved = Number(ts.saved) || 0;
+            const goal = Number(ts.goalTotal) || 0;
             const pct = goal ? Math.min(Math.round(saved / goal * 100), 100) : 0;
             const totalPlanned = this.trips.reduce((s, t) => s + this.spentPlannedOf(t), 0);
             const totalPaid = this.trips.reduce((s, t) => s + this.paidOf(t), 0);
             const dues = this.upcomingPayments();
 
-            const contribs = [...this.data.savings.contributions].reverse().map(c => `
-                <li><span>${TripManager.shortDate(c.date)} · ${TripManager.esc(c.note)} <span class="muted">(${TripManager.esc(c.payer)})</span></span>
+            const contribs = [...(ts.contributions || [])].reverse().map(c => `
+                <li><span>${TripManager.shortDate(c.date)} · ${TripManager.esc(c.note || 'Aportación')}
+                    ${c.payer ? `<span class="muted">(${TripManager.esc(c.payer)})</span>` : ''}</span>
                     <strong style="color:var(--tm-success)">+${TripManager.fmt(c.amount)}</strong></li>`).join('');
 
             const dueRows = dues.map(d => `
@@ -1648,12 +1229,12 @@
                 </div>
                 <div class="tm-panel" style="margin-top:18px;">
                     <h3>💰 Historial de aportaciones</h3>
-                    <ul class="tm-list">${contribs}</ul>
+                    <ul class="tm-list">${contribs || '<li><span class="muted">Sin aportaciones todavía.</span></li>'}</ul>
                 </div>`;
         }
 
         /* =========================================================================
-           4. MODALES EMERGENTES
+           MODALES
            ========================================================================= */
         openModal(title, subtitle, bodyHTML) {
             const overlay = this.mount.querySelector('#tm-modal-overlay');
@@ -1681,7 +1262,6 @@
             return null;
         }
 
-        /** Modal de pagos parciales de una subcategoría. */
         openPaymentsModal(tripId, itemId) {
             const found = this.findItem(tripId, itemId);
             if (!found) return;
@@ -1691,10 +1271,8 @@
 
             const history = item.payments.length
                 ? item.payments.map(p => `
-                    <li>
-                        <span>${TripManager.shortDate(p.date)} · ${TripManager.esc(p.payer)} <span class="muted">(${TripManager.esc(p.method)})</span></span>
-                        <strong style="color:var(--tm-success)">${TripManager.fmt(p.amount)}</strong>
-                    </li>`).join('')
+                    <li><span>${TripManager.shortDate(p.date)} · ${TripManager.esc(p.payer)} <span class="muted">(${TripManager.esc(p.method)})</span></span>
+                        <strong style="color:var(--tm-success)">${TripManager.fmt(p.amount)}</strong></li>`).join('')
                 : '<li><span class="muted">Aún no hay pagos registrados para este concepto.</span></li>';
 
             const methods = ['Tarjeta de crédito', 'Tarjeta de débito', 'Bizum', 'Transferencia', 'Efectivo', 'PayPal'];
@@ -1749,14 +1327,35 @@
 
             const found = this.findItem(tripId, itemId);
             if (!found) return;
-            found.item.payments.push({ id: TripManager.uid('pay'), amount, date, payer, method });
+
+            // Registrar en el modelo local
+            const paymentId = TripManager.uid('pay');
+            found.item.payments.push({ id: paymentId, amount, date, payer, method });
+
+            // FASE 4 · Registrar movimiento en dinero + gasto en pc-trips
+            if (window.App && typeof App.registerTripPayment === 'function') {
+                try {
+                    App.registerTripPayment({
+                        tripId,
+                        itemId,
+                        paymentId,
+                        concept: `${found.item.subcategory} · ${found.trip.name}`,
+                        amount,
+                        date,
+                        account: 'Trade Republic'
+                    });
+                } catch (err) { /* noop */ }
+            }
+
+            // FASE 4 · Re-sincronizar compromisos pendientes del viaje
+            this._syncTripToBridge(found.trip);
+
             this.closeModal();
-            this.render();                       // totales acumulados y Dashboard al instante
+            this.render();
             this._toast(`Pago de ${TripManager.fmt(amount)} registrado en «${found.item.subcategory}»`);
             if (this.onChange) this.onChange(found.trip);
         }
 
-        /** Modal de detalle de actividad. */
         openActivityModal(tripId, actId) {
             const trip = this.trips.find(t => t.id === tripId);
             const act = trip && trip.activities.find(a => a.id === actId);
@@ -1784,7 +1383,6 @@
                 </div>`);
         }
 
-        /** Modal de edición de datos generales del viaje activo. */
         openEditTripModal() {
             const trip = this.selectedTrip;
             if (!trip) return;
@@ -1831,13 +1429,94 @@
             trip.budgetLimit = Math.max(parseFloat(form.elements['et-budget'].value) || 0, 0);
             trip.image = form.elements['et-img'].value.trim() || trip.image;
             trip.notes = form.elements['et-notes'].value;
+
+            // FASE 4 · Sincronizar con el puente
+            this._syncTripToBridge(trip);
+
             this.closeModal();
             this.render();
             this._toast('Viaje actualizado correctamente');
             if (this.onChange) this.onChange(trip);
         }
 
-        /** Modal para registrar una aportación al fondo de ahorro. */
+        /* ============================================================
+        NUEVO · Crear viaje desde cero
+        ============================================================ */
+        openNewTripModal() {
+            this.openModal(
+                '✈️ Nuevo viaje',
+                'Podrás añadir categorías, pagos y actividades desde su configuración',
+                `
+                <form id="tm-new-trip-form" autocomplete="off">
+                    <div class="tm-form-grid">
+                        <div class="tm-field full"><label for="nt-name">Nombre del viaje *</label>
+                            <input class="tm-input" id="nt-name" required placeholder="Ej. Japón Inolvidable"></div>
+                        <div class="tm-field full"><label for="nt-dest">Destino *</label>
+                            <input class="tm-input" id="nt-dest" required placeholder="Ej. Tokio · Kioto · Osaka"></div>
+                        <div class="tm-field"><label for="nt-start">Fecha de salida *</label>
+                            <input class="tm-input" id="nt-start" type="date" required></div>
+                        <div class="tm-field"><label for="nt-end">Fecha de regreso *</label>
+                            <input class="tm-input" id="nt-end" type="date" required></div>
+                        <div class="tm-field"><label for="nt-budget">Presupuesto límite (€)</label>
+                            <input class="tm-input" id="nt-budget" type="number" min="0" step="10" placeholder="0"></div>
+                        <div class="tm-field"><label for="nt-travelers">Viajeros (separados por coma)</label>
+                            <input class="tm-input" id="nt-travelers" placeholder="Ej. Ana, Luis"></div>
+                        <div class="tm-field full"><label for="nt-img">URL imagen (opcional)</label>
+                            <input class="tm-input" id="nt-img" type="url" placeholder="https://images.unsplash.com/..."></div>
+                        <div class="tm-field full"><label for="nt-notes">Notas</label>
+                            <textarea class="tm-input" id="nt-notes" rows="3" placeholder="Notas opcionales…"></textarea></div>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;">
+                        <button type="button" class="tm-btn tm-btn-ghost" data-action="close-modal">Cancelar</button>
+                        <button type="submit" class="tm-btn tm-btn-primary">💾 Crear viaje</button>
+                    </div>
+                </form>`);
+            this.mount.querySelector('#tm-new-trip-form')
+                .addEventListener('submit', (e) => { e.preventDefault(); this._submitNewTrip(e.target); });
+        }
+
+        _submitNewTrip(form) {
+            const name = form.elements['nt-name'].value.trim();
+            const destination = form.elements['nt-dest'].value.trim();
+            const startDate = form.elements['nt-start'].value;
+            const endDate = form.elements['nt-end'].value;
+            const budgetLimit = Math.max(parseFloat(form.elements['nt-budget'].value) || 0, 0);
+            const travelers = form.elements['nt-travelers'].value.split(',').map(s => s.trim()).filter(Boolean);
+            const image = form.elements['nt-img'].value.trim()
+                || 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=1200&q=80';
+            const notes = form.elements['nt-notes'].value.trim();
+
+            if (!name || !destination || !startDate || !endDate) {
+                this._toast('Nombre, destino y fechas son obligatorios', 'error');
+                return;
+            }
+            if (endDate < startDate) {
+                this._toast('El regreso no puede ser anterior a la salida', 'error');
+                return;
+            }
+
+            const newTrip = {
+                id: TripManager.uid('trip'),
+                name, destination, image, startDate, endDate,
+                travelers,
+                budgetLimit,
+                notes,
+                categories: [],
+                days: [],
+                activities: []
+            };
+
+            this.data.trips.push(newTrip);
+
+            // Sincronizar con el puente App (crea el goal + compromisos vacíos)
+            this._syncTripToBridge(newTrip);
+
+            this.closeModal();
+            this.render();
+            this._toast(`Viaje «${name}» creado correctamente`);
+            if (this.onChange) this.onChange(newTrip);
+        }
+
         openContributionModal() {
             const payers = ['Ana', 'Luis', 'Ambos'];
             this.openModal('💶 Nueva aportación al fondo', 'Fondo de ahorro conjunto de viajes', `
@@ -1863,13 +1542,17 @@
                     const f = e.target;
                     const amount = parseFloat(f.elements['nc-amount'].value);
                     if (!(amount > 0)) return;
-                    this.data.savings.contributions.push({
-                        id: TripManager.uid('sc'),
-                        amount,
-                        date: f.elements['nc-date'].value,
-                        payer: f.elements['nc-payer'].value,
-                        note: f.elements['nc-note'].value.trim() || 'Aportación'
-                    });
+
+                    // FASE 4 · Delegar al puente
+                    if (window.App && typeof App.addTripSavingsContribution === 'function') {
+                        App.addTripSavingsContribution({
+                            amount,
+                            date: f.elements['nc-date'].value,
+                            payer: f.elements['nc-payer'].value,
+                            note: f.elements['nc-note'].value.trim() || 'Aportación'
+                        });
+                    }
+
                     this.closeModal();
                     this.render();
                     this._toast(`Aportación de ${TripManager.fmt(amount)} sumada al fondo`);
@@ -1877,7 +1560,7 @@
         }
 
         /* =========================================================================
-           5. MANEJO DE EVENTOS (delegación)
+           MANEJO DE EVENTOS
            ========================================================================= */
         _onClick(e) {
             const tabBtn = e.target.closest('.tm-tab');
@@ -1900,7 +1583,7 @@
                     this.render();
                     break;
                 case 'month-filter':
-                    break; // se gestiona en _onChange (evento change)
+                    break;
                 case 'car-prev':
                     this._carMove(el.dataset.kind, -1);
                     break;
@@ -1913,13 +1596,10 @@
                 case 'toggle-acc': {
                     const key = el.dataset.key;
                     this.state.openCategories[key] = !this.state.openCategories[key];
-                    // Alternar la clase sobre el DOM existente: mantiene vivo el
-                    // botón pulsado y no rompe la delegación de eventos.
                     el.closest('.tm-acc-item').classList.toggle('open', this.state.openCategories[key]);
                     break;
                 }
                 case 'detail-tab': {
-                    // Pestañas internas del detalle: config | diario | actividades | ahorro
                     const tab = el.dataset.tab || 'config';
                     if (['config', 'diario', 'actividades', 'ahorro'].includes(tab)) {
                         this.state.detailTab = tab;
@@ -1968,30 +1648,27 @@
                     }
                     break;
                 }
+                case 'new-trip':
+                    this.openNewTripModal();
+                    break;
                 case 'close-modal':
                     this.closeModal();
                     break;
             }
         }
 
-        /** Edición en tiempo real de los inputs de la planificación diaria. */
         _onInput(e) {
             const el = e.target;
             if (!el.dataset || !el.dataset.action) return;
             if (el.dataset.action !== 'day-budgeted' && el.dataset.action !== 'day-real') return;
-
             const trip = this.selectedTrip;
             if (!trip) return;
             const day = trip.days[+el.dataset.day];
             const item = day && day.items[+el.dataset.item];
             if (!item) return;
-
             const val = Math.max(parseFloat(el.value) || 0, 0);
             if (el.dataset.action === 'day-budgeted') item.budgeted = val;
             else item.real = val;
-
-            // Recalculo instantáneo del remanente del día y del saldo global,
-            // sin re-render completo (se preserva el foco del input).
             const card = el.closest('.tm-day-card');
             if (card) {
                 const b = day.items.reduce((s, i) => s + (i.budgeted || 0), 0);
@@ -2001,20 +1678,11 @@
                     remainEl.textContent = TripManager.fmt(b - r);
                     remainEl.className = 'tm-day-remain ' + (b - r >= 0 ? 'pos' : 'neg');
                 }
-                // Marca la línea en rojo si el real supera al presupuesto
                 const line = el.closest('.tm-dline');
                 if (line && el.dataset.action === 'day-real') {
                     line.classList.toggle('over', r > 0 && (item.real || 0) > (item.budgeted || 0));
                     el.classList.toggle('neg', (item.real || 0) > (item.budgeted || 0));
                 }
-            }
-            // Métricas superiores del detalle (Gastado/Planif. y Pendiente)
-            const plannedEl = this.mount.querySelector('#tm-detail-planned');
-            const pendingEl = this.mount.querySelector('#tm-detail-pending');
-            if (plannedEl) plannedEl.textContent = TripManager.fmt(this.spentPlannedOf(trip));
-            if (pendingEl) {
-                const pend = Math.max(this.spentPlannedOf(trip) - this.paidOf(trip), 0);
-                pendingEl.textContent = TripManager.fmt(pend);
             }
         }
 
@@ -2037,7 +1705,6 @@
                 if (r) {
                     r.enabled = !!el.checked;
                     this._notifyChange();
-                    // Refresca los avisos sin re-render completo
                     if (this.state.activeTab === 'detail' && this.state.detailTab === 'config') this._render_detail();
                 }
                 return;
@@ -2061,9 +1728,13 @@
             }
         }
 
-        /* --------------------- Toast ligero --------------------- */
+        _notifyChange() {
+            if (window.App && typeof App.notifyModuleChange === 'function') {
+                App.notifyModuleChange('viajes', { reason: 'trip-updated' });
+            }
+        }
+
         _toast(msg, type = 'success') {
-            // Reutiliza el toast global de App si existe; si no, uno propio.
             if (window.App && typeof window.App.showToast === 'function') {
                 window.App.showToast(msg, type === 'error' ? 'warning' : 'success');
                 return;
@@ -2085,9 +1756,6 @@
         }
     }
 
-    /* =========================================================================
-       6. EXPORTACIÓN GLOBAL
-       ========================================================================= */
     window.TripManager = TripManager;
     window.TripManagerMockData = mockData;
 })();

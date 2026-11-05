@@ -1,112 +1,42 @@
-const App = (function() {
+/* =============================================================================
+   APP.JS · v2 — Shell + puente completo entre módulos
+   -----------------------------------------------------------------------------
+   Contiene:
+     · DEFAULT_DATA sin duplicidades (Fase 1)
+     · Migración automática e idempotente de datos antiguos (Fase 1)
+     · Puente completo App (lectura + escritura cruzada) (Fase 2)
+     · Notificación con dedup + guarda anti-bucle (Fase 2)
+     · Utilidades compartidas (formato, storage, estilos, toast, confirm)
+     · Navegación entre secciones con contenedor por sección
+     · Tema, menú móvil, perfil
+     · Arranque + montaje de TripManager
+   ============================================================================= */
+const App = (function () {
     'use strict';
 
-    // =========================================================
-    // DATOS POR DEFECTO
-    // =========================================================
+    /* =========================================================
+       DATOS POR DEFECTO (sin duplicidades)
+       ========================================================= */
     const DEFAULT_DATA = {
+        /* ---------- Usuarios (no es demo · son los perfiles de la app) ---------- */
         profiles: [
             { id: 'ana', name: 'Ana', initial: 'A', color: '#ec4899' },
             { id: 'carlos', name: 'Carlos', initial: 'C', color: '#2563eb' }
         ],
         activeProfile: 'ana',
-        accounts: [
-            { id: 'acc-1', name: 'Cuenta conjunta', type: 'conjunta', balance: 3450.80, owners: ['ana', 'carlos'], color: '#2563eb' },
-            { id: 'acc-2', name: 'Cuenta Ana', type: 'personal', balance: 1820.50, owners: ['ana'], color: '#ec4899' },
-            { id: 'acc-3', name: 'Cuenta Carlos', type: 'personal', balance: 2460.00, owners: ['carlos'], color: '#10b981' },
-            { id: 'acc-tr', name: 'Trade Republic', type: 'inversion', balance: 781.15, owners: ['ana', 'carlos'], color: '#5b6cff' },
-            { id: 'acc-mi', name: 'MyInvestor', type: 'banco', balance: 1150.00, owners: ['ana', 'carlos'], color: '#0ea5e9' }
-        ],
-        categories: [
-            { id: 'cat-1', name: 'Alimentación', icon: 'fas fa-utensils', color: '#f59e0b', parentId: null, status: 'active', order: 1, budget: 500, description: 'Supermercado, mercado y limpieza' },
-            { id: 'cat-1-1', name: 'Supermercado', icon: 'fas fa-shopping-basket', color: '#f59e0b', parentId: 'cat-1', status: 'active', order: 1 },
-            { id: 'cat-1-2', name: 'Mercado', icon: 'fas fa-store', color: '#f59e0b', parentId: 'cat-1', status: 'active', order: 2 },
-            { id: 'cat-1-3', name: 'Productos de limpieza', icon: 'fas fa-soap', color: '#f59e0b', parentId: 'cat-1', status: 'active', order: 3 },
-            { id: 'cat-2', name: 'Restaurantes y ocio', icon: 'fas fa-coffee', color: '#06b6d4', parentId: null, status: 'active', order: 2, budget: 250 },
-            { id: 'cat-2-1', name: 'Restaurantes', icon: 'fas fa-utensils', color: '#06b6d4', parentId: 'cat-2', status: 'active', order: 1 },
-            { id: 'cat-2-2', name: 'Cafeterías', icon: 'fas fa-mug-hot', color: '#06b6d4', parentId: 'cat-2', status: 'active', order: 2 },
-            { id: 'cat-2-3', name: 'Actividades de ocio', icon: 'fas fa-film', color: '#06b6d4', parentId: 'cat-2', status: 'active', order: 3 },
-            { id: 'cat-3', name: 'Vivienda', icon: 'fas fa-home', color: '#ef4444', parentId: null, status: 'active', order: 3, budget: 1000 },
-            { id: 'cat-3-1', name: 'Alquiler', icon: 'fas fa-key', color: '#ef4444', parentId: 'cat-3', status: 'active', order: 1 },
-            { id: 'cat-3-2', name: 'Comunidad', icon: 'fas fa-building', color: '#ef4444', parentId: 'cat-3', status: 'active', order: 2 },
-            { id: 'cat-3-3', name: 'Otros gastos de vivienda', icon: 'fas fa-tools', color: '#ef4444', parentId: 'cat-3', status: 'active', order: 3 },
-            { id: 'cat-4', name: 'Suministros', icon: 'fas fa-bolt', color: '#8b5cf6', parentId: null, status: 'active', order: 4, budget: 200 },
-            { id: 'cat-4-1', name: 'Electricidad', icon: 'fas fa-bolt', color: '#8b5cf6', parentId: 'cat-4', status: 'active', order: 1 },
-            { id: 'cat-4-2', name: 'Agua', icon: 'fas fa-tint', color: '#8b5cf6', parentId: 'cat-4', status: 'active', order: 2 },
-            { id: 'cat-4-3', name: 'Gas', icon: 'fas fa-fire', color: '#8b5cf6', parentId: 'cat-4', status: 'active', order: 3 },
-            { id: 'cat-4-4', name: 'Internet y telefonía', icon: 'fas fa-wifi', color: '#8b5cf6', parentId: 'cat-4', status: 'active', order: 4 },
-            { id: 'cat-5', name: 'Transporte', icon: 'fas fa-bus', color: '#10b981', parentId: null, status: 'active', order: 5, budget: 200 },
-            { id: 'cat-5-1', name: 'Transporte público', icon: 'fas fa-subway', color: '#10b981', parentId: 'cat-5', status: 'active', order: 1 },
-            { id: 'cat-5-2', name: 'Taxis y desplazamientos', icon: 'fas fa-taxi', color: '#10b981', parentId: 'cat-5', status: 'active', order: 2 },
-            { id: 'cat-6', name: 'Coche', icon: 'fas fa-car', color: '#64748b', parentId: null, status: 'active', order: 6, budget: 300 },
-            { id: 'cat-6-1', name: 'Combustible', icon: 'fas fa-gas-pump', color: '#64748b', parentId: 'cat-6', status: 'active', order: 1 },
-            { id: 'cat-6-2', name: 'Seguro', icon: 'fas fa-shield-alt', color: '#64748b', parentId: 'cat-6', status: 'active', order: 2 },
-            { id: 'cat-6-3', name: 'Mantenimiento', icon: 'fas fa-wrench', color: '#64748b', parentId: 'cat-6', status: 'active', order: 3 },
-            { id: 'cat-6-4', name: 'Aparcamiento', icon: 'fas fa-parking', color: '#64748b', parentId: 'cat-6', status: 'active', order: 4 },
-            { id: 'cat-7', name: 'Hogar', icon: 'fas fa-couch', color: '#ec4899', parentId: null, status: 'active', order: 7, budget: 150 },
-            { id: 'cat-8', name: 'Salud', icon: 'fas fa-heartbeat', color: '#dc2626', parentId: null, status: 'active', order: 8, budget: 100 },
-            { id: 'cat-9', name: 'Compras', icon: 'fas fa-shopping-bag', color: '#a855f7', parentId: null, status: 'active', order: 9, budget: 200 },
-            { id: 'cat-10', name: 'Suscripciones', icon: 'fas fa-tv', color: '#0ea5e9', parentId: null, status: 'active', order: 10, budget: 80 },
-            { id: 'cat-11', name: 'Viajes', icon: 'fas fa-plane', color: '#14b8a6', parentId: null, status: 'active', order: 11, budget: null },
-            { id: 'cat-12', name: 'Otros', icon: 'fas fa-ellipsis-h', color: '#94a3b8', parentId: null, status: 'active', order: 12, budget: null }
-        ],
-        expenses: [
-            { id: 'e1', concept: 'Mercado San Miguel', amount: 42.80, date: '2026-10-30', categoryId: 'cat-1-2', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e2', concept: 'Iberdrola - Electricidad', amount: 87.40, date: '2026-10-29', categoryId: 'cat-4-1', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e3', concept: 'Repsol - Combustible', amount: 65.20, date: '2026-10-28', categoryId: 'cat-6-1', person: 'carlos', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e4', concept: 'Alquiler noviembre', amount: 950.00, date: '2026-11-01', categoryId: 'cat-3-1', person: 'conjunto', status: 'previsto', type: 'individual', notes: '' },
-            { id: 'e5', concept: 'Cafetería Central', amount: 12.50, date: '2026-10-27', categoryId: 'cat-2-2', person: 'ana', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e6', concept: 'Netflix + Spotify', amount: 25.99, date: '2026-10-25', categoryId: 'cat-10', person: 'conjunto', status: 'registrado', type: 'agregado', notes: 'Suscripciones mensuales', aggPeriod: '2026-10' },
-            { id: 'e7', concept: 'Cena restaurante italiano', amount: 58.00, date: '2026-10-24', categoryId: 'cat-2-1', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e8', concept: 'Supermercado Mercadona', amount: 124.30, date: '2026-10-22', categoryId: 'cat-1-1', person: 'ana', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e9', concept: 'Agua - Canal Isabel II', amount: 32.50, date: '2026-10-20', categoryId: 'cat-4-2', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e10', concept: 'Abono transporte mensual', amount: 84.00, date: '2026-10-18', categoryId: 'cat-5-1', person: 'conjunto', status: 'registrado', type: 'agregado', notes: '', aggPeriod: '2026-10' },
-            { id: 'e11', concept: 'Cine', amount: 18.00, date: '2026-10-17', categoryId: 'cat-2-3', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e12', concept: 'Productos limpieza', amount: 28.40, date: '2026-10-15', categoryId: 'cat-1-3', person: 'ana', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e13', concept: 'Móvil Vodafone', amount: 45.00, date: '2026-10-14', categoryId: 'cat-4-4', person: 'conjunto', status: 'registrado', type: 'agregado', notes: '', aggPeriod: '2026-10' },
-            { id: 'e14', concept: 'Farmacia', amount: 22.80, date: '2026-10-12', categoryId: 'cat-8', person: 'carlos', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e15', concept: 'Zara - Camisas', amount: 79.90, date: '2026-10-10', categoryId: 'cat-9', person: 'carlos', status: 'pendiente', type: 'individual', notes: 'Pendiente revisar ticket' },
-            { id: 'e16', concept: 'Gas natural', amount: 38.60, date: '2026-10-08', categoryId: 'cat-4-3', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e17', concept: 'Comunidad vecinos', amount: 85.00, date: '2026-10-05', categoryId: 'cat-3-2', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e18', concept: 'Parking centro', amount: 15.00, date: '2026-10-04', categoryId: 'cat-6-4', person: 'ana', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e19', concept: 'Compra sin categorizar', amount: 35.00, date: '2026-10-03', categoryId: '', person: 'carlos', status: 'pendiente', type: 'individual', notes: 'Revisar' },
-            { id: 'e20', concept: 'Mercado ecológico', amount: 56.70, date: '2026-10-02', categoryId: 'cat-1-2', person: 'ana', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e21', concept: 'Taller mecánico', amount: 145.00, date: '2026-10-01', categoryId: 'cat-6-3', person: 'conjunto', status: 'registrado', type: 'individual', notes: 'Cambio aceite' },
-            { id: 'e100', concept: 'Alquiler octubre', amount: 950.00, date: '2026-10-01', categoryId: 'cat-3-1', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e101', concept: 'Supermercado semanal', amount: 98.50, date: '2026-09-28', categoryId: 'cat-1-1', person: 'ana', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e102', concept: 'Restaurante japonés', amount: 72.00, date: '2026-09-25', categoryId: 'cat-2-1', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e103', concept: 'Electricidad septiembre', amount: 92.30, date: '2026-09-22', categoryId: 'cat-4-1', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e104', concept: 'Combustible', amount: 58.00, date: '2026-09-18', categoryId: 'cat-6-1', person: 'carlos', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e105', concept: 'Cine y palomitas', amount: 24.00, date: '2026-09-15', categoryId: 'cat-2-3', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e106', concept: 'Comunidad', amount: 85.00, date: '2026-09-05', categoryId: 'cat-3-2', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e107', concept: 'Abono transporte', amount: 84.00, date: '2026-09-03', categoryId: 'cat-5-1', person: 'conjunto', status: 'registrado', type: 'agregado', notes: '', aggPeriod: '2026-09' },
-            { id: 'e200', concept: 'Alquiler septiembre', amount: 950.00, date: '2026-09-01', categoryId: 'cat-3-1', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e201', concept: 'Supermercado', amount: 145.00, date: '2026-08-25', categoryId: 'cat-1-1', person: 'ana', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e202', concept: 'Playa - Restaurante', amount: 68.50, date: '2026-08-20', categoryId: 'cat-2-1', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e203', concept: 'Electricidad agosto', amount: 110.00, date: '2026-08-18', categoryId: 'cat-4-1', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e204', concept: 'Combustible vacaciones', amount: 120.00, date: '2026-08-10', categoryId: 'cat-6-1', person: 'carlos', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e205', concept: 'Hotel 2 noches', amount: 240.00, date: '2026-08-08', categoryId: 'cat-11', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e300', concept: 'Alquiler agosto', amount: 950.00, date: '2026-08-01', categoryId: 'cat-3-1', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e301', concept: 'Supermercado', amount: 132.00, date: '2026-07-22', categoryId: 'cat-1-1', person: 'ana', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e302', concept: 'Terraza verano', amount: 45.00, date: '2026-07-18', categoryId: 'cat-2-2', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e303', concept: 'Electricidad julio', amount: 98.00, date: '2026-07-15', categoryId: 'cat-4-1', person: 'conjunto', status: 'registrado', type: 'individual', notes: '' },
-            { id: 'e400', concept: 'Seguro coche anual', amount: 420.00, date: '2026-11-15', categoryId: 'cat-6-2', person: 'conjunto', status: 'previsto', type: 'individual', notes: '' }
-        ],
-        budgets: [
-            { id: 'b1', categoryId: 'cat-1', amount: 500, period: '2026-10', frequency: 'monthly' },
-            { id: 'b2', categoryId: 'cat-2', amount: 250, period: '2026-10', frequency: 'monthly' },
-            { id: 'b3', categoryId: 'cat-3', amount: 1000, period: '2026-10', frequency: 'monthly' },
-            { id: 'b4', categoryId: 'cat-4', amount: 200, period: '2026-10', frequency: 'monthly' },
-            { id: 'b5', categoryId: 'cat-5', amount: 200, period: '2026-10', frequency: 'monthly' },
-            { id: 'b6', categoryId: 'cat-6', amount: 300, period: '2026-10', frequency: 'monthly' },
-            { id: 'b7', categoryId: 'cat-7', amount: 150, period: '2026-10', frequency: 'monthly' },
-            { id: 'b8', categoryId: 'cat-8', amount: 100, period: '2026-10', frequency: 'monthly' },
-            { id: 'b9', categoryId: 'cat-9', amount: 200, period: '2026-10', frequency: 'monthly' },
-            { id: 'b10', categoryId: 'cat-10', amount: 80, period: '2026-10', frequency: 'monthly' }
-        ],
-        trips: [
-            { id: 't1', name: 'Escapada Portugal', destination: 'Oporto', startDate: '2026-12-18', endDate: '2026-12-22', budget: 800, spent: 0, status: 'planificado' }
-        ],
+
+        /* ---------- Datos: TODO vacío · la fuente es el Google Sheet ---------- */
+        accounts: [],
+        categories: [],
+        expenses: [],
+        budgets: [],
+        trips: [],
+        calendarEvents: [],
+        transfers: [],
+        tripActivities: [],
+        tripReservations: [],
+
+        /* ---------- Configuración por defecto (no es demo · son valores iniciales) ---------- */
         settings: {
             defaultPeriod: 'monthly',
             rollover: false,
@@ -124,67 +54,41 @@ const App = (function() {
         },
         history: [],
 
-        // ===== PRESUPUESTO COMÚN (pantalla única) — datos maestros =====
-        pcCategories: [
-            { id: 'pc-groceries',  name: 'Groceries & Leisure',            label: 'GROCERIES & LEISURE', icon: '🛒', account: 'Trade Republic', budget: null, order: 1 },
-            { id: 'pc-others',     name: 'Others',                         label: 'OTHERS',               icon: '📦', account: 'Trade Republic', budget: 200,  order: 2, dueDate: '2026-11-15' },
-            { id: 'pc-utilities',  name: 'Utilities',                      label: 'UTILITIES',            icon: '💡', account: 'MyInvestor',   budget: null, order: 3 },
-            { id: 'pc-rent',       name: 'Renta',                          label: 'RENT',                 icon: '🏠', account: 'MyInvestor',   budget: 950,  order: 4, dueDate: '2026-11-01' },
-            { id: 'pc-loans',      name: 'Préstamos y Financiaciones',     label: 'LOANS',                icon: '💳', account: 'Trade Republic', budget: null, order: 5 },
-            { id: 'pc-savings',    name: 'Savings',                        label: 'SAVINGS',              icon: '💰', account: 'MyInvestor',   budget: null, order: 6 }
-        ],
-        pcSubcategories: [
-            { id: 'pcs-electricity', parentId: 'pc-utilities', name: 'Electricity (Luz)',        icon: '⚡', account: 'MyInvestor', budget: 90 },
-            { id: 'pcs-water',       parentId: 'pc-utilities', name: 'Water (Agua)',             icon: '💧', account: 'MyInvestor', budget: 35, dueDate: '2026-11-28' },
-            { id: 'pcs-phone',       parentId: 'pc-utilities', name: 'WiFi & Phone (Lowi)',      icon: '📶', account: 'MyInvestor', budget: 50, dueDate: '2026-11-15' },
-            { id: 'pcs-tr',          parentId: 'pc-savings',   name: 'Trade Republic',           icon: '📈', account: 'Trade Republic', destination: 'TradeRepublic', budget: 640 },
-            { id: 'pcs-funds',       parentId: 'pc-savings',   name: 'Funds',                    icon: '💼', account: 'Trade Republic', destination: 'Funds', budget: null },
-            { id: 'pcs-mi',          parentId: 'pc-savings',   name: 'MyInvestor',               icon: '🏦', account: 'MyInvestor', destination: 'MyInvestor' },
-            { id: 'pcs-general',     parentId: 'pc-savings',   name: 'General Savings (Ahorro)', icon: '🐷', account: 'MyInvestor', destination: 'General' }
-        ],
-        pcWeeks: [
-            { id: 'wk-1', label: 'Semana 1', start: '2026-11-02', end: '2026-11-08', budget: 160 },
-            { id: 'wk-2', label: 'Semana 2', start: '2026-11-09', end: '2026-11-15', budget: 160 },
-            { id: 'wk-3', label: 'Semana 3', start: '2026-11-16', end: '2026-11-22', budget: 160 },
-            { id: 'wk-4', label: 'Semana 4', start: '2026-11-23', end: '2026-11-29', budget: 160 }
-        ],
-        pcLoans: [
-            { id: 'loan-sofa', name: 'Sofá',     totalInstallments: 18, paidInstallments: 4,  amountPerInstallment: 45,  status: 'active' },
-            { id: 'loan-bed',  name: 'Cama',     totalInstallments: 23, paidInstallments: 6,  amountPerInstallment: 38,  status: 'active' }
-        ],
-        pcIncomes: [
-            { id: 'inc-nena',   name: 'Nena',   salary: 2100, freePct: 35, contribution: 550 },
-            { id: 'inc-bombon', name: 'Bombón', salary: 1750, freePct: 30, contribution: 550 }
-        ],
-        pcMyInvestorTarget: 1125,
-        // ===== Reconciliación Semanal Trade Republic =====
+        /* ---------- Presupuesto común · estructura mínima (sin categorías, sin datos) ---------- */
+        pcCategories: [],
+        pcSubcategories: [],
+        pcWeeks: [],
+        pcMyInvestorTarget: 0,
         pcReconciliation: {
-            initialBalance: 845.15,   // Saldo Inicial TR al inicio del mes
-            weeksClosed: {},          // { weekId: true } → descuenta presupuesto semanal
-            loansPaid: {},            // { loanId: true } → descuenta cuota del préstamo
-            realBalances: {}          // { weekId: saldoRealIntroducido }
+            initialBalance: 0,
+            weeksClosed: {},
+            loansPaid: {},
+            realBalances: {}
         }
     };
 
-    // =========================================================
-    // ESTADO Y PERSISTENCIA (patrón común: leer + fusionar por defectos)
-    // =========================================================
+    /* =========================================================
+       ESTADO Y PERSISTENCIA
+       ========================================================= */
     const clone = obj => JSON.parse(JSON.stringify(obj));
 
     function loadStored(key, defaults) {
+        if (window.DataService && typeof DataService.loadStored === 'function') {
+            return DataService.loadStored(key, defaults);
+        }
         try {
             const saved = localStorage.getItem(key);
             if (saved) return Object.assign(clone(defaults), JSON.parse(saved));
         } catch (e) {}
         return clone(defaults);
     }
-
     function saveStored(key, value) {
+        if (window.DataService && typeof DataService.saveStored === 'function') {
+            DataService.saveStored(key, value);
+            return;
+        }
         try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
     }
-
-    // Inyección estandarizada de hojas de estilo de módulo (idempotente):
-    // los módulos solo necesitan exponer su CSS como string.
     function injectStylesheet(id, css) {
         if (document.getElementById(id)) return;
         const style = document.createElement('style');
@@ -193,18 +97,19 @@ const App = (function() {
         document.head.appendChild(style);
     }
 
-    let data = loadData();
-    let currentSection = 'presupuesto-comun';
-    const sections = {};
-
     function loadData() {
         const parsed = loadStored('finanzas_data', DEFAULT_DATA);
-        // Migración: inyectar claves nuevas del presupuesto común sin perder datos guardados
-        ['pcCategories','pcSubcategories','pcWeeks','pcLoans','pcIncomes','pcReconciliation'].forEach(k => {
+        ['pcCategories','pcSubcategories','pcWeeks','pcReconciliation',
+         'calendarEvents','transfers','tripActivities','tripReservations'].forEach(k => {
             if (!(k in parsed)) parsed[k] = clone(DEFAULT_DATA[k]);
         });
         return parsed;
     }
+
+    let data = loadData();
+    let currentSection = 'presupuesto-comun';
+    const sections = {};
+    const modules = {};
 
     function saveData() { saveStored('finanzas_data', data); }
 
@@ -216,49 +121,44 @@ const App = (function() {
     function addHistory(action, detail) {
         data.history.unshift({
             timestamp: new Date().toISOString(),
-            action,
-            detail
+            action, detail
         });
         if (data.history.length > 100) data.history = data.history.slice(0, 100);
         saveData();
     }
 
-    // =========================================================
-    // FORMATO
-    // =========================================================
+    /* =========================================================
+       FORMATO
+       ========================================================= */
     function formatCurrency(n) {
         if (n === null || n === undefined || isNaN(n)) return '—';
         return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(n);
     }
-
     function formatDate(dateStr) {
         if (!dateStr) return '—';
         const d = new Date(dateStr + 'T00:00:00');
         if (isNaN(d.getTime())) return dateStr;
         return new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
     }
-
     function formatPeriod(period) {
         if (!period) return '';
         const [y, m] = period.split('-');
         const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-        return `${months[parseInt(m)-1]} ${y}`;
+        return `${months[parseInt(m) - 1]} ${y}`;
     }
-
     function escapeHtml(str) {
         if (str === null || str === undefined) return '';
         const div = document.createElement('div');
         div.textContent = String(str);
         return div.innerHTML;
     }
-
     function generateId(prefix = 'id') {
         return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     }
 
-    // =========================================================
-    // TOAST
-    // =========================================================
+    /* =========================================================
+       TOAST Y CONFIRMACIÓN
+       ========================================================= */
     function showToast(message, type = 'success') {
         const container = document.getElementById('toastContainer');
         if (!container) return;
@@ -277,9 +177,6 @@ const App = (function() {
         }, 3000);
     }
 
-    // =========================================================
-    // CONFIRMACIÓN
-    // =========================================================
     function showConfirm(title, message, onConfirm) {
         let modal = document.getElementById('globalConfirmModal');
         if (!modal) {
@@ -309,37 +206,56 @@ const App = (function() {
         document.getElementById('gcClose').onclick = close;
         document.getElementById('gcCancel').onclick = close;
         modal.onclick = (e) => { if (e.target === modal) close(); };
-
         const confirmBtn = document.getElementById('gcConfirm');
         const newBtn = confirmBtn.cloneNode(true);
         confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
-        newBtn.addEventListener('click', () => {
-            onConfirm();
-            close();
-        });
+        newBtn.addEventListener('click', () => { onConfirm(); close(); });
     }
 
-    // =========================================================
-    // NAVEGACIÓN
-    // =========================================================
+    /* =========================================================
+       NOTIFICACIÓN ENTRE MÓDULOS CON GUARDAS
+       ========================================================= */
+    const _recentNotifies = new Map();
+    let _notifyDepth = 0;
+
+    function notifyModuleChange(source, detail) {
+        detail = detail || {};
+        const key = source + '|' + (detail.reason || '');
+        const now = Date.now();
+
+        const last = _recentNotifies.get(key);
+        if (last && now - last < 100) return;
+
+        _recentNotifies.set(key, now);
+        setTimeout(() => _recentNotifies.delete(key), 200);
+
+        if (_notifyDepth > 8) {
+            console.warn('[App] Bucle detectado en notifyModuleChange:', source, detail.reason);
+            return;
+        }
+        _notifyDepth++;
+        try {
+            document.dispatchEvent(new CustomEvent('app:module-changed', {
+                detail: Object.assign({ source, ts: now }, detail)
+            }));
+        } finally {
+            setTimeout(() => { _notifyDepth = Math.max(0, _notifyDepth - 1); }, 0);
+        }
+    }
+
+    /* =========================================================
+       NAVEGACIÓN
+       ========================================================= */
     const SECTION_META = {
         'presupuesto-comun': { title: 'Presupuesto común', subtitle: () => 'Dashboard financiero compartido · pantalla única' },
         'calendario': { title: 'Calendario', subtitle: () => 'Planificación y vencimientos' },
         'mi-dinero': { title: 'Dinero', subtitle: () => 'Tu dinero en una sola pantalla · monederos, deudas, préstamos, objetivos y pagos' },
-        'ingresos-personales': { title: 'Ingresos personales', subtitle: () => 'Tus finanzas personales (módulo legado)' },
+        'ingresos-personales': { title: 'Ingresos personales', subtitle: () => 'Nóminas, equiparación de pagas, distribución equitativa y simulador de escenarios' },
         'viajes': { title: 'Viajes', subtitle: () => 'Planifica tus escapadas' }
     };
+    const SECTION_ALIASES = { 'inicio': 'presupuesto-comun', 'home': 'presupuesto-comun', 'presupuesto': 'presupuesto-comun' };
 
-    // Alias de nombres de sección (soporta acentos y variantes en data-section)
-    const SECTION_ALIASES = {
-        'inicio': 'presupuesto-comun',
-        'home': 'presupuesto-comun',
-        'presupuesto': 'presupuesto-comun'
-    };
-
-    function normalizeSectionName(name) {
-        return SECTION_ALIASES[name] || name;
-    }
+    function normalizeSectionName(name) { return SECTION_ALIASES[name] || name; }
 
     function navigateTo(section) {
         section = normalizeSectionName(section);
@@ -352,17 +268,10 @@ const App = (function() {
         const meta = SECTION_META[section];
         document.getElementById('pageTitle').textContent = meta.title;
         document.getElementById('pageSubtitle').textContent = meta.subtitle();
-
         document.querySelectorAll('.nav-item').forEach(item => {
             item.classList.toggle('active', item.dataset.section === section);
         });
-
         const container = document.getElementById('sectionContainer');
-        // Cada sección renderiza en su PROPIO subcontenedor estable (#sec-<id>).
-        // Así, al navegar a otra sección solo se oculta ese subcontenedor y el
-        // DOM ya montado de TripManager (#trip-manager-app) permanece intacto.
-        // (Antes se vaciaba #sectionContainer con querySelectorAll(...).remove(),
-        // lo que eliminaba #trip-manager-app del DOM → pantalla en blanco en Viajes.)
         const mountForSection = () => {
             let el = document.getElementById('sec-' + section);
             if (!el) {
@@ -372,13 +281,9 @@ const App = (function() {
             }
             return el;
         };
-        // Ocultar el resto de secciones (incluido el gestor de viajes)
         Array.from(container.children).forEach(ch => { ch.hidden = ch.id !== 'sec-' + section; });
 
         if (section === 'viajes') {
-            // Asegurar montaje (idempotente) y visibilidad del gestor.
-            // Se accede vía window.* porque estas funciones se definen más abajo
-            // en el archivo, dentro de un IIFE que se ejecuta tras la shell App.
             if (typeof window.initTripManager === 'function' && !window.getTripManager()) {
                 window.initTripManager();
             }
@@ -389,37 +294,18 @@ const App = (function() {
             if (sections[section].init) sections[section].init(secEl);
             sections[section].render(secEl);
         }
-
         document.getElementById('sidebar').classList.remove('open');
         document.getElementById('overlay').classList.remove('open');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     function registerSection(name, module) {
-        // Normaliza el nombre para que 'configuración' y 'configuracion'
-        // sean intercambiables al registrar/navegar
         sections[normalizeSectionName(name)] = module;
     }
-
-    // =========================================================
-    // PUENTE ENTRE MÓDULOS (único punto de acoplamiento)
-    // =========================================================
-    // Los módulos se registran aquí con su clave y publican solo la API
-    // que otros módulos necesitan. Ningún módulo llama directamente a otro.
-    const modules = {};
-
     function registerModule(key, api) {
         modules[key] = api;
     }
 
-    // Acceso a datos que un módulo expone a través del puente (read-only helpers)
-    function getSavings() {
-        const mod = modules['mi-dinero'];
-        return mod && typeof mod.getSavings === 'function' ? mod.getSavings() : null;
-    }
-
-    // Navega a una sección y, si procede, invoca una acción del módulo destino
-    // (p.ej. abrir el modal de un gasto concreto desde el calendario).
     function goTo(section, action, params) {
         navigateTo(section);
         if (!action) return;
@@ -435,14 +321,13 @@ const App = (function() {
         }
     }
 
-    // =========================================================
-    // TEMA
-    // =========================================================
+    /* =========================================================
+       TEMA / MENÚ MÓVIL / PERFIL
+       ========================================================= */
     function initTheme() {
         const saved = localStorage.getItem('finanzas_theme') || 'light';
         document.documentElement.setAttribute('data-theme', saved);
         updateThemeIcon();
-
         document.getElementById('themeToggle').addEventListener('click', () => {
             const current = document.documentElement.getAttribute('data-theme');
             const next = current === 'dark' ? 'light' : 'dark';
@@ -454,19 +339,13 @@ const App = (function() {
             }
         });
     }
-
     function updateThemeIcon() {
         const theme = document.documentElement.getAttribute('data-theme');
         document.getElementById('themeToggle').innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
     }
-
     function isDarkMode() {
         return document.documentElement.getAttribute('data-theme') === 'dark';
     }
-
-    // =========================================================
-    // MENÚ MÓVIL
-    // =========================================================
     function initMobileMenu() {
         document.getElementById('menuToggle').addEventListener('click', () => {
             document.getElementById('sidebar').classList.toggle('open');
@@ -477,35 +356,25 @@ const App = (function() {
             document.getElementById('overlay').classList.remove('open');
         });
     }
-
-    // =========================================================
-    // PERFIL
-    // =========================================================
     function getActiveProfile() {
         return data.profiles.find(p => p.id === data.activeProfile) || data.profiles[0];
     }
-
     function getProfileName(id) {
         if (id === 'conjunto') return 'Conjunto';
         const p = data.profiles.find(p => p.id === id);
         return p ? p.name : id;
     }
-
     function updateProfileUI() {
         const p = getActiveProfile();
         const avatar = document.getElementById('activeAvatar');
         const name = document.getElementById('activeName');
-        if (avatar) {
-            avatar.textContent = p.initial;
-            avatar.style.background = p.color + '30';
-            avatar.style.color = p.color;
-        }
+        if (avatar) { avatar.textContent = p.initial; avatar.style.background = p.color + '30'; avatar.style.color = p.color; }
         if (name) name.textContent = p.name;
     }
 
-    // =========================================================
-    // INIT
-    // =========================================================
+    /* =========================================================
+       INIT
+       ========================================================= */
     function init() {
         initTheme();
         initMobileMenu();
@@ -518,145 +387,335 @@ const App = (function() {
             });
         });
 
-        // Presupuesto común como pantalla de inicio de la aplicación
         navigateTo(normalizeSectionName('presupuesto-comun'));
     }
 
-    // =========================================================
-    // API PÚBLICA
-    // =========================================================
+    /* =========================================================
+       BRIDGE COMPLETO (Fase 1 + Fase 2)
+       ========================================================= */
     return {
         get data() { return data; },
-        saveData,
-        resetData,
-        addHistory,
+        saveData, resetData, addHistory,
+        navigateTo, goTo, registerSection, registerModule,
+        currentSection: () => currentSection,
+        formatCurrency, formatDate, formatPeriod, escapeHtml, generateId,
+        loadStored, saveStored, injectStylesheet,
+        showToast, showConfirm, isDarkMode,
+        getActiveProfile, getProfileName,
+        notifyModuleChange,
+        isModuleReady: (name) => !!modules[name],
+        init,
 
-        navigateTo,
-        goTo,
-        registerSection,
-        registerModule,
-        getSavings,
-        get currentSection() { return currentSection; },
+        updateSyncBadge: (status) => {
+            const badge = document.getElementById('syncBadge');
+            const label = document.getElementById('appStatus');
+            if (!badge) return;
+            if (status.syncing) {
+                badge.style.background = 'var(--warning-light)';
+                badge.style.color = 'var(--warning)';
+                badge.textContent = '↻';
+                if (label) label.textContent = 'Sincronizando…';
+            } else if (status.connected) {
+                badge.style.background = 'var(--success-light)';
+                badge.style.color = 'var(--success)';
+                badge.textContent = '●';
+                if (label) label.textContent = 'Sincronizado';
+            } else {
+                badge.style.background = 'var(--danger-light)';
+                badge.style.color = 'var(--danger)';
+                badge.textContent = '⚠';
+                if (label) label.textContent = 'Sin conexión';
+            }
+        },
 
-        formatCurrency,
-        formatDate,
-        formatPeriod,
-        escapeHtml,
-        generateId,
+        /* ---------- FASE 1 · Acceso unificado ---------- */
+        getAccounts: () => data.accounts || [],
 
-        // Utilidades compartidas por los módulos (evita duplicar patrones)
-        loadStored,
-        saveStored,
-        injectStylesheet,
+        getLoans: () => {
+            const mod = modules['mi-dinero'];
+            return (mod && typeof mod.getLoans === 'function') ? mod.getLoans() : [];
+        },
+        payLoanInstallment: (loanId) => {
+            const mod = modules['mi-dinero'];
+            if (mod && typeof mod.payLoanInstallment === 'function') {
+                mod.payLoanInstallment(loanId);
+                notifyModuleChange('mi-dinero', { reason: 'loan-paid', loanId });
+                return true;
+            }
+            return false;
+        },
+        getTripSavings: () => {
+            const mod = modules['mi-dinero'];
+            return (mod && typeof mod.getTripSavings === 'function')
+                ? mod.getTripSavings()
+                : { goalTotal: 0, saved: 0, contributions: [] };
+        },
+        addTripSavingsContribution: (payload) => {
+            const mod = modules['mi-dinero'];
+            if (mod && typeof mod.addTripSavingsContribution === 'function') {
+                const g = mod.addTripSavingsContribution(payload);
+                notifyModuleChange('mi-dinero', { reason: 'trip-savings-contribution' });
+                return g;
+            }
+            return null;
+        },
 
-        showToast,
-        showConfirm,
-        isDarkMode,
+        /* ---------- FASE 2 · Lectura cruzada ---------- */
+        getSharedContributionRules: () => {
+            const mod = modules['ingresos-personales'];
+            return (mod && typeof mod.getSharedContributionRules === 'function')
+                ? mod.getSharedContributionRules()
+                : null;
+        },
+        pcSummary: (period) => {
+            const mod = modules['presupuesto-comun'];
+            if (mod && typeof mod.getPcSummary === 'function') {
+                try { return mod.getPcSummary(period); } catch (e) { return null; }
+            }
+            // Fallback
+            try {
+                const cats = data.pcCategories || [];
+                let fixed = 0, variable = 0;
+                const FIXED_IDS = ['pc-rent', 'pc-utilities', 'pc-loans'];
+                cats.forEach(c => {
+                    if (c.budget === null || c.budget === undefined) return;
+                    if (FIXED_IDS.includes(c.id)) fixed += Number(c.budget); else variable += Number(c.budget);
+                });
+                return { period: null, fixed, variable, total: fixed + variable, planned: 0, budgetTotal: fixed + variable };
+            } catch (e) { return null; }
+        },
+        getSalary: (pid, mk) => {
+            const mod = modules['ingresos-personales'];
+            return (mod && typeof mod.getSalary === 'function') ? mod.getSalary(pid, mk) : null;
+        },
+        getIncomeForMonth: (mk) => {
+            const mod = modules['ingresos-personales'];
+            return (mod && typeof mod.getIncomeForMonth === 'function') ? mod.getIncomeForMonth(mk) : null;
+        },
+        getIndividualExpenses: (pid) => {
+            const mod = modules['ingresos-personales'];
+            return (mod && typeof mod.getIndividualExpenses === 'function') ? mod.getIndividualExpenses(pid) : [];
+        },
+        getDineroData: () => {
+            const mod = modules['mi-dinero'];
+            if (mod && typeof mod.getState === 'function') {
+                try { return mod.getState(); } catch (e) {}
+            }
+            try { return JSON.parse(localStorage.getItem('finanzas_dinero_v2') || 'null'); }
+            catch (e) { return null; }
+        },
+        getIngresosData: () => {
+            const mod = modules['ingresos-personales'];
+            if (mod && typeof mod.getState === 'function') {
+                try { return mod.getState(); } catch (e) {}
+            }
+            try { return JSON.parse(localStorage.getItem('finanzas_ingresos_v11') || 'null'); }
+            catch (e) { return null; }
+        },
+        getPresupuestoData: () => {
+            const mod = modules['presupuesto-comun'];
+            if (mod && typeof mod.getState === 'function') {
+                try { return mod.getState(); } catch (e) {}
+            }
+            return {
+                categories: data.pcCategories || [],
+                subcategories: data.pcSubcategories || [],
+                weeks: data.pcWeeks || [],
+                expenses: data.expenses || []
+            };
+        },
+        getTripCommitments: () => {
+            const mod = modules['mi-dinero'];
+            return (mod && typeof mod.getTripCommitments === 'function') ? mod.getTripCommitments() : [];
+        },
+        getSavings: () => {
+            const mod = modules['mi-dinero'];
+            return (mod && typeof mod.getSavings === 'function') ? mod.getSavings() : null;
+        },
 
-        getActiveProfile,
-        getProfileName,
+        /* ---------- FASE 2 · Escritura cruzada ---------- */
+        registerIncomeMovement: (payload) => {
+            const mod = modules['mi-dinero'];
+            if (mod && typeof mod.registerExternalIncome === 'function') {
+                const mv = mod.registerExternalIncome(payload);
+                notifyModuleChange('mi-dinero', { reason: 'income-registered', movementId: mv && mv.id });
+                return mv;
+            }
+            return null;
+        },
+        registerExpenseMovement: (payload) => {
+            const mod = modules['mi-dinero'];
+            if (mod && typeof mod.registerExternalExpense === 'function') {
+                const mv = mod.registerExternalExpense(payload);
+                notifyModuleChange('mi-dinero', { reason: 'expense-registered', movementId: mv && mv.id });
+                return mv;
+            }
+            return null;
+        },
+        distributeExtraIncome: (payload) => {
+            const mod = modules['mi-dinero'];
+            if (mod && typeof mod.distributeExtraIncome === 'function') {
+                const res = mod.distributeExtraIncome(payload);
+                notifyModuleChange('mi-dinero', { reason: 'extra-distributed' });
+                return res;
+            }
+            console.info('[App] distributeExtraIncome: pendiente de implementar en dinero.js');
+            return null;
+        },
+        syncTripGoal: (payload) => {
+            const mod = modules['mi-dinero'];
+            if (mod && typeof mod.syncTripGoal === 'function') {
+                const g = mod.syncTripGoal(payload);
+                notifyModuleChange('mi-dinero', { reason: 'trip-goal-synced', tripId: payload && payload.tripId });
+                return g;
+            }
+            return null;
+        },
+        syncTripCommitments: (tripId, pendings) => {
+            const mod = modules['mi-dinero'];
+            if (mod && typeof mod.syncTripCommitments === 'function') {
+                mod.syncTripCommitments(tripId, pendings);
+                notifyModuleChange('mi-dinero', { reason: 'trip-commitments-synced', tripId });
+                return true;
+            }
+            return false;
+        },
+        registerTripPayment: (payload) => {
+            const pc = modules['presupuesto-comun'];
+            if (pc && typeof pc.addMovement === 'function') {
+                pc.addMovement('pc-trips', payload.amount, {
+                    concept: payload.concept,
+                    date: payload.date,
+                    status: 'registrado',
+                    account: payload.account || 'Trade Republic',
+                    link: { kind: 'trip-payment', id: payload.itemId }
+                });
+                notifyModuleChange('presupuesto-comun', { reason: 'trip-payment' });
+                notifyModuleChange('mi-dinero', { reason: 'trip-payment' });
+                return true;
+            }
+            return false;
+        },
+        refreshModule: (name) => {
+            const mod = modules[name];
+            if (mod && typeof mod.render === 'function') {
+                const el = document.getElementById('sec-' + name);
+                if (el && el.isConnected) { try { mod.render(el); } catch (e) {} }
+            }
+        },
+        refreshAll: () => {
+            Object.keys(modules).forEach(name => {
+                const el = document.getElementById('sec-' + name);
+                if (el && el.isConnected && modules[name].render) {
+                    try { modules[name].render(el); } catch (e) {}
+                }
+            });
+        },
 
-        init
+        confirmIncomeReceipt: (pid, mk, amount) => {
+            const mod = modules['ingresos-personales'];
+            if (mod && typeof mod.confirmIncomeReceipt === 'function') {
+                mod.confirmIncomeReceipt(pid, mk, amount);
+                notifyModuleChange('ingresos-personales', { reason: 'income-confirmed', pid, mk });
+                return true;
+            }
+            return false;
+        },
+        confirmExtraReceipt: (pid, mk, itemId, amount) => {
+            const mod = modules['ingresos-personales'];
+            if (mod && typeof mod.confirmExtraReceipt === 'function') {
+                mod.confirmExtraReceipt(pid, mk, itemId, amount);
+                notifyModuleChange('ingresos-personales', { reason: 'extra-confirmed', pid, mk, itemId });
+                return true;
+            }
+            return false;
+        },
+        getMonthExtras: (pid, mk) => {
+            const mod = modules['ingresos-personales'];
+            return (mod && typeof mod.getMonthExtras === 'function')
+                ? mod.getMonthExtras(pid, mk)
+                : [];
+        },
     };
 })();
 
 window.App = App;
 
 /* =============================================================================
-   ARRANQUE Y CONEXIÓN DE MÓDULOS  (antes main.js · ahora unificado en app.js)
-   -----------------------------------------------------------------------------
-   · Cada módulo publica aquí la API que expone al resto a través del puente App
-     (ningún módulo llama directamente a otro).
-   · 'viajes' se auto-registra dentro de initTripManager() (abajo), por lo que
-     no necesita declaración explícita.
+   REGISTRO DE MÓDULOS EN EL PUENTE
+   (cada script de módulo se auto-registra también; aquí reforzamos la API)
    ============================================================================= */
-
-// Presupuesto común → acciones invocables desde otras secciones (p.ej. Calendario)
 App.registerModule('presupuesto-comun', {
-    openExpenseModal: (id) => BudgetApp.openExpenseModal(id),
-    openCategoryModal: (id) => BudgetApp.openCategoryModal(id)
+    openExpenseModal: (id) => window.BudgetApp && BudgetApp.openExpenseModal(id),
+    openCategoryModal: (id) => window.BudgetApp && BudgetApp.openCategoryModal(id),
+    openMovementModal: () => window.BudgetApp && BudgetApp.openMovementModal && BudgetApp.openMovementModal(),
+    addMovement: (...args) => window.BudgetApp && BudgetApp.addMovement(...args),
+    getPcSummary: (period) => window.BudgetApp && BudgetApp.getPcSummary(period),
+    getState: () => window.BudgetApp && BudgetApp.getState && BudgetApp.getState()
 });
 
-// Dinero → datos de ahorro consultables por otras secciones
 App.registerModule('mi-dinero', {
-    getSavings: () => DineroApp.getSavings()
+    getSavings: () => window.DineroApp && DineroApp.getSavings(),
+    getLoans: () => window.DineroApp && DineroApp.getLoans(),
+    payLoanInstallment: (id) => window.DineroApp && DineroApp.payLoanInstallment(id),
+    getTripSavings: () => window.DineroApp && DineroApp.getTripSavings(),
+    addTripSavingsContribution: (p) => window.DineroApp && DineroApp.addTripSavingsContribution(p),
+    getState: () => window.DineroApp && DineroApp.getState(),
+    registerExternalIncome: (p) => window.DineroApp && DineroApp.registerExternalIncome(p),
+    registerExternalExpense: (p) => window.DineroApp && DineroApp.registerExternalExpense(p),
+    getTripCommitments: () => window.DineroApp && DineroApp.getTripCommitments && DineroApp.getTripCommitments()
 });
 
-document.addEventListener('DOMContentLoaded', () => {
-    initTripManager();   // Monta TripManager y REGISTRA la sección 'viajes'…
-    App.init();          // …antes de la navegación inicial (evita "Sección no registrada")
+App.registerModule('ingresos-personales', {
+    getState: () => window.IngresosModulo && IngresosModulo.getState(),
+    getSharedContributionRules: () => window.IngresosModulo && IngresosModulo.getSharedContributionRules(),
+    getSalary: (pid, mk) => window.IngresosModulo && IngresosModulo.getSalary && IngresosModulo.getSalary(pid, mk),
+    getIncomeForMonth: (mk) => window.IngresosModulo && IngresosModulo.getIncomeForMonth && IngresosModulo.getIncomeForMonth(mk),
+    getIndividualExpenses: (pid) => window.IngresosModulo && IngresosModulo.getIndividualExpenses && IngresosModulo.getIndividualExpenses(pid)
+});
+
+App.registerModule('calendario', {
+    getState: () => window.CalendarApp && CalendarApp.getState && CalendarApp.getState()
 });
 
 /* =============================================================================
-   TRIPMANAGER ↔ DOM PRINCIPAL  (antes app.js · ahora unificado en app.js)
-   -----------------------------------------------------------------------------
-   · Crea la instancia de window.TripManager sobre el contenedor #trip-manager-app.
-   · Registra el módulo en el puente global App para que otras secciones
-     (Calendario, Presupuesto…) puedan navegar hasta un viaje.
-   · Expone helpers globales: initTripManager() / getTripManager().
+   TRIPMANAGER ↔ DOM PRINCIPAL
    ============================================================================= */
 (function () {
     'use strict';
-
     const CONTAINER_SELECTOR = '#trip-manager-app';
     let tripManagerInstance = null;
 
-    /**
-     * Monta el módulo de viajes en el DOM principal.
-     * Es idempotente: si ya está montado, devuelve la instancia existente.
-     */
     function initTripManager(containerSelector = CONTAINER_SELECTOR) {
         if (tripManagerInstance && tripManagerInstance.mounted) return tripManagerInstance;
-
         const mount = document.querySelector(containerSelector);
-        if (!mount) {
-            console.warn('[app.js] No se encontró el contenedor', containerSelector, '— el módulo de viajes no se inicializó.');
-            return null;
-        }
+        if (!mount) { console.warn('[app.js] No se encontró el contenedor', containerSelector); return null; }
         if (typeof window.TripManager !== 'function') {
-            console.error('[app.js] window.TripManager no está disponible. Revisa que viajes.js se cargue antes del arranque.');
+            console.error('[app.js] window.TripManager no está disponible.');
             return null;
         }
-
         tripManagerInstance = new window.TripManager(mount, {
-            // Sincroniza los viajes con el estado global de la shell (App.data.trips)
-            // para que el Calendario siga viendo salidas, regresos y vencimientos.
             onChange: (trip) => syncTripIntoGlobalState(trip)
         });
         tripManagerInstance.mountApp();
-        // Expuesta para que navigateTo('viajes') pueda mostrar/ocultar el contenedor
         tripManagerInstance.syncVisibility = syncVisibility;
-
-        // Registro en el puente de módulos de la aplicación (si la shell App existe)
         registerWithShell(tripManagerInstance);
-        syncVisibility();   // deja #trip-manager-app oculto hasta navegar a 'viajes'
-
-        console.info('[app.js] TripManager montado correctamente en', containerSelector);
+        syncVisibility();
+        console.info('[app.js] TripManager montado correctamente.');
         return tripManagerInstance;
     }
 
-    /** Devuelve la instancia activa del gestor de viajes (o null). */
-    function getTripManager() {
-        return tripManagerInstance;
-    }
+    function getTripManager() { return tripManagerInstance; }
 
-    /** Muestra u oculta el contenedor #trip-manager-app según la sección activa. */
     function syncVisibility() {
         const mount = document.querySelector(CONTAINER_SELECTOR);
         if (!mount) return;
-        const isTripsSection = window.App && window.App.currentSection === 'viajes';
+        const isTripsSection = window.App && window.App.currentSection() === 'viajes';
         mount.hidden = !isTripsSection;
     }
 
-    /**
-     * Enchufa TripManager con la shell App:
-     *  · Registra la API del módulo 'viajes' en el puente de módulos.
-     *  · Registra una sección propia que muestra el contenedor del gestor.
-     */
     function registerWithShell(tm) {
         if (!window.App) return;
-
-        // API pública del módulo (la invoca p.ej. el Calendario vía App.goTo)
         if (typeof window.App.registerModule === 'function') {
             window.App.registerModule('viajes', {
                 openTripDetail: (tripId, tab = 'resumen') => {
@@ -668,26 +727,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     tm.openEditTripModal();
                 },
                 openPaymentsModal: (tripId, itemId) => tm.openPaymentsModal(tripId, itemId),
-                backToList: () => { tm.selectTrip(null); tm.switchTab('resumen'); }
+                backToList: () => { tm.selectTrip(null); tm.switchTab('resumen'); },
+                getState: () => tm.getState && tm.getState()
             });
         }
-
-        // Sección gestionada por el nuevo TripManager (sustituye al módulo antiguo)
         if (typeof window.App.registerSection === 'function') {
             window.App.registerSection('viajes', {
-                init: () => {},                       // el gestor ya está montado en #trip-manager-app
-                render: () => { syncVisibility(); },  // muestra el contenedor del módulo
+                init: () => {},
+                render: () => { syncVisibility(); },
                 onThemeChange: () => { if (tm.mounted) tm.render(); }
             });
         }
     }
 
-    /**
-     * Copia la cabecera del viaje editado hacia App.data.trips (estructura que
-     * consume el Calendario). Si el viaje no existía, se añade.
-     * Nota: se usa siempre la fuente de verdad fresca (window.App.data) porque
-     * el getter `data` de la shell devuelve una copia superficial en cada acceso.
-     */
     function syncTripIntoGlobalState(trip) {
         if (!window.App || !window.App.data || !Array.isArray(window.App.data.trips)) return;
         const record = {
@@ -697,16 +749,18 @@ document.addEventListener('DOMContentLoaded', () => {
             startDate: trip.startDate,
             endDate: trip.endDate,
             budget: trip.budgetLimit,
-            spent: trip.categories.reduce(
-                (s, c) => s + c.items.reduce((x, i) => x + i.payments.reduce((p, q) => p + q.amount, 0), 0), 0),
+            spent: trip.categories.reduce((s, c) =>
+                s + c.items.reduce((x, i) => x + i.payments.reduce((p, q) => p + q.amount, 0), 0), 0),
             status: computeLegacyStatus(trip)
         };
         const trips = window.App.data.trips;
         const idx = trips.findIndex(t => t.id === trip.id);
         if (idx >= 0) trips[idx] = Object.assign({}, trips[idx], record);
         else trips.push(record);
-
         if (typeof window.App.saveData === 'function') window.App.saveData();
+        if (typeof window.App.notifyModuleChange === 'function') {
+            window.App.notifyModuleChange('viajes', { reason: 'trip-updated', tripId: trip.id });
+        }
     }
 
     function computeLegacyStatus(trip) {
@@ -716,8 +770,41 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'planificado';
     }
 
-    /* ------------------------- Exportación -------------------------
-       El arranque lo hace este mismo archivo tras DOMContentLoaded (único punto de inicio). */
     window.initTripManager = initTripManager;
     window.getTripManager = getTripManager;
 })();
+
+/* =============================================================================
+   ARRANQUE
+   ============================================================================= */
+document.addEventListener('DOMContentLoaded', async () => {
+    // 1 · Arrancar INMEDIATAMENTE con localStorage (0 ms)
+    initTripManager();
+    App.init();
+
+    // 2 · Refresh en background (no bloquea)
+    if (window.DataService) {
+        DataService.init();
+    }
+
+    // 3 · Escuchar refresh del server → re-render selectivo
+    document.addEventListener('app:data-refreshed', () => {
+        console.info('[App] Datos externos actualizados · re-renderizando…');
+        // Re-montar TripManager para que recoja cambios en viajes
+        const tm = window.getTripManager && window.getTripManager();
+        if (tm && tm.mounted) {
+            try {
+                const persisted = localStorage.getItem('finanzas_viajes_v2');
+                if (persisted) {
+                    const parsed = JSON.parse(persisted);
+                    if (parsed && Array.isArray(parsed.trips)) {
+                        tm.data = parsed;
+                        tm.render();
+                    }
+                }
+            } catch (e) {}
+        }
+        // Re-renderizar la sección activa
+        if (typeof App.refreshAll === 'function') App.refreshAll();
+    });
+});

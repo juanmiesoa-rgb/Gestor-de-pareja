@@ -1,16 +1,16 @@
-/* =============================================================
-   PRESUPUESTO-COMUN.JS — v6 · Clean & Modern UI (armonizado con el tema)
-   Dashboard híbrido de presupuesto compartido (pantalla única):
-   · 4 KPIs superiores · Groceries semanal + Estado de Cuentas
-   · Tabla acordeón jerárquica perfectamente alineada (tabular-nums)
-   · Badges/píldoras estilizadas (Vence: dd/mm, % consumido…)
-   · Clic en nombre → modal categoría · clic en Gasto Real → pop-up rápido
-   · Movimientos por subcategoría (OTHERS y todas) que recalculan la fila
-   · Últimos movimientos + Previsión de cierre
-   Sin bloques azul marino estridentes: todo el color se apoya en los
-   tokens del tema (claro "Slate Clean" / oscuro #0f172a). API pública
-   preservada + nuevos métodos para el puente de App.
-   ============================================================= */
+/* =============================================================================
+   PRESUPUESTO-COMUN.JS · v7 — Puente App completo
+   -----------------------------------------------------------------------------
+   Cambios clave respecto a v6:
+     · pcLoans() delega en App.getLoans() (fuente única: dinero.js)
+     · pc-trips: nueva categoría · budget = compromisos pendientes de viajes
+     · catSpentDerived() de pc-loans = paidCount × installmentAmount
+     · Toggle cuota → App.payLoanInstallment() (crea movimiento en dinero)
+     · addMovement() → App.registerExpenseMovement() cuando status='registrado'
+     · setExpenseStatus() nueva función expuesta para el calendario
+     · getState() expuesto + listener app:module-changed
+     · mapAccountName() helper para traducir nombres → ids de App.data.accounts
+   ============================================================================= */
 const BudgetApp = (function () {
     'use strict';
 
@@ -20,23 +20,54 @@ const BudgetApp = (function () {
         'pc-groceries': { accent: '#10b981', label: 'GROCERIES & LEISURE' },
         'pc-loans':     { accent: '#ef4444', label: 'LOANS' },
         'pc-savings':   { accent: '#8b5cf6', label: 'SAVINGS' },
+        'pc-trips':     { accent: '#0ea5e9', label: 'TRIPS' },
         'pc-others':    { accent: '#64748b', label: 'OTHERS' }
     };
-    const ACCOUNTS = ['Trade Republic', 'MyInvestor', 'Junta'];
+    const ACCOUNTS = ['Trade Republic', 'Trade Republic 2', 'MyInvestor', 'Junta'];
 
     function rowLabel(row) {
         if (!row) return '';
         return String(row.label || row.name || '').toUpperCase();
     }
 
-    // ===== estado =====
     function data() { return App.data; }
     let currentPeriod = '2026-11';
     let containerEl = null;
-    let popEl = null;           // pop-up rápido de gasto real
+    let popEl = null;
     let uiState = { catFilter: 'all', movDays: 30, weekFilter: 'all' };
+    let _pcBound = false;
 
-    // Normaliza el nombre de la categoría Groceries (era "Groceries and Liquor")
+    /* =========================================================
+       FASE 1 · ACCESO UNIFICADO
+       ========================================================= */
+
+    /** Cuentas físicas reales (fuente única) */
+    function getAccounts() {
+        return (window.App && typeof App.getAccounts === 'function')
+            ? App.getAccounts()
+            : (data().accounts || []);
+    }
+
+    /** Préstamos: fuente única dinero.js */
+    function pcLoans() {
+        if (window.App && typeof App.getLoans === 'function') return App.getLoans();
+        return [];
+    }
+
+    /** Traduce nombre de cuenta → id de App.data.accounts */
+    function mapAccountName(name) {
+        if (!name) return null;
+        const accounts = getAccounts();
+        const lower = String(name).toLowerCase().trim();
+        let acc = accounts.find(a => String(a.name).toLowerCase() === lower);
+        if (acc) return acc.id;
+        acc = accounts.find(a => lower.includes(String(a.name).toLowerCase().split(' ')[0]));
+        return acc ? acc.id : null;
+    }
+
+    /* =========================================================
+       NORMALIZACIÓN DE DATOS (limpieza existente)
+       ========================================================= */
     function fixGroceriesName() {
         const c = (data().pcCategories || []).find(x => x.id === 'pc-groceries');
         if (c && /liquor/i.test(String(c.name || ''))) {
@@ -44,9 +75,6 @@ const BudgetApp = (function () {
             App.saveData();
         }
     }
-
-    // Elimina las subcategorías duplicadas de LOANS (Sofá/Cama). Los préstamos
-    // se gestionan exclusivamente mediante data().pcLoans (fila con toggle por cuota).
     function dedupeLoans() {
         const subs = data().pcSubcategories;
         if (Array.isArray(subs)) {
@@ -54,8 +82,6 @@ const BudgetApp = (function () {
             if (clean.length !== subs.length) { data().pcSubcategories = clean; App.saveData(); }
         }
     }
-
-    // Quita la subcategoría "Gastos varios" de Others (también en datos guardados).
     function removeOthersGenSub() {
         const subs = data().pcSubcategories;
         if (!Array.isArray(subs)) return;
@@ -63,10 +89,9 @@ const BudgetApp = (function () {
         if (clean.length !== subs.length) { data().pcSubcategories = clean; App.saveData(); }
     }
 
-    // Estado semántico de las semanas (se AUTOMATIZA al renderizar):
-    //   · 'vacia'     → mes futuro sin empezar aún, o semana sin presupuesto asignado
-    //   · 'en-curso'  → hoy cae dentro del rango de la semana
-    //   · 'pasada'    → la semana ya terminó
+    /* =========================================================
+       SEMANAS
+       ========================================================= */
     function weekAutoState(w) {
         const today = new Date().toISOString().slice(0, 10);
         if (!(Number(w.budget) > 0)) return 'vacia';
@@ -78,7 +103,6 @@ const BudgetApp = (function () {
     function weekState(w) {
         const auto = weekAutoState(w);
         const man = (recon().weekStates || {})[w.id];
-        // El manual solo puede alternar entre En curso ↔ Pasada; "vacía" siempre es automática
         return (man && man !== 'vacia' && auto !== 'vacia') ? man : auto;
     }
     const WEEK_STATE_META = {
@@ -87,17 +111,11 @@ const BudgetApp = (function () {
         'vacia':    { label: 'Vacía',    cls: 'st-empty',   badge: 'pc-badge-gray' }
     };
 
-    // Semanas definidas para un periodo concreto ('YYYY-MM').
-    // OJO: debe leer de allWeeks() (datos crudos), NUNCA de pcWeeks(), porque
-    // pcWeeks() se define como weeksFor(currentPeriod) y causaría recursión infinita.
     function weeksFor(period) { return allWeeks().filter(w => String(w.start).substring(0, 7) === period); }
-
-    // Recalcula las semanas de un mes: la semana 1 empieza el LUNLES anterior al día 1
-    // (el primer día es siempre lunes) y se generan N semanas consecutivas.
     function generateMonthWeeks(period, count) {
         const [y, m] = period.split('-').map(Number);
         const first = new Date(y, m - 1, 1);
-        const dow = (first.getDay() + 6) % 7;            // lunes = 0
+        const dow = (first.getDay() + 6) % 7;
         const start = new Date(first); start.setDate(first.getDate() - dow);
         const list = [];
         for (let i = 0; i < count; i++) {
@@ -111,19 +129,13 @@ const BudgetApp = (function () {
 
     function pcCats()    { return (data().pcCategories || []).slice().sort((a, b) => (a.order || 99) - (b.order || 99)); }
     function pcSubs(pid) { return (data().pcSubcategories || []).filter(s => s.parentId === pid); }
-    // Semanas del MES ACTUAL (el dashboard solo gestiona las semanas del periodo visible)
     function pcWeeks()   { return weeksFor(currentPeriod); }
-    // Todas las semanas guardadas (cualquier mes)
     function allWeeks()  { return (data().pcWeeks || []).slice().sort((a, b) => String(a.start).localeCompare(String(b.start))); }
-    // Nº de semanas definidas para un mes concreto
     function weekCount(period) { return weeksFor(period).length; }
-    // Presupuesto semanal por defecto = el propio de Groceries & Leisure (si está definido)
     function defaultWeekBudget() {
         const c = pcCats().find(x => x.id === 'pc-groceries');
         return (c && c.budget !== null && c.budget !== undefined) ? Number(c.budget) : 160;
     }
-    function pcLoans()   { return (data().pcLoans || []).filter(l => l.status !== 'archived'); }
-    function pcIncomes() { return data().pcIncomes || []; }
     function recon() {
         if (!data().pcReconciliation) data().pcReconciliation = { initialBalance: 845.15, weeksClosed: {}, loansPaid: {}, realBalances: {} };
         return data().pcReconciliation;
@@ -142,77 +154,109 @@ const BudgetApp = (function () {
     function sum(list) { return list.reduce((s, e) => s + Number(e.amount || 0), 0); }
 
     function subSpent(subId) { return sum(pcRealExpenses().filter(e => e.categoryId === subId)); }
+
     function catSpent(catId) {
         const ids = [catId].concat(pcSubs(catId).map(s => s.id));
         return sum(pcRealExpenses().filter(e => ids.includes(e.categoryId)));
     }
-    function rowSpent(rowId) { return String(rowId).startsWith('pcs-') ? subSpent(rowId) : catSpentDerived(rowId); }
-    function rowBudget(rowId) { return String(rowId).startsWith('pcs-') ? subBudget(rowId) : catBudget(rowId); }
+
+    function rowSpent(rowId) {
+        return String(rowId).startsWith('pcs-') ? subSpent(rowId) : catSpentDerived(rowId);
+    }
+    function rowBudget(rowId) {
+        return String(rowId).startsWith('pcs-') ? subBudget(rowId) : catBudget(rowId);
+    }
     function findRow(id) {
         if (String(id).startsWith('pcs-')) return (data().pcSubcategories || []).find(s => s.id === id) || null;
         return pcCats().find(c => c.id === id) || null;
     }
-    // Presupuesto: null = "no definido"; 0 = fijado en 0,00 €
     function subBudget(subId) {
         const s = (data().pcSubcategories || []).find(x => x.id === subId);
         if (!s) return null;
         return (s.budget === null || s.budget === undefined) ? null : Number(s.budget);
     }
-    // Con subcategorías → PRESUPUESTO/GASTO/DISPONIBLE de la categoría son la
-    // SUMA de las subcategorías. Sin subcategorías → se usa el valor propio.
-    function hasOwnRowBudget(catId) {
-        const c = pcCats().find(x => x.id === catId);
-        return !!(c && c.budget !== null && c.budget !== undefined);
-    }
+
+    /* =========================================================
+       PRESUPUESTOS DERIVADOS (con conexión a dinero.js)
+       ========================================================= */
     function catBudget(catId) {
         const c = pcCats().find(x => x.id === catId);
         if (!c) return null;
+
+        // pc-loans · fuente única: cuotas pendientes en dinero
+        if (catId === 'pc-loans') {
+            const active = pcLoans().filter(l => (l.paidCount || 0) < (l.installments || 0));
+            const total = active.reduce((s, l) => s + Number(l.installmentAmount || 0), 0);
+            return total > 0 ? total : null;
+        }
+
+        // pc-trips · suma de compromisos de viaje pendientes en dinero
+        if (catId === 'pc-trips') {
+            const tripComms = (window.App && typeof App.getTripCommitments === 'function')
+                ? App.getTripCommitments() : [];
+            const total = tripComms.reduce((s, x) => s + Number(x.amount || 0), 0);
+            return total > 0 ? total : null;
+        }
+
         const subs = pcSubs(catId);
         if (subs.length) {
-            // fila derivada: suma estricta de subcategorías definidas
             let total = null;
             subs.forEach(s => { if (s.budget !== null && s.budget !== undefined) total = (total === null ? 0 : total) + Number(s.budget); });
             return total;
         }
+
         let total = (c.budget === null || c.budget === undefined) ? null : Number(c.budget);
-        if (catId === 'pc-groceries') { const w = pcWeeks().reduce((s, x) => s + Number(x.budget || 0), 0); if (w) total = (total === null ? 0 : total) + w; }
-        if (catId === 'pc-loans')     { const l = pcLoans().reduce((s, x) => s + Number(x.amountPerInstallment || 0), 0); if (l) total = (total === null ? 0 : total) + l; }
+        if (catId === 'pc-groceries') {
+            const w = pcWeeks().reduce((s, x) => s + Number(x.budget || 0), 0);
+            if (w) total = (total === null ? 0 : total) + w;
+        }
         return total;
     }
+
     function catSpentDerived(catId) {
+        // pc-loans · cuotas ya pagadas (paidCount × cuota)
+        if (catId === 'pc-loans') {
+            return pcLoans().reduce(
+                (s, l) => s + (Number(l.paidCount) || 0) * (Number(l.installmentAmount) || 0), 0
+            );
+        }
+        // pc-trips · gastos reales del periodo en la categoría
         const subs = pcSubs(catId);
         if (!subs.length) return catSpent(catId);
         return subs.reduce((s, sub) => s + subSpent(sub.id), 0);
     }
+
     function totalBudgetDefined() {
         return pcCats().reduce((s, c) => { const b = catBudget(c.id); return s + (b === null ? 0 : b); }, 0);
     }
     function totalRealSpent() { return sum(pcRealExpenses()); }
     function pendingPayments() {
-        return pcLoans().filter(l => !recon().loansPaid[l.id]).reduce((s, l) => s + Number(l.amountPerInstallment || 0), 0);
+        return pcLoans().filter(l => !recon().loansPaid[l.id]).reduce((s, l) => s + Number(l.installmentAmount || 0), 0);
     }
     function accountRealBalance(accName) {
-        const acc = (data().accounts || []).find(a => (a.name || '').toLowerCase().includes(String(accName || '').toLowerCase().split(' ')[0]));
+        const acc = getAccounts().find(a => (a.name || '').toLowerCase().includes(String(accName || '').toLowerCase().split(' ')[0]));
         return acc ? Number(acc.balance || 0) : 0;
     }
     function combinedRealBalance() {
-        // Suma real combinada en bancos/tarjetas (todas las cuentas maestras)
-        return (data().accounts || []).reduce((s, a) => s + Number(a.balance || 0), 0);
+        return getAccounts().reduce((s, a) => s + Number(a.balance || 0), 0);
     }
 
-    // ===== reconciliación Trade Republic =====
+    /* =========================================================
+       RECONCILIACIÓN TR
+       ========================================================= */
     function trExpected() {
         const r = recon();
-        // El gasto de las semanas se toma de los MOVIMIENTOS REALES registrados en cada semana
         const wkExp = pcRealExpenses().filter(e => String(e.date || '').substring(0, 7) === currentPeriod);
         const weekSpent = pcWeeks().reduce((s, w) => s + sum(wkExp.filter(e => e.pcWeekId === w.id)), 0);
-        const paidLoans = pcLoans().reduce((s, l) => r.loansPaid[l.id] ? s + Number(l.amountPerInstallment || 0) : s, 0);
+        const paidLoans = pcLoans().reduce((s, l) => r.loansPaid[l.id] ? s + Number(l.installmentAmount || 0) : s, 0);
         return Number(r.initialBalance || 0) - weekSpent - paidLoans;
     }
     function trReal() { return Number(recon().realBalances[currentPeriod] || 0); }
     function miTarget() { return Number(data().pcMyInvestorTarget || 1125); }
 
-    // ===== utilidades de formato =====
+    /* =========================================================
+       UTILIDADES DE FORMATO
+       ========================================================= */
     function fmt(n) { return App.formatCurrency(Number(n) || 0); }
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
     function shortDate(iso) { const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? '' : d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }); }
@@ -223,7 +267,7 @@ const BudgetApp = (function () {
         const today = new Date(); today.setHours(0, 0, 0, 0);
         const d = new Date(dueDate + 'T00:00:00');
         if (isNaN(d)) return '';
-        const dd = App.formatDate(dueDate).slice(0, 5); // dd/mm
+        const dd = App.formatDate(dueDate).slice(0, 5);
         const days = Math.round((d - today) / 864e5);
         const cls = days < 0 ? 'over' : days <= 7 ? 'soon' : '';
         return `<span class="pc-due ${cls}" title="Vencimiento">📅 Vence: ${esc(dd)}</span>`;
@@ -244,12 +288,8 @@ const BudgetApp = (function () {
     function stateDot(color, text) { return `<span class="pc-state" style="--state-color:${color}">${esc(text)}</span>`; }
     function chip(label, val, cls) { return `<button class="pc-chip ${cls || 'gray'}" ${val}>${label}</button>`; }
     function muted(txt) { return `<span style="color:var(--text-muted);font-size:12px">${txt}</span>`; }
-
-    // ===== estado semántico (usa los tokens del tema, claro/oscuro) =====
     function availCls(v) { return v === null ? '' : v >= 0 ? 'pc-pos' : 'pc-neg'; }
     function diffCls(v, invert) { const good = invert ? v <= 0 : v >= 0; return good ? 'pc-pos' : 'pc-neg'; }
-    // Escala de colores del DISPONIBLE según % restante:
-    //  >20% restante → verde · 0–20% → ámbar · <0% (sobregastado) → rojo
     function availScaleCls(avail, budget) {
         if (avail === null || budget === null || budget === undefined || budget <= 0) return '';
         const pctLeft = (avail / budget) * 100;
@@ -263,7 +303,9 @@ const BudgetApp = (function () {
         return `<td class="pc-td-num pc-avail-cell ${availScaleCls(avail, budget)}">${fmt(avail)}</td>`;
     }
 
-    // ===== registro de movimientos =====
+    /* =========================================================
+       MOVIMIENTOS · CON CONEXIÓN AL PUENTE
+       ========================================================= */
     function addMovement(targetId, amount, opts) {
         opts = opts || {};
         const id = 'pc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -275,13 +317,33 @@ const BudgetApp = (function () {
             aggPeriod: currentPeriod, pcAccount: opts.account || ''
         };
         if (opts.pcWeekId) exp.pcWeekId = opts.pcWeekId;
+        if (opts.link) exp.link = opts.link;
+
         data().expenses.push(exp);
         App.saveData();
+
+        // FASE 3 · Registrar en dinero si es un movimiento real
+        if (exp.status === 'registrado' && window.App && typeof App.registerExpenseMovement === 'function') {
+            const row = findRow(targetId);
+            const accName = opts.account || (row && row.account) || '';
+            const accId = mapAccountName(accName);
+            const movLink = opts.link || { kind: 'expense', id: exp.id };  // ← respeta el link pasado
+            try {
+                App.registerExpenseMovement({
+                    amount: Math.abs(exp.amount),
+                    concept: exp.concept,
+                    date: exp.date,
+                    accountId: accId,
+                    link: movLink
+                });
+            } catch (err) { /* noop */ }
+        }
+
         App.addHistory('presupuesto-comun', `${opts.action || 'Movimiento'}: ${exp.concept} (${fmt(exp.amount)})`);
         render();
         return id;
     }
-    // Sobrescribe el acumulado de una fila ajustando un movimiento de relleno
+
     function setRowReal(rowId, newValue) {
         newValue = Number(newValue) || 0;
         const cur = rowSpent(rowId);
@@ -289,10 +351,10 @@ const BudgetApp = (function () {
         if (Math.abs(diff) < 0.005) { App.showToast('Sin cambios', 'info'); return; }
         const fillers = data().expenses.filter(e => e.categoryId === rowId && e.pcAuto === 'ajuste');
         if (fillers.length >= 1) {
-            // mantiene un único movimiento de ajuste: actualiza el primero, archiva el resto
             fillers[0].amount = newValue;
             fillers.slice(1).forEach(f => f.status = 'archivado');
-            App.saveData(); App.addHistory('presupuesto-comun', `Ajuste directo «${(findRow(rowId) || {}).name || rowId}»: ${fmt(newValue)}`);
+            App.saveData();
+            App.addHistory('presupuesto-comun', `Ajuste directo «${(findRow(rowId) || {}).name || rowId}»: ${fmt(newValue)}`);
             render(); return;
         }
         addMovement(rowId, newValue, { concept: 'Ajuste de gasto real', account: (findRow(rowId) || {}).account || '', action: 'Ajuste' });
@@ -301,7 +363,39 @@ const BudgetApp = (function () {
         App.saveData(); render();
     }
 
-    // ===== render: barra superior (periodo = mes + año por separado) =====
+    /** Cambiar el estado de un gasto (llamado por el calendario) */
+    function setExpenseStatus(expenseId, newStatus) {
+        const exp = (data().expenses || []).find(e => e.id === expenseId);
+        if (!exp) return;
+        const was = exp.status;
+        exp.status = newStatus;
+        App.saveData();
+
+        // Si pasa a 'registrado', crear movimiento en dinero
+        if (was !== 'registrado' && newStatus === 'registrado') {
+            const row = findRow(exp.categoryId);
+            const accName = exp.pcAccount || (row && row.account) || '';
+            const accId = mapAccountName(accName);
+            if (window.App && typeof App.registerExpenseMovement === 'function') {
+                try {
+                    App.registerExpenseMovement({
+                        amount: Math.abs(exp.amount),
+                        concept: exp.concept,
+                        date: exp.date,
+                        accountId: accId,
+                        link: { kind: 'expense', id: exp.id }
+                    });
+                } catch (err) { /* noop */ }
+            }
+        }
+        App.addHistory('presupuesto-comun', `Estado cambiado a ${newStatus}: ${exp.concept}`);
+        App.notifyModuleChange('presupuesto-comun', { reason: 'expense-status', expenseId });
+        render();
+    }
+
+    /* =========================================================
+       RENDER
+       ========================================================= */
     const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     function headerHtml() {
         const [cy, cm] = currentPeriod.split('-');
@@ -322,7 +416,6 @@ const BudgetApp = (function () {
             </div></div>`;
     }
 
-    // ===== bloque 1 · KPIs =====
     function kpisHtml() {
         const presup = totalBudgetDefined();
         const gastos = totalRealSpent();
@@ -330,35 +423,77 @@ const BudgetApp = (function () {
         const saldos = combinedRealBalance();
         const pctGlob = presup ? Math.min((gastos / presup) * 100, 100) : 0;
         const desv = gastos - presup;
+
+        let sharedTotal = null, coveragePct = null, coverageCls = '', coverageNote = 'Aporte del hogar sin reglas configuradas';
+        try {
+            const rules = (window.App && typeof App.getSharedContributionRules === 'function') ? App.getSharedContributionRules() : null;
+            if (rules && typeof rules.total === 'number') {
+                sharedTotal = Number(rules.total) || 0;
+                if (presup > 0) {
+                    coveragePct = Math.round((sharedTotal / presup) * 100);
+                    if (coveragePct >= 100) coverageCls = 'pc-pos';
+                    else if (coveragePct >= 80) coverageCls = 'pc-warn';
+                    else coverageCls = 'pc-neg';
+                    coverageNote = `${fmt(sharedTotal)} aportados / ${fmt(presup)} necesarios`;
+                } else {
+                    coverageNote = `${fmt(sharedTotal)} aportados · sin presupuesto definido`;
+                }
+            }
+        } catch (e) {}
+
+        const perPersonTooltip = (() => {
+            try {
+                const rules = window.App && typeof App.getSharedContributionRules === 'function' ? App.getSharedContributionRules() : null;
+                if (!rules) return '';
+                return Object.keys(rules).filter(k => k !== 'total' && rules[k] && typeof rules[k] === 'object')
+                    .map(k => `${k}: ${fmt(rules[k].amount)} (${Math.round(rules[k].pct)}%)`)
+                    .join(' · ');
+            } catch (e) { return ''; }
+        })();
+
         return `<div class="pc-kpis-v4">
             <div class="pc-kpi-card" style="--kpi-accent:var(--primary)">
                 <span class="pc-kpi-icon">🎯</span>
                 <div class="pc-kpi-label">Presupuesto Total</div>
                 <div class="pc-kpi-big">${fmt(presup)}</div>
                 <div class="pc-kpi-note">Asignaciones del periodo ${esc(App.formatPeriod(currentPeriod))}</div></div>
+
             <div class="pc-kpi-card" style="--kpi-accent:var(--warning)">
                 <span class="pc-kpi-icon">💸</span>
                 <div class="pc-kpi-label">Gasto Ejecutado</div>
                 <div class="pc-kpi-big">${fmt(gastos)}</div>
                 <div class="pc-progress"><div style="width:${pctGlob}%;background:${pctGlob >= 100 ? 'var(--danger)' : 'var(--warning)'}"></div></div>
                 <div class="pc-kpi-note pc-num">${presup ? pctGlob.toFixed(0) : 0}% del presupuesto consumido</div></div>
+
             <div class="pc-kpi-card" style="--kpi-accent:${disponible >= 0 ? 'var(--success)' : 'var(--danger)'}">
                 <span class="pc-kpi-icon">💶</span>
                 <div class="pc-kpi-label">Dinero Disponible</div>
                 <div class="pc-kpi-big ${availCls(disponible)}">${fmt(disponible)}</div>
                 <div class="pc-kpi-note">Desviación: <b class="pc-num ${diffCls(-desv)}">${desv > 0 ? '+' : ''}${fmt(desv)}</b></div></div>
+
             <div class="pc-kpi-card" style="--kpi-accent:#8b5cf6">
                 <span class="pc-kpi-icon">🏦</span>
                 <div class="pc-kpi-label">Saldo Real Cuentas</div>
                 <div class="pc-kpi-big">${fmt(saldos)}</div>
                 <div class="pc-kpi-note">Bancos y tarjetas combinados</div></div>
+
+            <div class="pc-kpi-card" style="--kpi-accent:${coverageCls === 'pc-neg' ? 'var(--danger)' : coverageCls === 'pc-warn' ? 'var(--warning)' : 'var(--success)'}">
+                <span class="pc-kpi-icon">🤝</span>
+                <div class="pc-kpi-label">
+                    Aporte Común
+                    ${perPersonTooltip ? `<span class="pc-info" tabindex="0" aria-label="Reparto por persona">ⓘ<span class="pc-info-tip">${esc(perPersonTooltip)}</span></span>` : ''}
+                </div>
+                <div class="pc-kpi-big ${coverageCls}">
+                    ${sharedTotal != null ? fmt(sharedTotal) : '—'}
+                    ${coveragePct != null ? `<span style="font-size:13px;font-weight:700;opacity:.75;margin-left:6px">${coveragePct}%</span>` : ''}
+                </div>
+                ${coveragePct != null
+                    ? `<div class="pc-progress"><div style="width:${Math.min(coveragePct, 100)}%;background:${coveragePct >= 100 ? 'var(--success)' : coveragePct >= 80 ? 'var(--warning)' : 'var(--danger)'}"></div></div>`
+                    : ''}
+                <div class="pc-kpi-note">${coverageNote}</div></div>
         </div>`;
     }
 
-    // ===== bloque 2 izq · Groceries & Leisure (distribución semanal) =====
-    // · Clic en una semana → modal con sus movimientos reales (fecha, importe, descripción) + edición
-    // · Clic en el título  → modal para decidir cuántas semanas tiene el mes
-    // · Estado automático al renderizar: En curso / Pasada / Vacía (override manual solo E-C ↔ Pasada)
     function weeksPanelHtml() {
         const weeks = pcWeeks();
         const total = weeks.reduce((s, w) => s + Number(w.budget || 0), 0);
@@ -382,8 +517,6 @@ const BudgetApp = (function () {
         </div>`;
     }
 
-    // ===== bloque 2 der · Estado de Cuentas =====
-    // Sin bloque inferior de introducción: se edita el saldo REAL pinchando sobre la propia cuenta.
     function accountsPanelHtml() {
         const r = recon();
         const expected = trExpected();
@@ -407,7 +540,6 @@ const BudgetApp = (function () {
             ${html}</div>`;
     }
 
-    // Edición del saldo real de una cuenta (pinchando sobre la fila)
     function openEditAccountModal(key) {
         const isTR = key === 'tr';
         const cur = isTR ? trReal() : accountRealBalance('MyInvestor');
@@ -427,10 +559,12 @@ const BudgetApp = (function () {
             const v = Number(inp.value || 0);
             if (isTR) recon().realBalances[currentPeriod] = v;
             else {
-                const acc = (data().accounts || []).find(x => (x.name || '').toLowerCase().includes('myinvestor'));
-                if (acc) acc.balance = v; else data().accounts.push({ id: 'acc-mi', name: 'MyInvestor', balance: v });
+                const acc = getAccounts().find(x => (x.name || '').toLowerCase().includes('myinvestor'));
+                if (acc) acc.balance = v; else getAccounts().push({ id: 'acc-mi', name: 'MyInvestor', balance: v, icon: '🏦' });
             }
-            App.saveData(); App.addHistory('presupuesto-comun', `Saldo real ${isTR ? 'Trade Republic' : 'MyInvestor'}: ${fmt(v)}`);
+            App.saveData();
+            App.notifyModuleChange('presupuesto-comun', { reason: 'account-updated' });
+            App.addHistory('presupuesto-comun', `Saldo real ${isTR ? 'Trade Republic' : 'MyInvestor'}: ${fmt(v)}`);
             closeModal(); render(); App.showToast('Saldo actualizado', 'success');
         };
         div.querySelector('#eaSave').onclick = save;
@@ -442,10 +576,6 @@ const BudgetApp = (function () {
         return `<span class="pc-info" tabindex="0" aria-label="Cuenta asociada">ⓘ<span class="pc-info-tip">Cuenta: <b>${esc(acc)}</b></span></span>`;
     }
 
-    // ===== bloque 3 · Tabla principal (categorías + subcategorías SIEMPRE visibles) =====
-    // · Sin columna "CUENTA ASOCIADA": el ⓘ a la derecha del título muestra la cuenta (hover y clic).
-    // · Columnas PRESUPUESTO / GASTO REAL / DISPONIBLE equidistantes; barra de % pegada a la derecha.
-    // · Sin filas "Sin subcategorías" ni etiquetas "Pendiente".
     function consumptionCell(spent, budget) {
         const pct = budget ? Math.min((spent / budget) * 100, 100) : 0;
         const col = !budget ? 'var(--text-muted)' : spent > budget ? 'var(--pc-neg)' : pct >= 85 ? 'var(--pc-warn)' : 'var(--pc-pos)';
@@ -453,8 +583,7 @@ const BudgetApp = (function () {
         const badgeCls = bp === null ? 'pc-badge-gray' : bp > 100 ? 'pc-badge-red' : bp >= 85 ? 'pc-badge-amber' : 'pc-badge-green';
         return `<span class="pc-cons">${badge(bp === null ? '—' : `${Math.round(bp)}%`, badgeCls)}</span>`;
     }
-    // Título de fila con barra de consumo integrada: el fondo del título se rellena
-    // según el % consumido y el porcentaje aparece a la derecha, todo en la misma columna.
+
     function titleWithBar(icon, name, spent, budget, accent, opts) {
         const o = opts || {};
         const bpRaw = (budget === null || budget === undefined) ? null : (budget <= 0 ? 100 : (spent / budget) * 100);
@@ -468,8 +597,7 @@ const BudgetApp = (function () {
             `<span class="pc-title-inner">${icon} ${nameHtml}${o.suffixHtml || ''}</span>` +
             `<b class="pc-title-pct pc-num">${pctLabel}</b></span>`;
     }
-    // Botón-tick a la izquierda: iguala el gasto real al presupuesto añadiendo
-    // un movimiento con el valor DISPONIBLE.
+
     function tickBtn(rowId, budget, spent) {
         if (budget === null || budget === undefined) return '';
         const diff = budget - spent;
@@ -477,9 +605,15 @@ const BudgetApp = (function () {
         return `<button class="pc-tick-btn ${done ? 'done' : ''}" data-tick="${rowId}"
             title="${done ? 'Gasto real = presupuesto' : `Igualar gasto real al presupuesto (+${fmt(diff)})`}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.8 8.6 6.4 11.2 12.2 5.4"/></svg></button>`;
     }
+
     function equalizeRow(rowId) {
         const row = findRow(rowId);
         if (!row) return;
+        // pc-loans y pc-trips no se "igualan" con movimiento (son derivados)
+        if (rowId === 'pc-loans' || rowId === 'pc-trips') {
+            App.showToast('Esta categoría se calcula automáticamente desde otros módulos', 'info');
+            return;
+        }
         const budget = String(rowId).startsWith('pcs-') ? subBudget(rowId) : catBudget(rowId);
         const spent = rowSpent(rowId);
         if (budget === null || budget === undefined) { App.showToast('Esta fila no tiene presupuesto definido', 'warn'); return; }
@@ -491,6 +625,7 @@ const BudgetApp = (function () {
         });
         App.showToast(`Gasto real igualado al presupuesto (${diff > 0 ? '+' : ''}${fmt(diff)})`, 'success');
     }
+
     function tableHtml() {
         const cats = pcCats();
         let html = `<div class="pc-table-wrap"><table class="pc-table pc-table-compact"><thead><tr>
@@ -501,14 +636,13 @@ const BudgetApp = (function () {
             const meta = CAT_META[c.id] || { accent: '#2563eb' };
             const subs = pcSubs(c.id);
             const cb = catBudget(c.id), cs = rowSpent(c.id);
-            const derived = subs.length > 0;
+            const derived = subs.length > 0 || c.id === 'pc-loans' || c.id === 'pc-trips';
             const catSuffix = `${infoBadge(c.account)}${dueBadge(c.dueDate)}${derived ? '<span class="pc-derived-tag" title="Importes calculados como suma de sus subcategorías">Σ</span>' : ''}`;
             html += `<tr class="pc-row-cat" data-moves="${c.id}" style="--cat-accent:${meta.accent}">
                 <td class="pc-td-cat">${tickBtn(c.id, cb, cs)}${titleWithBar(c.icon || '📁', rowLabel(c), cs, cb, meta.accent, { editAttr: 'editcat', editId: c.id, suffixHtml: catSuffix })}</td>
                 <td class="pc-td-num">${cb === null ? muted('No definido') : fmt(cb)}</td>
                 <td class="pc-td-num"><span class="pc-cell-edit" data-real="${c.id}" title="Clic para ajustar el gasto real">✏️ ${fmt(cs)}</span></td>
                 <td class="pc-td-num">${availCell(cb, cs).replace(/^<td[^>]*>|<\/td>$/g, '')}</td></tr>`;
-            // Subcategorías siempre visibles (sin filas de relleno ni textos "sin subcategorías")
             subs.forEach(s => {
                 const sb = subBudget(s.id);
                 const ss = subSpent(s.id);
@@ -520,10 +654,10 @@ const BudgetApp = (function () {
                     <td class="pc-td-num">${availCell(sb, ss).replace(/^<td[^>]*>|<\/td>$/g, '')}</td></tr>`;
             });
             if (c.id === 'pc-loans') pcLoans().forEach(l => {
-                const paid = !!recon().loansPaid[l.id];
+                const paid = (l.paidCount || 0) >= (l.installments || 0);
                 html += `<tr class="pc-row-sub" style="--cat-accent:${meta.accent}">
-                    <td>💳 ${esc(l.name)} <span class="pc-num" style="color:var(--text-muted)">(${l.paidInstallments}/${l.totalInstallments} cuotas)</span> ${infoBadge(l.account || 'Trade Republic')}</td>
-                    <td class="pc-td-num">${fmt(l.amountPerInstallment)}/cuota</td>
+                    <td>💳 ${esc(l.name)} <span class="pc-num" style="color:var(--text-muted)">(${l.paidCount || 0}/${l.installments || 0} cuotas)</span> ${infoBadge(l.accountName || 'Trade Republic')}</td>
+                    <td class="pc-td-num">${fmt(l.installmentAmount)}/cuota</td>
                     <td class="pc-td-num">—</td>
                     <td class="pc-td-num"><span class="pc-toggle"><input type="checkbox" data-loanpaid="${l.id}" ${paid ? 'checked' : ''}><span class="pc-slider"></span></span> ${badge(paid ? 'Pagado' : 'Cuota', paid ? 'pc-badge-green' : 'pc-badge-gray')}</td></tr>`;
             });
@@ -532,12 +666,11 @@ const BudgetApp = (function () {
         return html;
     }
 
-    // ===== modal de movimientos · SOLO de la categoría/subcategoría elegida =====
-    // Líneas con fecha, importe y descripción. Sustituye al panel inferior de movimientos.
     function openMovesModal(rowId) {
         const row = findRow(rowId);
         if (!row) return;
         const isSub = String(rowId).startsWith('pcs-');
+        // pc-loans y pc-trips muestran los movimientos genéricos de la cat
         const ids = isSub ? [rowId] : [rowId].concat(pcSubs(rowId).map(s => s.id));
         const parentName = isSub ? ((pcCats().find(x => x.id === row.parentId) || {}).name || '') : '';
         closeModal();
@@ -586,17 +719,23 @@ const BudgetApp = (function () {
         renderList();
     }
 
-    // ===== modales =====
+    /* =========================================================
+       MODALES
+       ========================================================= */
     function closeModal() { const b = document.getElementById('pcBackdrop'); if (b) b.remove(); }
     function closePop() { if (popEl) { popEl.remove(); popEl = null; } }
 
     function openCatModal(id, isSub) {
         const item = isSub ? (data().pcSubcategories || []).find(s => s.id === id) : pcCats().find(c => c.id === id);
         if (!item) return;
+        // Bloquear edición de categorías derivadas
+        if (id === 'pc-loans' || id === 'pc-trips') {
+            App.showToast('Esta categoría se gestiona desde otros módulos', 'info');
+            return;
+        }
         const accOpts = ACCOUNTS.map(a => `<option ${item.account === a ? 'selected' : ''}>${a}</option>`).join('');
         const subs = !isSub ? pcSubs(id) : [];
         closeModal();
-        // Con subcategorías: presupuesto/gasto de la categoría son DERIVADOS (suma Σ)
         const derivedNote = (!isSub && subs.length)
             ? `<div class="pc-derived-note">📐 Los importes de esta categoría se calculan como <b>suma de sus ${subs.length} subcategorías</b>. Edita presupuesto y gasto real en cada subcategoría.</div>` : '';
         const budgetField = derivedNote ? '' : `<div class="pc-field"><label>Presupuesto (€) · vacío = no definido</label><input id="mBudget" type="number" step="0.01" value="${item.budget === null || item.budget === undefined ? '' : item.budget}"></div>`;
@@ -684,8 +823,11 @@ const BudgetApp = (function () {
     }
 
     function catOptionsHtml(selectedId) {
-        // Categorías sin subcategorías → seleccionables; con subcategorías → cabecera de grupo <optgroup>
         return pcCats().map(c => {
+            // pc-loans y pc-trips son derivados · no permiten añadir movimiento directo
+            if (c.id === 'pc-loans' || c.id === 'pc-trips') {
+                return '';
+            }
             const subs = pcSubs(c.id);
             const label = esc((c.icon || '📁') + ' ' + (CAT_META[c.id] ? CAT_META[c.id].label : c.name));
             if (!subs.length) return `<option value="${c.id}" ${selectedId === c.id ? 'selected' : ''}>${label}</option>`;
@@ -704,7 +846,8 @@ const BudgetApp = (function () {
             <div class="pc-field"><label>Importe (€)</label><input id="nAmt" type="number" step="0.01" placeholder="0,00"></div>
             <div class="pc-field"><label>Fecha</label><input id="nDate" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
             <div class="pc-field"><label>Cuenta</label><select id="nAcc"><option value="">Heredar de la categoría</option>${ACCOUNTS.map(a => `<option>${a}</option>`).join('')}</select></div>
-            <div class="pc-field"><label>¿Quién pagó?</label><select id="nWho"><option value="conjunto">Conjunto</option><option value="ana">Nena</option><option value="carlos">Bombón</option></select></div>
+            <div class="pc-field"><label>¿Quién pagó?</label><select id="nWho"><option value="conjunto">Conjunto</option>${(App.data.profiles || []).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
+            <div class="pc-field"><label>Estado</label><select id="nStatus"><option value="registrado">Registrado (descuenta saldo)</option><option value="previsto">Previsto</option><option value="pendiente">Pendiente</option></select></div>
             <div class="pc-field" id="nWeekWrap"><label>Semana (Groceries & Leisure)</label><select id="nWeek"><option value="">— sin asignar —</option>${pcWeeks().map(w => `<option value="${w.id}" ${preWeekId === w.id ? 'selected' : ''}>${esc(w.label)} (${shortDate(w.start)}→${shortDate(w.end)})</option>`).join('')}</select></div>
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="nCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="nSave">Registrar</button></div></div>`;
@@ -718,12 +861,15 @@ const BudgetApp = (function () {
             const amt = Number(div.querySelector('#nAmt').value);
             if (!amt || amt <= 0) { App.showToast('Importe no válido', 'error'); return; }
             const catId = div.querySelector('#nCat').value;
+            if (!catId) { App.showToast('Selecciona una categoría', 'error'); return; }
             const weekSel = div.querySelector('#nWeek');
             const extra = {};
             if (weekSel && weekSel.value) extra.pcWeekId = weekSel.value;
             addMovement(catId, amt, {
                 concept: div.querySelector('#nConcept').value.trim() || 'Movimiento',
-                date: div.querySelector('#nDate').value, person: div.querySelector('#nWho').value,
+                date: div.querySelector('#nDate').value,
+                person: div.querySelector('#nWho').value,
+                status: div.querySelector('#nStatus').value,
                 account: div.querySelector('#nAcc').value || (findRow(catId) || {}).account || '',
                 action: 'Movimiento', ...extra
             });
@@ -799,10 +945,6 @@ const BudgetApp = (function () {
         };
     }
 
-    // ===== modal · semanas del mes (clic en el título de Groceries & Leisure) =====
-    // Permite decidir CUÁNTAS semanas tiene el mes. La semana 1 empieza siempre en LUNES
-    // (el lunes anterior al día 1, es decir: el primer día es el siguiente al último día
-    // del mes anterior si este cae en lunes). Conserva los presupuestos ya asignados.
     function openWeekCountModal() {
         closeModal();
         const cur = weekCount(currentPeriod);
@@ -811,7 +953,7 @@ const BudgetApp = (function () {
         const div = document.createElement('div');
         div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
         div.innerHTML = `<div class="pc-modal"><h3>🗓️ Semanas de ${esc(App.formatPeriod(currentPeriod))}</h3>
-            <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:12px">La primera semana empieza en <b>lunes</b>. Puedes repartir el presupuesto semanal de cada semana en la tarjeta correspondiente.</p>
+            <p style="font-size:12.5px;color:var(--text-secondary);margin-bottom:12px">La primera semana empieza en <b>lunes</b>.</p>
             <div class="pc-field"><label>Número de semanas del mes</label><select id="wcN">${opts}</select></div>
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="wcCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="wcSave">Aplicar</button></div></div>`;
@@ -831,10 +973,6 @@ const BudgetApp = (function () {
         };
     }
 
-    // ===== modal de SEMANA (clic sobre la tarjeta de una semana) =====
-    // Muestra los movimientos reales de esa semana (fecha, importe y descripción),
-    // permite editarlos/eliminarlos/añadir, cambiar el presupuesto semanal y
-    // forzar manualmente el estado (En curso ↔ Pasada; "Vacía" es siempre automática).
     function openWeekModal(weekId) {
         const getW = () => (data().pcWeeks || []).find(x => x.id === weekId);
         const w = getW();
@@ -855,7 +993,6 @@ const BudgetApp = (function () {
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         div.querySelector('#wkX').onclick = closeModal;
-
         const wkExpOf = () => pcRealExpenses().filter(e => e.pcWeekId === weekId);
         const renderBody = () => {
             const ww = getW(); if (!ww) { closeModal(); return; }
@@ -915,7 +1052,9 @@ const BudgetApp = (function () {
         renderBody();
     }
 
-    // ===== render principal =====
+    /* =========================================================
+       RENDER PRINCIPAL
+       ========================================================= */
     function render() {
         if (!containerEl) return;
         closePop();
@@ -927,23 +1066,20 @@ const BudgetApp = (function () {
 
     function bind() {
         const $ = sel => containerEl.querySelector(sel);
-        // Periodo: mes y año por separado
         $('#pcMonth').onchange = e => { currentPeriod = $('#pcYear').value + '-' + e.target.value; render(); };
         $('#pcYear').onchange = e => { currentPeriod = e.target.value + '-' + $('#pcMonth').value; render(); };
         $('#pcNewMov').onclick = () => openNewMovModal();
         $('#pcBtnCat').onclick = openNewCatModal;
-        // Groceries & Leisure: clic en el título → nº de semanas del mes · clic en semana → modal de movimientos
         const groTitle = $('#pcGroTitle');
         if (groTitle) groTitle.onclick = openWeekCountModal;
         containerEl.querySelectorAll('[data-week]').forEach(card => card.onclick = () => openWeekModal(card.getAttribute('data-week')));
-        // Estado de Cuentas: clic sobre la cuenta → editar su saldo real
         containerEl.querySelectorAll('[data-editacc]').forEach(row => row.onclick = () => openEditAccountModal(row.getAttribute('data-editacc')));
-        // Tabla: clic en la fila → modal de movimientos de ESA categoría/subcategoría
+
         containerEl.querySelectorAll('[data-moves]').forEach(tr => tr.onclick = e => {
             if (e.target.closest('[data-editcat]') || e.target.closest('[data-editsub]') || e.target.closest('[data-real]') || e.target.closest('[data-loanpaid]') || e.target.closest('[data-tick]') || e.target.closest('.pc-info')) return;
             openMovesModal(tr.getAttribute('data-moves'));
         });
-        // Botón-tick: iguala el gasto real al presupuesto (añade movimiento con el disponible)
+
         containerEl.querySelectorAll('[data-tick]').forEach(btn => btn.onclick = e => {
             e.stopPropagation();
             equalizeRow(btn.getAttribute('data-tick'));
@@ -954,32 +1090,34 @@ const BudgetApp = (function () {
             e.stopPropagation();
             openQuickPop(el, el.getAttribute('data-real'), rowSpent(el.getAttribute('data-real')));
         });
+
+        // Toggle cuota · delegado a dinero
         containerEl.querySelectorAll('[data-loanpaid]').forEach(ch => ch.onclick = e => {
             e.stopPropagation();
             const id = ch.getAttribute('data-loanpaid');
-            recon().loansPaid[id] = ch.checked;
             if (ch.checked) {
-                const l = pcLoans().find(x => x.id === id);
-                if (l) addMovement('pc-loans', Number(l.amountPerInstallment || 0), { concept: `Cuota ${l.name}`, account: l.account || 'Trade Republic', action: 'Cuota pagada' });
+                recon().loansPaid[id] = true;
+                App.saveData();
+                // Delegar en dinero: paidCount++, movimiento, balance−
+                if (window.App && typeof App.payLoanInstallment === 'function') {
+                    App.payLoanInstallment(id);
+                }
+            } else {
+                recon().loansPaid[id] = false;
+                App.saveData();
+                render();
+                App.showToast('Reversión de cuota no soportada todavía · solo se limpia el flag TR', 'info');
             }
-            App.saveData(); render();
         });
-        // ⓘ de cuenta: hover muestra el tooltip por CSS; clic lo mantiene visible/lo oculta
+
         containerEl.querySelectorAll('.pc-info').forEach(el => el.onclick = e => {
             e.stopPropagation();
             containerEl.querySelectorAll('.pc-info.pinned').forEach(o => { if (o !== el) o.classList.remove('pinned'); });
             el.classList.toggle('pinned');
         });
         document.addEventListener('click', () => containerEl && containerEl.querySelectorAll('.pc-info.pinned').forEach(o => o.classList.remove('pinned')));
-        containerEl.querySelectorAll('[data-act]').forEach(btn => btn.onclick = () => {
-            const act = btn.getAttribute('data-act');
-            if (act === 'newMov') openNewMovModal();
-            if (act === 'newMovCat') openNewMovModal(btn.getAttribute('data-cat'));
-        });
     }
 
-    // Asegura que el mes visible tenga semanas definidas (4 por defecto,
-    // o las que tuviera configuradas para ese mes). Se ejecuta en cada init.
     function ensureWeeks() {
         if (!data().pcWeeks) data().pcWeeks = [];
         if (!weekCount(currentPeriod)) {
@@ -990,9 +1128,59 @@ const BudgetApp = (function () {
         }
     }
 
-    // ===== API pública =====
-    function init(container) { containerEl = container; fixGroceriesName(); dedupeLoans(); removeOthersGenSub(); ensureWeeks(); render(); }
+    /* =========================================================
+       LISTENER DE CAMBIOS EXTERNOS
+       ========================================================= */
+    function bindModuleChange() {
+        if (_pcBound) return;
+        document.addEventListener('app:module-changed', (e) => {
+            const src = e.detail && e.detail.source;
+            if (!src || src === 'presupuesto-comun') return;
+            if (containerEl && containerEl.isConnected) {
+                try { render(); } catch (err) {}
+            }
+        });
+        _pcBound = true;
+    }
+
+    /* =========================================================
+       INIT / API PÚBLICA
+       ========================================================= */
+    function init(container) {
+        containerEl = container;
+        fixGroceriesName();
+        dedupeLoans();
+        removeOthersGenSub();
+        ensureWeeks();
+        bindModuleChange();
+        render();
+    }
     function onThemeChange() { render(); }
+
+    /** Resumen mensual del hogar (puente → ingresos) */
+    function getPcSummary(period) {
+        const p = period || currentPeriod;
+        const FIXED_IDS = ['pc-rent', 'pc-utilities', 'pc-loans'];
+        let fixed = 0, variable = 0;
+        pcCats().forEach(c => {
+            const b = catBudget(c.id);
+            if (b === null) return;
+            if (FIXED_IDS.includes(c.id)) fixed += b; else variable += b;
+        });
+        const planned = sum((data().expenses || []).filter(e => {
+            const ep = e.aggPeriod || String(e.date || '').substring(0, 7);
+            return ep === p && e.status !== 'archivado' && e.status !== 'aportacion';
+        }));
+        return {
+            period: p,
+            fixed: Math.round(fixed * 100) / 100,
+            variable: Math.round(variable * 100) / 100,
+            total: Math.round((fixed + variable) * 100) / 100,
+            planned: Math.round(planned * 100) / 100,
+            budgetTotal: Math.round(totalBudgetDefined() * 100) / 100
+        };
+    }
+
     function openExpenseModal(expenseId) {
         const exp = (data().expenses || []).find(e => e.id === expenseId);
         if (exp) { openCatModal(exp.categoryId, String(exp.categoryId || '').startsWith('pcs-')); }
@@ -1003,16 +1191,21 @@ const BudgetApp = (function () {
     return {
         init, render, onThemeChange,
         openExpenseModal, openCategoryModal,
-        // nuevos para el puente de App / otros módulos
         openMovementModal: openNewMovModal,
         quickEditRealSpend: (rowId, value) => { setRowReal(rowId, value); },
-        addMovement
+        addMovement,
+        setExpenseStatus,
+        getPcSummary,
+        getState: () => ({
+            period: currentPeriod,
+            categories: JSON.parse(JSON.stringify(data().pcCategories || [])),
+            subcategories: JSON.parse(JSON.stringify(data().pcSubcategories || [])),
+            weeks: JSON.parse(JSON.stringify(data().pcWeeks || [])),
+            expenses: JSON.parse(JSON.stringify(data().expenses || []))
+        })
     };
 })();
 
-// Publicar la referencia en window (igual que App, CalendarApp, DineroApp…)
-// y registrar la sección de forma tolerante: si app.js aún no está presente,
-// se reintenta en DOMContentLoaded para no dejar la pestaña en blanco.
 window.BudgetApp = BudgetApp;
 
 (function ensureRegistered() {

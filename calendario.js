@@ -1,1044 +1,1010 @@
-/* =============================================================
-   CALENDARIO.JS
-   Sección completa con vistas: Calendario (Mes/Semana/Agenda),
-   Próximos movimientos y Configuración.
-   Integra eventos de Presupuesto, Viajes, Cuentas y manuales.
-   ============================================================= */
+/* =============================================================================
+   CALENDARIO.JS · v4 — Calendario financiero conectado al puente App
+   -----------------------------------------------------------------------------
+   · Día actual con badge HOY + círculo azul
+   · Vistas: Mes · Semana · Agenda (30 días desde hoy)
+   · Toolbar: mes/periodo a la izquierda · conmutador de vista a la derecha
+   · Agregación completa desde el puente:
+       - App.data.expenses (presupuesto)
+       - App.getDineroData() (dinero: commitments, recurring, loans, goals,
+         debts, movements)
+       - App.getIngresosData() + App.getSalary() + App.getMonthExtras()
+         (nóminas, extras, bonus con fecha)
+       - App.data.trips + tripActivities + tripReservations (viajes)
+       - App.data.transfers
+       - App.data.calendarEvents (manuales, solo lectura)
+     · Modal de evento con acciones contextuales:
+         - Ingresos: "Registrar cobro real" → App.confirmIncomeReceipt
+         - Presupuesto: "Marcar pagado" → App.goTo('presupuesto-comun','setExpenseStatus')
+         - Dinero/Viajes: "Abrir en …"
+     · Listener app:module-changed → re-render automático
+   ============================================================================= */
 const CalendarApp = (function () {
     'use strict';
 
-    // =========================================================
-    // ESTILOS ESPECÍFICOS
-    // =========================================================
-    // CSS del módulo → inyección estandarizada (App.injectStylesheet)
-    function moduleCSS() { return `
-            /* Sub-navegación */
-            .cal-subnav {
-                display: flex; gap: 4px;
-                border-bottom: 1px solid var(--border);
-                margin-bottom: 20px;
-                overflow-x: auto;
-            }
-            .cal-subnav-item {
-                padding: 10px 16px;
-                background: none; border: none;
-                color: var(--text-secondary);
-                font-size: 14px; font-weight: 500;
-                cursor: pointer;
-                border-bottom: 2px solid transparent;
-                margin-bottom: -1px;
-                transition: all 0.15s;
-                white-space: nowrap;
-                font-family: inherit;
-                display: inline-flex; align-items: center; gap: 6px;
-            }
-            .cal-subnav-item:hover { color: var(--text); }
-            .cal-subnav-item.active { color: var(--primary); border-bottom-color: var(--primary); }
+    /* =========================== ESTADO =========================== */
+    const state = {
+        currentDate: new Date(),
+        selectedDate: null,
+        currentView: 'mes'  // 'mes' | 'semana' | 'agenda'
+    };
 
-            .cal-subview { display: none; }
-            .cal-subview.active { display: block; }
-
-            /* Header del calendario */
-            .cal-header {
-                display: flex; justify-content: space-between; align-items: center;
-                flex-wrap: wrap; gap: 12px; margin-bottom: 20px;
-            }
-            .cal-nav { display: flex; align-items: center; gap: 8px; }
-            .cal-title { font-size: 20px; font-weight: 700; min-width: 200px; text-align: center; }
-            .cal-view-selector { display: flex; background: var(--border-light); border-radius: var(--radius-sm); padding: 2px; }
-            .cal-view-btn {
-                padding: 6px 12px; border: none; background: transparent;
-                color: var(--text-secondary); font-size: 13px; font-weight: 500;
-                cursor: pointer; border-radius: 4px; font-family: inherit;
-            }
-            .cal-view-btn.active { background: var(--bg-card); color: var(--text); box-shadow: var(--shadow-sm); }
-
-            /* Resumen financiero */
-            .cal-summary {
-                display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                gap: 12px; margin-bottom: 20px;
-            }
-            .cal-summary-card {
-                background: var(--bg-card); border: 1px solid var(--border);
-                border-radius: var(--radius-sm); padding: 12px;
-            }
-            .cal-summary-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
-            .cal-summary-value { font-size: 18px; font-weight: 700; }
-            .cal-summary-value.income { color: var(--success); }
-            .cal-summary-value.expense { color: var(--danger); }
-
-            /* Vista Mensual */
-            .cal-month-grid {
-                display: grid; grid-template-columns: repeat(7, 1fr);
-                gap: 1px; background: var(--border);
-                border: 1px solid var(--border); border-radius: var(--radius);
-                overflow: hidden;
-            }
-            .cal-day-header {
-                background: var(--bg-card); padding: 8px;
-                text-align: center; font-size: 12px; font-weight: 600;
-                color: var(--text-secondary); text-transform: uppercase;
-            }
-            .cal-day {
-                background: var(--bg-card); min-height: 100px;
-                padding: 6px; cursor: pointer; transition: background 0.15s;
-                position: relative;
-            }
-            .cal-day:hover { background: var(--border-light); }
-            .cal-day.other-month { background: var(--border-light); opacity: 0.6; }
-            .cal-day.today { background: var(--primary-light); }
-            .cal-day-num {
-                font-size: 13px; font-weight: 600; margin-bottom: 4px;
-                display: flex; justify-content: space-between;
-            }
-            .cal-day.today .cal-day-num { color: var(--primary); }
-            .cal-event-chip {
-                font-size: 11px; padding: 2px 6px; border-radius: 4px;
-                margin-bottom: 2px; white-space: nowrap; overflow: hidden;
-                text-overflow: ellipsis; cursor: pointer;
-                display: flex; align-items: center; gap: 4px;
-            }
-            .cal-event-chip.gasto { background: var(--danger-light); color: var(--danger); }
-            .cal-event-chip.ingreso { background: var(--success-light); color: var(--success); }
-            .cal-event-chip.viaje { background: var(--info-light); color: var(--info); }
-            .cal-event-chip.actividad { background: var(--warning-light); color: var(--warning); }
-            .cal-event-chip.pago { background: #fef3c7; color: #d97706; border: 1px solid #fcd34d; }
-            .cal-event-chip.transferencia { background: var(--border-light); color: var(--text-secondary); }
-            .cal-event-chip.manual { background: #e0e7ff; color: #4338ca; }
-            .cal-more { font-size: 10px; color: var(--primary); cursor: pointer; margin-top: 2px; }
-
-            /* Vista Semanal */
-            .cal-week-grid {
-                display: grid; grid-template-columns: 60px repeat(7, 1fr);
-                gap: 1px; background: var(--border);
-                border: 1px solid var(--border); border-radius: var(--radius);
-                overflow-x: auto;
-            }
-            .cal-week-header {
-                background: var(--bg-card); padding: 8px;
-                text-align: center; font-size: 12px; font-weight: 600;
-            }
-            .cal-week-header.today { color: var(--primary); background: var(--primary-light); }
-            .cal-week-col {
-                background: var(--bg-card); min-height: 400px;
-                padding: 4px; position: relative;
-            }
-            .cal-week-event {
-                font-size: 11px; padding: 4px 6px; border-radius: 4px;
-                margin-bottom: 4px; border-left: 3px solid;
-                cursor: pointer;
-            }
-
-            /* Vista Agenda */
-            .cal-agenda-list { display: flex; flex-direction: column; gap: 16px; }
-            .cal-agenda-date-group {
-                background: var(--bg-card); border: 1px solid var(--border);
-                border-radius: var(--radius); overflow: hidden;
-            }
-            .cal-agenda-date-header {
-                padding: 10px 14px; background: var(--border-light);
-                font-size: 13px; font-weight: 600; color: var(--text-secondary);
-                display: flex; justify-content: space-between;
-            }
-            .cal-agenda-item {
-                padding: 12px 14px; border-bottom: 1px solid var(--border-light);
-                display: flex; align-items: center; gap: 12px;
-                cursor: pointer; transition: background 0.15s;
-            }
-            .cal-agenda-item:last-child { border-bottom: none; }
-            .cal-agenda-item:hover { background: var(--border-light); }
-            .cal-agenda-icon {
-                width: 36px; height: 36px; border-radius: 8px;
-                display: flex; align-items: center; justify-content: center;
-                font-size: 14px; flex-shrink: 0;
-            }
-            .cal-agenda-info { flex: 1; min-width: 0; }
-            .cal-agenda-title { font-size: 14px; font-weight: 500; margin-bottom: 2px; }
-            .cal-agenda-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; }
-            .cal-agenda-amount { font-size: 14px; font-weight: 600; text-align: right; }
-
-            /* Próximos movimientos */
-            .cal-upcoming-list { display: flex; flex-direction: column; gap: 12px; }
-            .cal-upcoming-card {
-                background: var(--bg-card); border: 1px solid var(--border);
-                border-radius: var(--radius); padding: 14px;
-                display: flex; align-items: center; gap: 14px;
-                cursor: pointer; transition: all 0.2s;
-            }
-            .cal-upcoming-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-            .cal-upcoming-card.urgent { border-left: 3px solid var(--danger); }
-            .cal-upcoming-card.warning { border-left: 3px solid var(--warning); }
-            .cal-upcoming-card.normal { border-left: 3px solid var(--primary); }
-
-            /* Modal */
-            .cal-modal {
-                display: none; position: fixed; inset: 0;
-                background: rgba(0,0,0,0.5); z-index: 1000;
-                align-items: center; justify-content: center; padding: 20px;
-            }
-            .cal-modal.active { display: flex; }
-            .cal-modal-content {
-                background: var(--bg-card); border-radius: var(--radius-lg);
-                max-width: 600px; width: 100%; max-height: 90vh;
-                overflow-y: auto; box-shadow: var(--shadow-md);
-            }
-            .cal-modal-header {
-                padding: 20px; border-bottom: 1px solid var(--border);
-                display: flex; justify-content: space-between; align-items: center;
-            }
-            .cal-modal-title { font-size: 16px; font-weight: 600; }
-            .cal-modal-close {
-                background: none; border: none; color: var(--text-muted);
-                cursor: pointer; font-size: 18px; padding: 4px;
-            }
-            .cal-modal-body { padding: 20px; }
-            .cal-modal-footer {
-                padding: 16px 20px; border-top: 1px solid var(--border);
-                display: flex; justify-content: flex-end; gap: 8px;
-            }
-
-            /* Forms */
-            .cal-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
-            .cal-form-row.single { grid-template-columns: 1fr; }
-            @media (max-width: 768px) { .cal-form-row { grid-template-columns: 1fr; } }
-            .cal-form-group { margin-bottom: 14px; }
-            .cal-form-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
-            .cal-form-input, .cal-form-select, .cal-form-textarea {
-                width: 100%; padding: 9px 12px; border: 1px solid var(--border);
-                border-radius: var(--radius-sm); background: var(--bg-card);
-                color: var(--text); font-size: 13px; font-family: inherit;
-            }
-            .cal-form-input:focus, .cal-form-select:focus { outline: none; border-color: var(--primary); }
-            .cal-form-textarea { resize: vertical; min-height: 70px; }
-
-            /* Filtros */
-            .cal-filters-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
-            .cal-filter-select {
-                padding: 9px 32px 9px 12px; border: 1px solid var(--border);
-                border-radius: var(--radius-sm); background: var(--bg-card);
-                color: var(--text); font-size: 13px; cursor: pointer;
-                appearance: none; font-family: inherit;
-                background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-                background-repeat: no-repeat; background-position: right 10px center;
-            }
-
-            /* Mobile */
-            @media (max-width: 768px) {
-                .cal-month-grid { font-size: 11px; }
-                .cal-day { min-height: 70px; padding: 4px; }
-                .cal-event-chip { font-size: 9px; padding: 1px 4px; }
-                .cal-week-grid { display: none; } /* En móvil, priorizar Agenda */
-            }
-    `; }
-
-    // =========================================================
-    // ESTADO Y DATOS
-    // =========================================================
-    let currentDate = new Date(2026, 9, 1); // Octubre 2026
-    let currentView = 'mes'; // mes, semana, agenda, proximos, configuracion
-    let filters = { type: 'all', person: 'all', source: 'all' };
     let containerEl = null;
+    let listenersBound = false;
 
-    function ensureDataStructures() {
-        if (!App.data.calendarEvents) App.data.calendarEvents = [];
-        if (!App.data.transfers) App.data.transfers = [];
+    /* =========================== UTILIDADES FECHA =========================== */
+    const pad = n => String(n).padStart(2, '0');
+    const toISO = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const fromISO = iso => new Date(iso + 'T00:00:00');
+    const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+    const addMonths = (d, n) => {
+        const r = new Date(d); const day = r.getDate();
+        r.setMonth(r.getMonth() + n);
+        if (r.getDate() !== day) r.setDate(0);
+        return r;
+    };
+    const startOfMonth = d => new Date(d.getFullYear(), d.getMonth(), 1);
+    const endOfMonth = d => new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const startOfWeek = d => { const r = new Date(d); const wd = (r.getDay() + 6) % 7; return addDays(r, -wd); };
+    const todayISO = () => toISO(new Date());
+
+    const MONTHS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const WEEKDAYS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+    const WEEKDAYS_SHORT = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+    const fmtMonthYear = d => `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+    const fmtDayLong = iso => {
+        const d = fromISO(iso);
+        return `${WEEKDAYS[(d.getDay() + 6) % 7]}, ${d.getDate()} de ${MONTHS[d.getMonth()]} de ${d.getFullYear()}`;
+    };
+    const fmtAmount = n => (n == null || isNaN(n)) ? '—'
+        : new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 }).format(n);
+    const fmtAmountShort = n => new Intl.NumberFormat('es-ES', {
+        style: 'currency', currency: 'EUR', maximumFractionDigits: Math.abs(n) >= 100 ? 0 : 2
+    }).format(Math.abs(n));
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+
+    function getPersonName(pid) {
+        const p = ((window.App && App.data && App.data.profiles) || []).find(x => x.id === pid);
+        return p ? p.name : pid;
     }
 
-    // =========================================================
-    // AGREGACIÓN DE EVENTOS (Single Source of Truth)
-    // =========================================================
-    function getEventsForRange(startStr, endStr) {
-        ensureDataStructures();
+    function ensureStructures() {
+        if (!App.data) return;
+        if (!Array.isArray(App.data.calendarEvents)) App.data.calendarEvents = [];
+        if (!Array.isArray(App.data.transfers)) App.data.transfers = [];
+    }
+
+    /* =========================== INGRESOS · LECTURA VIA PUENTE =========================== */
+    /**
+     * Nóminas, pagas extra y bonus con fecha.
+     * Usa App.getIngresosData(), App.getSalary() y App.getMonthExtras().
+     */
+    function getIncomeEvents(startISO, endISO) {
+        const ing = (window.App && typeof App.getIngresosData === 'function') ? App.getIngresosData() : null;
+        if (!ing || !ing.profiles) return [];
+
         const events = [];
+        const peopleIds = ((window.App && App.data && App.data.profiles) || []).map(p => p.id);
 
-        // 1. Eventos manuales del calendario
-        App.data.calendarEvents.forEach(ev => {
-            if (ev.date >= startStr && ev.date <= endStr) {
-                events.push({ ...ev, source: 'manual', isFinancial: ev.amount !== null && ev.amount !== undefined });
-            }
-        });
+        peopleIds.forEach(pid => {
+            const profile = ing.profiles[pid];
+            if (!profile || !profile.grossAnnual) return;
+            const payDay = String(profile.extraPayDay || 15).padStart(2, '0');
 
-        // 2. Gastos e ingresos (Presupuesto / Mi dinero)
-        if (App.data.expenses) {
-            App.data.expenses.forEach(exp => {
-                if (exp.date >= startStr && exp.date <= endStr) {
-                    // Mostrar previstos, pendientes, o registrados futuros
-                    if (['previsto', 'pendiente', 'registrado'].includes(exp.status)) {
+            // Iterar meses del rango
+            const start = fromISO(startISO);
+            const end = fromISO(endISO);
+            let cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+            const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+
+            while (cursor <= endMonth) {
+                const mk = `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}`;
+                const payDate = `${mk}-${payDay}`;
+
+                if (payDate >= startISO && payDate <= endISO) {
+                    // Nómina mensual
+                    const sal = (window.App && typeof App.getSalary === 'function')
+                        ? App.getSalary(pid, mk) : null;
+                    if (sal) {
+                        const ctrl = ing.monthlyControl && ing.monthlyControl[mk];
+                        const isConfirmed = !!(ctrl && ctrl.confirmed && ctrl.confirmed[pid]);
                         events.push({
-                            id: 'exp-' + exp.id,
-                            originId: exp.id,
-                            source: 'presupuesto',
-                            type: exp.amount > 0 ? 'ingreso' : 'gasto',
-                            title: exp.concept,
-                            date: exp.date,
-                            amount: exp.amount,
-                            status: exp.status,
-                            person: exp.person,
-                            categoryId: exp.categoryId,
+                            id: `ing-salary-${pid}-${mk}`,
+                            source: 'ingresos',
+                            type: 'ingreso',
+                            title: `Nómina ${MONTHS[cursor.getMonth()]} · ${getPersonName(pid)}`,
+                            date: payDate,
+                            time: '',
+                            person: pid,
                             isFinancial: true,
-                            originSection: 'presupuesto-comun'
+                            amount: (isConfirmed && sal.real != null) ? sal.real : sal.theoretical,
+                            status: isConfirmed ? 'registrado' : 'previsto',
+                            originSection: 'ingresos-personales',
+                            originId: `salary-${pid}-${mk}`
                         });
                     }
-                }
-            });
-        }
 
-        // 3. Viajes (Salidas y regresos)
-        if (App.data.trips) {
-            App.data.trips.forEach(trip => {
-                if (trip.startDate >= startStr && trip.startDate <= endStr && trip.status !== 'cancelado') {
-                    events.push({
-                        id: 'trip-start-' + trip.id, originId: trip.id, source: 'viajes',
-                        type: 'viaje', title: `Salida: ${trip.name}`, date: trip.startDate,
-                        tripId: trip.id, isFinancial: false, originSection: 'viajes'
-                    });
-                }
-                if (trip.endDate >= startStr && trip.endDate <= endStr && trip.status !== 'cancelado') {
-                    events.push({
-                        id: 'trip-end-' + trip.id, originId: trip.id, source: 'viajes',
-                        type: 'viaje', title: `Regreso: ${trip.name}`, date: trip.endDate,
-                        tripId: trip.id, isFinancial: false, originSection: 'viajes'
-                    });
-                }
-            });
-        }
-
-        // 4. Actividades de viaje
-        if (App.data.tripActivities) {
-            App.data.tripActivities.forEach(act => {
-                if (act.date >= startStr && act.date <= endStr) {
-                    events.push({
-                        id: 'act-' + act.id, originId: act.id, source: 'viajes',
-                        type: 'actividad', title: act.title, date: act.date, time: act.time,
-                        tripId: act.tripId, amount: act.estimatedCost,
-                        isFinancial: act.estimatedCost > 0, originSection: 'viajes'
-                    });
-                }
-            });
-        }
-
-        // 5. Reservas de viaje (fechas de pago pendiente)
-        if (App.data.tripReservations) {
-            App.data.tripReservations.forEach(res => {
-                if (res.status !== 'pagado' && res.status !== 'cancelado') {
-                    res.paymentDates.forEach(pDate => {
-                        if (pDate >= startStr && pDate <= endStr) {
+                    // Paga extra (solo si el mes está en extraDates)
+                    const monthMM = pad(cursor.getMonth() + 1);
+                    const hasExtra = (profile.extraDates || []).includes(monthMM);
+                    if (hasExtra && window.App && typeof App.getMonthExtras === 'function') {
+                        const items = App.getMonthExtras(pid, mk) || [];
+                        const extraItem = items.find(x => x.type === 'extraordinaria');
+                        if (extraItem && extraItem.amount > 0) {
+                            const confirmedAmt =
+                                ing.extraPayments &&
+                                ing.extraPayments[mk] &&
+                                ing.extraPayments[mk][pid] &&
+                                ing.extraPayments[mk][pid].realItems &&
+                                ing.extraPayments[mk][pid].realItems[extraItem.id];
                             events.push({
-                                id: 'res-pay-' + res.id + '-' + pDate, originId: res.id,
-                                source: 'viajes', type: 'pago', title: `Pago: ${res.concept}`,
-                                date: pDate, amount: res.pendingAmount, tripId: res.tripId,
-                                isFinancial: true, originSection: 'viajes'
+                                id: `ing-extra-${pid}-${mk}`,
+                                source: 'ingresos',
+                                type: 'ingreso',
+                                title: `Paga extra · ${getPersonName(pid)}`,
+                                date: payDate,
+                                time: '',
+                                person: pid,
+                                isFinancial: true,
+                                amount: confirmedAmt != null ? confirmedAmt : extraItem.amount,
+                                status: confirmedAmt != null ? 'registrado' : 'previsto',
+                                originSection: 'ingresos-personales',
+                                originId: `extra-${pid}-${mk}-${extraItem.id}`
                             });
                         }
-                    });
+                    }
                 }
-            });
-        }
+                cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+            }
 
-        // 6. Transferencias (Cuentas)
-        if (App.data.transfers) {
-            App.data.transfers.forEach(tr => {
-                if (tr.date >= startStr && tr.date <= endStr && tr.status !== 'cancelado') {
-                    events.push({
-                        id: 'tr-' + tr.id, originId: tr.id, source: 'cuentas',
-                        type: 'transferencia', title: tr.concept, date: tr.date,
-                        amount: tr.amount, isFinancial: true, originSection: 'cuentas'
-                    });
-                }
+            // Bonus (fecha exacta · status previsto · se confirma desde Ingresos)
+            (profile.bonuses || []).forEach(b => {
+                if (!b.date || b.date < startISO || b.date > endISO) return;
+                const amount = Math.max(0, Number(b.amount) - Number(b.irpfDiscount || 0));
+                if (amount <= 0) return;
+                events.push({
+                    id: `ing-bonus-${b.id}`,
+                    source: 'ingresos',
+                    type: 'ingreso',
+                    title: `Bonus · ${b.name} (${getPersonName(pid)})`,
+                    date: b.date,
+                    time: '',
+                    person: pid,
+                    isFinancial: true,
+                    amount,
+                    status: 'previsto',
+                    originSection: 'ingresos-personales',
+                    originId: b.id
+                });
             });
-        }
-
-        // Filtrar y ordenar
-        return events.filter(ev => {
-            if (filters.type !== 'all' && ev.type !== filters.type) return false;
-            if (filters.person !== 'all' && ev.person !== filters.person) return false;
-            if (filters.source !== 'all' && ev.source !== filters.source) return false;
-            return true;
-        }).sort((a, b) => {
-            if (a.date !== b.date) return a.date.localeCompare(b.date);
-            return (a.time || '').localeCompare(b.time || '');
         });
+
+        return events;
     }
 
-    function getEventsForDay(dateStr) {
-        return getEventsForRange(dateStr, dateStr);
+    /* =========================== AGREGACIÓN GENERAL =========================== */
+    function getAllEvents(startISO, endISO) {
+        ensureStructures();
+        const raw = [];
+
+        /* -- 1 · Manuales -- */
+        (App.data.calendarEvents || []).forEach(ev => {
+            if (!ev.date || ev.date < startISO || ev.date > endISO) return;
+            const isFin = ev.type === 'ingreso' || ev.type === 'gasto';
+            raw.push({
+                id: ev.id, source: 'manual', type: ev.type || 'manual',
+                title: ev.title, date: ev.date, time: ev.time || '',
+                person: ev.person, status: ev.status, notes: ev.notes,
+                isFinancial: isFin,
+                amount: isFin && ev.amount != null
+                    ? (ev.type === 'ingreso' ? 1 : -1) * Math.abs(Number(ev.amount))
+                    : null,
+                originSection: 'manual', originId: ev.id
+            });
+        });
+
+        /* -- 2 · Presupuesto -- */
+        (App.data.expenses || []).forEach(exp => {
+            if (!exp.date || exp.date < startISO || exp.date > endISO) return;
+            if (exp.status === 'archivado' || exp.status === 'aportacion') return;
+            if (!['previsto', 'pendiente', 'registrado'].includes(exp.status)) return;
+            raw.push({
+                id: 'exp-' + exp.id, source: 'presupuesto', type: 'gasto',
+                title: exp.concept || 'Gasto', date: exp.date, time: '',
+                person: exp.person, status: exp.status, notes: exp.notes || '',
+                categoryId: exp.categoryId,
+                isFinancial: true,
+                amount: -Math.abs(Number(exp.amount) || 0),
+                originSection: 'presupuesto-comun', originId: exp.id
+            });
+        });
+
+        /* -- 3 · Dinero (encapsulado vía puente) -- */
+        const dinero = (window.App && typeof App.getDineroData === 'function')
+            ? App.getDineroData()
+            : null;
+        if (dinero) {
+            const inRange = d => d && d >= startISO && d <= endISO;
+
+            (dinero.commitments || []).forEach(c => {
+                if (c.executed || !inRange(c.dueDate)) return;
+                raw.push({
+                    id: 'din-cm-' + c.id, source: 'dinero', type: 'gasto',
+                    title: c.name || 'Compromiso', date: c.dueDate, time: '',
+                    isFinancial: true, amount: -Math.abs(Number(c.amount) || 0),
+                    status: 'previsto', notes: c.note || '',
+                    originSection: 'mi-dinero', originId: c.id,
+                    entityKind: 'commitment'
+                });
+            });
+
+            (dinero.recurring || []).forEach(r => {
+                if (!r.active || !inRange(r.nextDate)) return;
+                raw.push({
+                    id: 'din-rc-' + r.id, source: 'dinero', type: 'gasto',
+                    title: (r.emoji ? r.emoji + ' ' : '') + (r.name || 'Suscripción'),
+                    date: r.nextDate, time: '',
+                    isFinancial: true, amount: -Math.abs(Number(r.amount) || 0),
+                    status: 'previsto',
+                    originSection: 'mi-dinero', originId: r.id,
+                    entityKind: 'recurring'
+                });
+            });
+
+            (dinero.loans || []).forEach(l => {
+                if (!l.nextDate || (l.paidCount || 0) >= (l.installments || 0)) return;
+                if (!inRange(l.nextDate)) return;
+                raw.push({
+                    id: 'din-ln-' + l.id, source: 'dinero', type: 'gasto',
+                    title: 'Cuota · ' + (l.name || 'Préstamo'), date: l.nextDate, time: '',
+                    isFinancial: true, amount: -Math.abs(Number(l.installmentAmount) || 0),
+                    status: 'previsto',
+                    originSection: 'mi-dinero', originId: l.id,
+                    entityKind: 'loan'
+                });
+            });
+
+            (dinero.goals || []).forEach(g => {
+                if (g.id === 'g-trip-fund') return;
+                if (!g.nextDate || g.frequency === 'none' || !g.contribution) return;
+                if (!inRange(g.nextDate)) return;
+                raw.push({
+                    id: 'din-gl-' + g.id, source: 'dinero', type: 'gasto',
+                    title: 'Aportación · ' + (g.name || 'Objetivo'), date: g.nextDate, time: '',
+                    isFinancial: true, amount: -Math.abs(Number(g.contribution) || 0),
+                    status: 'previsto',
+                    originSection: 'mi-dinero', originId: g.id,
+                    entityKind: 'goal'
+                });
+            });
+
+            (dinero.debts || []).forEach(d => {
+                if (!inRange(d.dueDate)) return;
+                const remaining = Math.max(0, (d.total || 0) - (d.returned || 0));
+                if (remaining <= 0) return;
+                const isReceive = d.kind === 'receive';
+                raw.push({
+                    id: 'din-db-' + d.id, source: 'dinero',
+                    type: isReceive ? 'ingreso' : 'gasto',
+                    title: (isReceive ? 'Cobrar · ' : 'Devolver · ') + (d.name || 'Deuda'),
+                    date: d.dueDate, time: '',
+                    isFinancial: true,
+                    amount: isReceive ? remaining : -remaining,
+                    status: 'previsto',
+                    originSection: 'mi-dinero', originId: d.id,
+                    entityKind: 'debt'
+                });
+            });
+
+            // Movimientos reales · evitar duplicar los ya representados por otros orígenes
+            (dinero.movements || []).forEach(m => {
+                if (!inRange(m.date)) return;
+                if (m.type === 'transfer-in' || m.type === 'transfer-out') return;
+                if (m.link && (
+                    m.link.kind === 'expense' ||
+                    m.link.kind === 'salary' ||
+                    m.link.kind === 'extra-payment' ||
+                    m.link.kind === 'extra-savings-in' ||
+                    m.link.kind === 'extra-savings-out' ||
+                    m.link.kind === 'trip-payment'
+                )) return;
+                const amt = Number(m.amount) || 0;
+                if (amt === 0) return;
+                raw.push({
+                    id: 'din-mv-' + m.id, source: 'dinero',
+                    type: amt >= 0 ? 'ingreso' : 'gasto',
+                    title: m.concept || 'Movimiento', date: m.date, time: '',
+                    isFinancial: true, amount: amt,
+                    status: 'registrado',
+                    originSection: 'mi-dinero', originId: m.id,
+                    entityKind: 'movement'
+                });
+            });
+        }
+
+        /* -- 4 · Ingresos (nóminas, extras, bonus) -- */
+        raw.push(...getIncomeEvents(startISO, endISO));
+
+        /* -- 5 · Viajes -- */
+        (App.data.trips || []).forEach(t => {
+            if (t.status === 'cancelado') return;
+            if (t.startDate && t.startDate >= startISO && t.startDate <= endISO) {
+                raw.push({
+                    id: 'trip-start-' + t.id, source: 'viajes', type: 'viaje',
+                    title: 'Salida · ' + t.name, date: t.startDate, time: '',
+                    isFinancial: false, amount: null,
+                    originSection: 'viajes', originId: t.id, tripId: t.id
+                });
+            }
+            if (t.endDate && t.endDate >= startISO && t.endDate <= endISO) {
+                raw.push({
+                    id: 'trip-end-' + t.id, source: 'viajes', type: 'viaje',
+                    title: 'Regreso · ' + t.name, date: t.endDate, time: '',
+                    isFinancial: false, amount: null,
+                    originSection: 'viajes', originId: t.id, tripId: t.id
+                });
+            }
+        });
+
+        (App.data.tripActivities || []).forEach(a => {
+            if (!a.date || a.date < startISO || a.date > endISO) return;
+            raw.push({
+                id: 'act-' + a.id, source: 'viajes', type: 'actividad',
+                title: a.title, date: a.date, time: a.time || '',
+                isFinancial: (a.estimatedCost || 0) > 0,
+                amount: a.estimatedCost ? -Math.abs(a.estimatedCost) : null,
+                originSection: 'viajes', originId: a.id, tripId: a.tripId
+            });
+        });
+
+        (App.data.tripReservations || []).forEach(r => {
+            if (r.status === 'pagado' || r.status === 'cancelado') return;
+            (r.paymentDates || []).forEach(pd => {
+                if (pd < startISO || pd > endISO) return;
+                raw.push({
+                    id: 'res-pay-' + r.id + '-' + pd, source: 'viajes', type: 'pago',
+                    title: 'Pago · ' + r.concept, date: pd, time: '',
+                    isFinancial: true, amount: -Math.abs(Number(r.pendingAmount) || 0),
+                    originSection: 'viajes', originId: r.id, tripId: r.tripId
+                });
+            });
+        });
+
+        /* -- 6 · Transferencias -- */
+        (App.data.transfers || []).forEach(tr => {
+            if (!tr.date || tr.date < startISO || tr.date > endISO || tr.status === 'cancelado') return;
+            raw.push({
+                id: 'tr-' + tr.id, source: 'cuentas', type: 'transferencia',
+                title: tr.concept, date: tr.date, time: '',
+                isFinancial: false, amount: null,
+                originSection: 'cuentas', originId: tr.id
+            });
+        });
+
+        return raw.sort((a, b) =>
+            a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || '')
+        );
     }
 
-    // =========================================================
-    // RENDER PRINCIPAL
-    // =========================================================
+    const getEventsForDay = iso => getAllEvents(iso, iso);
+    const groupByDate = list => {
+        const out = {};
+        list.forEach(ev => (out[ev.date] = out[ev.date] || []).push(ev));
+        return out;
+    };
+
+    /* =========================== CÁLCULOS =========================== */
+    const sumIncome  = evs => evs.filter(e => e.isFinancial && e.amount > 0).reduce((s, e) => s + e.amount, 0);
+    const sumExpense = evs => Math.abs(evs.filter(e => e.isFinancial && e.amount < 0).reduce((s, e) => s + e.amount, 0));
+    const sumNet     = evs => evs.filter(e => e.isFinancial && typeof e.amount === 'number').reduce((s, e) => s + e.amount, 0);
+
+    const currentBalance = () => {
+        const accounts = (window.App && typeof App.getAccounts === 'function')
+            ? App.getAccounts()
+            : (App.data && App.data.accounts) || [];
+        return accounts.reduce((s, a) => s + Number(a.balance || 0), 0);
+    };
+
+    /**
+     * Balance proyectado al cierre de targetISO.
+     *  · Hoy → balance actual
+     *  · Futuro → balance + neto(mañana → target)
+     *  · Pasado → balance − neto(target+1 → ayer)
+     */
+    function getProjectedBalance(targetISO) {
+        const today = todayISO();
+        const base = currentBalance();
+        if (targetISO === today) return base;
+
+        if (targetISO > today) {
+            const tomorrow = toISO(addDays(new Date(), 1));
+            if (targetISO < tomorrow) return base;
+            return base + sumNet(getAllEvents(tomorrow, targetISO));
+        }
+
+        const yesterday = toISO(addDays(new Date(), -1));
+        if (targetISO >= yesterday) return base;
+        const afterTarget = toISO(addDays(fromISO(targetISO), 1));
+        return base - sumNet(getAllEvents(afterTarget, yesterday));
+    }
+
+    /* =========================== RENDER PRINCIPAL =========================== */
     function render(container) {
-        App.injectStylesheet('calendar-styles', moduleCSS());
-        containerEl = container;
+        if (container) containerEl = container;
+        if (!containerEl) return;
+        if (!state.selectedDate) state.selectedDate = todayISO();
 
-        container.innerHTML = `
-            <div class="cal-subnav">
-                <button class="cal-subnav-item active" data-view="calendario"><i class="fas fa-calendar-alt"></i> Calendario</button>
-                <button class="cal-subnav-item" data-view="proximos"><i class="fas fa-clock"></i> Próximos movimientos</button>
-                <button class="cal-subnav-item" data-view="configuracion"><i class="fas fa-cog"></i> Configuración</button>
+        containerEl.innerHTML = `
+            <div class="cal-wrap">
+                ${renderToolbar()}
+                <div class="cal-layout">
+                    <div class="cal-main" id="calMain">${renderMainView()}</div>
+                    <aside class="cal-sidebar" id="calSidebar">${renderSidebarContent()}</aside>
+                </div>
             </div>
+            ${renderDetailModal()}
+        `;
+        bind();
+    }
 
-            <div class="cal-subview active" id="calView-calendario"></div>
-            <div class="cal-subview" id="calView-proximos"></div>
-            <div class="cal-subview" id="calView-configuracion"></div>
+    function renderToolbar() {
+        const isAgenda = state.currentView === 'agenda';
+        const viewBtn = (v, label) =>
+            `<button class="cal-view-btn ${state.currentView === v ? 'active' : ''}" data-action="switch-view" data-view="${v}">${label}</button>`;
 
-            <!-- Modal Detalle Evento -->
-            <div class="cal-modal" id="calDetailModal">
-                <div class="cal-modal-content">
+        return `
+            <div class="cal-toolbar cal-toolbar-single">
+                <div class="cal-toolbar-left">
+                    ${isAgenda
+                        ? `<div class="cal-date-title">Próximos 30 días</div>`
+                        : `<button class="cal-nav-btn" data-action="nav-prev" aria-label="Anterior">‹</button>
+                           <div class="cal-date-title">${fmtMonthYear(state.currentDate)}</div>
+                           <button class="cal-nav-btn" data-action="nav-next" aria-label="Siguiente">›</button>
+                           <button class="cal-today-btn" data-action="nav-today">Hoy</button>`}
+                </div>
+                <div class="cal-toolbar-right">
+                    <div class="cal-view-switch">
+                        ${viewBtn('mes', 'Mes')}${viewBtn('semana', 'Semana')}${viewBtn('agenda', 'Agenda')}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderMainView() {
+        switch (state.currentView) {
+            case 'semana':  return renderWeekView();
+            case 'agenda':  return renderAgendaView();
+            default:        return renderMonthView();
+        }
+    }
+
+    /* --- Mes --- */
+    function renderMonthView() {
+        const d = state.currentDate;
+        const first = startOfMonth(d);
+        const last = endOfMonth(d);
+        const startOffset = (first.getDay() + 6) % 7;
+        const gridStart = addDays(first, -startOffset);
+        const weeksNeeded = Math.ceil((startOffset + last.getDate()) / 7);
+        const gridEnd = addDays(gridStart, weeksNeeded * 7 - 1);
+
+        const events = getAllEvents(toISO(gridStart), toISO(gridEnd));
+        const byDay = groupByDate(events);
+        const today = todayISO();
+
+        let html = '<div class="cal-month-grid">';
+        WEEKDAYS_SHORT.forEach(w => { html += `<div class="cal-weekday">${w}</div>`; });
+
+        let cursor = new Date(gridStart);
+        while (cursor <= gridEnd) {
+            const iso = toISO(cursor);
+            const isOther = cursor.getMonth() !== d.getMonth();
+            const isToday = iso === today;
+            const isSel = iso === state.selectedDate;
+            const dayEvents = byDay[iso] || [];
+            const MAX = 3;
+
+            html += `<div class="cal-day-cell ${isOther ? 'other-month' : ''} ${isToday ? 'today' : ''} ${isSel ? 'selected' : ''}" data-date="${iso}" role="button" tabindex="0">`;
+            html += `<div class="cal-day-num">${cursor.getDate()}</div>`;
+            html += `<div class="cal-day-events">`;
+            dayEvents.slice(0, MAX).forEach(ev => {
+                const sign = ev.amount > 0 ? '+' : '';
+                const amtTxt = ev.amount != null ? sign + fmtAmountShort(ev.amount) : '';
+                html += `<div class="cal-event-chip type-${ev.type}" data-event-id="${ev.id}" title="${esc(ev.title)}${amtTxt ? ' · ' + amtTxt : ''}">
+                    ${amtTxt ? `<span class="cal-chip-amt">${amtTxt}</span>` : ''}
+                    <span class="cal-chip-title">${esc(ev.title)}</span>
+                </div>`;
+            });
+            if (dayEvents.length > MAX) {
+                html += `<div class="cal-more">+${dayEvents.length - MAX} más</div>`;
+            }
+            html += `</div></div>`;
+            cursor = addDays(cursor, 1);
+        }
+        html += '</div>';
+        return html;
+    }
+
+    /* --- Semana --- */
+    function renderWeekView() {
+        const start = startOfWeek(state.currentDate);
+        const end = addDays(start, 6);
+        const events = getAllEvents(toISO(start), toISO(end));
+        const byDay = groupByDate(events);
+        const today = todayISO();
+
+        let html = '<div class="cal-week-grid">';
+        for (let i = 0; i < 7; i++) {
+            const d = addDays(start, i);
+            const iso = toISO(d);
+            const isToday = iso === today;
+            const isSel = iso === state.selectedDate;
+            const dayEvents = byDay[iso] || [];
+            html += `<div class="cal-week-col ${isToday ? 'today' : ''} ${isSel ? 'selected' : ''}" data-date="${iso}">
+                <div class="cal-week-head">${WEEKDAYS_SHORT[i]}</div>
+                <div class="cal-week-daynum">${d.getDate()}</div>
+                <div class="cal-week-events">
+                    ${dayEvents.map(ev => {
+                        const sign = ev.amount > 0 ? '+' : '';
+                        const amtTxt = ev.amount != null ? sign + fmtAmountShort(ev.amount) : '';
+                        return `<div class="cal-event-chip type-${ev.type}" data-event-id="${ev.id}">
+                            ${amtTxt ? `<span class="cal-chip-amt">${amtTxt}</span>` : ''}
+                            <span class="cal-chip-title">${esc(ev.title)}</span>
+                        </div>`;
+                    }).join('') || '<div class="cal-sidebar-empty" style="padding:8px 0;font-size:11px;">Sin eventos</div>'}
+                </div>
+            </div>`;
+        }
+        html += '</div>';
+        return html;
+    }
+
+    /* --- Agenda: fija 30 días desde hoy --- */
+    function renderAgendaView() {
+        const today = new Date();
+        const start = toISO(today);
+        const end = toISO(addDays(today, 30));
+        const events = getAllEvents(start, end);
+        const todayIso = toISO(today);
+
+        if (!events.length) {
+            return `<div class="cal-agenda-view">
+                <div class="cal-sidebar-empty">No hay movimientos programados en los próximos 30 días.</div>
+            </div>`;
+        }
+
+        const byDay = groupByDate(events);
+        const sortedDays = Object.keys(byDay).sort();
+
+        return `<div class="cal-agenda-view">${sortedDays.map(day => {
+            const balance = getProjectedBalance(day);
+            const isToday = day === todayIso;
+            return `
+                <div class="cal-agenda-group ${isToday ? 'today' : ''}">
+                    <div class="cal-agenda-header">
+                        <span>${fmtDayLong(day)}${isToday ? '<span class="cal-today-pill">HOY</span>' : ''}</span>
+                        <span>${byDay[day].length} evento${byDay[day].length === 1 ? '' : 's'} · Saldo: ${fmtAmount(balance)}</span>
+                    </div>
+                    ${renderEventList(byDay[day])}
+                </div>
+            `;
+        }).join('')}</div>`;
+    }
+
+    /* --- Lista de eventos reutilizable --- */
+    function renderEventList(events) {
+        if (!events.length) return '<div class="cal-sidebar-empty">Sin movimientos este día.</div>';
+        return events.map(ev => {
+            const isPos = ev.amount > 0;
+            const iconBg = ev.isFinancial
+                ? (isPos ? 'color-mix(in srgb, var(--success) 15%, transparent)' : 'color-mix(in srgb, var(--danger) 12%, transparent)')
+                : 'color-mix(in srgb, var(--primary) 12%, transparent)';
+            const iconClr = ev.isFinancial
+                ? (isPos ? 'var(--success)' : 'var(--danger)')
+                : 'var(--primary)';
+            const icon = ev.amount != null ? (isPos ? 'fa-arrow-down' : 'fa-arrow-up') : 'fa-circle';
+
+            return `
+                <div class="cal-sidebar-item" data-event-id="${ev.id}">
+                    <div class="cal-sidebar-item-icon" style="background:${iconBg};color:${iconClr}">
+                        <i class="fas ${icon}"></i>
+                    </div>
+                    <div class="cal-sidebar-item-info">
+                        <div class="cal-sidebar-item-title">${esc(ev.title)}</div>
+                        <div class="cal-sidebar-item-meta">
+                            ${ev.time ? `<span>⏰ ${esc(ev.time)}</span>` : ''}
+                            <span>${ev.source}</span>
+                            ${ev.status ? `<span>${ev.status}</span>` : ''}
+                        </div>
+                    </div>
+                    ${ev.amount != null
+                        ? `<div class="cal-sidebar-item-amt ${ev.amount > 0 ? 'pos' : 'neg'}">${ev.amount > 0 ? '+' : ''}${fmtAmount(ev.amount)}</div>`
+                        : ''}
+                </div>`;
+        }).join('');
+    }
+
+    /* --- Sidebar --- */
+    function renderSidebarContent() {
+        const iso = state.selectedDate || todayISO();
+        const events = getEventsForDay(iso);
+        const income = sumIncome(events);
+        const expense = sumExpense(events);
+        const balance = getProjectedBalance(iso);
+        const isToday = iso === todayISO();
+
+        return `
+            <div class="cal-sidebar-header ${isToday ? 'is-today' : ''}">
+                <div class="cal-sidebar-date">${fmtDayLong(iso)}</div>
+                <div class="cal-sidebar-sub">${events.length} movimiento${events.length === 1 ? '' : 's'}${isToday ? ' · <span class="cal-today-pill sm">HOY</span>' : ''}</div>
+            </div>
+            <div class="cal-sidebar-kpis">
+                <div class="cal-sidebar-kpi income">
+                    <div class="cal-sidebar-kpi-label">Ingresos</div>
+                    <div class="cal-sidebar-kpi-value">${fmtAmount(income)}</div>
+                </div>
+                <div class="cal-sidebar-kpi expense">
+                    <div class="cal-sidebar-kpi-label">Gastos</div>
+                    <div class="cal-sidebar-kpi-value">${fmtAmount(expense)}</div>
+                </div>
+            </div>
+            <div class="cal-sidebar-balance">
+                <div class="cal-sidebar-balance-box">
+                    <div class="cal-sidebar-balance-label">Saldo proyectado al cierre</div>
+                    <div class="cal-sidebar-balance-value">${fmtAmount(balance)}</div>
+                </div>
+            </div>
+            <div class="cal-sidebar-list">
+                ${renderEventList(events)}
+            </div>
+        `;
+    }
+
+    /* --- Modal de detalle --- */
+    function renderDetailModal() {
+        return `
+            <div class="cal-modal-overlay" id="calDetailModal">
+                <div class="cal-modal">
                     <div class="cal-modal-header">
-                        <h3 class="cal-modal-title" id="calDetailTitle">Detalle del evento</h3>
-                        <button class="cal-modal-close" data-close-cal><i class="fas fa-times"></i></button>
+                        <div class="cal-modal-title" id="calDetailTitle">Detalle</div>
+                        <button class="cal-modal-close" data-action="close-modal">×</button>
                     </div>
                     <div class="cal-modal-body" id="calDetailBody"></div>
                     <div class="cal-modal-footer" id="calDetailFooter"></div>
                 </div>
             </div>
-
-            <!-- Modal Crear/Editar Evento Manual -->
-            <div class="cal-modal" id="calFormModal">
-                <div class="cal-modal-content">
+            <div class="cal-modal-overlay" id="calNumberModal">
+                <div class="cal-modal" style="max-width:420px">
                     <div class="cal-modal-header">
-                        <h3 class="cal-modal-title" id="calFormTitle">Nuevo evento</h3>
-                        <button class="cal-modal-close" data-close-cal><i class="fas fa-times"></i></button>
+                        <div class="cal-modal-title" id="calNumberTitle">Introducir importe</div>
+                        <button class="cal-modal-close" data-action="close-number-modal">×</button>
                     </div>
-                    <div class="cal-modal-body" id="calFormBody"></div>
+                    <div class="cal-modal-body">
+                        <label class="cal-form-label" style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);display:block;margin-bottom:6px">Importe (€)</label>
+                        <input class="cal-form-input" type="number" step="0.01" id="calNumberInput" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:16px;font-weight:700;font-family:inherit">
+                    </div>
                     <div class="cal-modal-footer">
-                        <button class="btn btn-secondary" data-close-cal>Cancelar</button>
-                        <button class="btn btn-primary" id="calSaveEventBtn"><i class="fas fa-save"></i> Guardar</button>
+                        <button class="cal-btn-ghost" data-action="close-number-modal">Cancelar</button>
+                        <button class="cal-btn-primary" id="calNumberConfirm">Confirmar</button>
                     </div>
                 </div>
             </div>
         `;
-
-        bindGlobalEvents();
-        renderCurrentView();
     }
 
-    function bindGlobalEvents() {
-        containerEl.querySelectorAll('.cal-subnav-item').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const view = btn.dataset.view;
-                currentView = view === 'calendario' ? 'mes' : view;
-                containerEl.querySelectorAll('.cal-subnav-item').forEach(b => b.classList.toggle('active', b === btn));
-                containerEl.querySelectorAll('.cal-subview').forEach(v => {
-                    if (view === 'calendario') v.classList.toggle('active', v.id === 'calView-calendario');
-                    else v.classList.toggle('active', v.id === `calView-${view}`);
-                });
-                renderCurrentView();
-            });
-        });
-
-        containerEl.querySelectorAll('[data-close-cal]').forEach(btn => {
-            btn.addEventListener('click', () => btn.closest('.cal-modal').classList.remove('active'));
-        });
-        containerEl.querySelectorAll('.cal-modal').forEach(modal => {
-            modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
-        });
-
-        containerEl.querySelector('#calSaveEventBtn').addEventListener('click', saveManualEvent);
-    }
-
-    function renderCurrentView() {
-        if (currentView === 'mes' || currentView === 'semana' || currentView === 'agenda') {
-            renderCalendarioWrapper();
-        } else if (currentView === 'proximos') {
-            renderProximos();
-        } else if (currentView === 'configuracion') {
-            renderConfiguracion();
+    /* =========================== EVENTOS =========================== */
+    function bind() {
+        if (!containerEl) return;
+        containerEl.addEventListener('click', onClick);
+        if (!listenersBound) {
+            document.addEventListener('app:module-changed', onModuleChange);
+            listenersBound = true;
         }
     }
 
-    // =========================================================
-    // VISTA: CALENDARIO (Wrapper)
-    // =========================================================
-    function renderCalendarioWrapper() {
-        const view = containerEl.querySelector('#calView-calendario');
-        const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-        const monthName = months[currentDate.getMonth()];
-        const year = currentDate.getFullYear();
-
-        // Calcular resumen financiero del mes visible
-        const startOfMonth = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
-        const endOfMonth = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${new Date(year, currentDate.getMonth() + 1, 0).getDate()}`;
-        const monthEvents = getEventsForRange(startOfMonth, endOfMonth);
-        const totalIncome = monthEvents.filter(e => e.isFinancial && e.amount > 0).reduce((s, e) => s + e.amount, 0);
-        const totalExpense = monthEvents.filter(e => e.isFinancial && e.amount < 0).reduce((s, e) => s + Math.abs(e.amount), 0);
-        const pendingPayments = monthEvents.filter(e => e.type === 'pago' || (e.isFinancial && e.status === 'previsto')).length;
-
-        view.innerHTML = `
-            <div class="cal-header">
-                <div class="cal-nav">
-                    <button class="btn btn-sm btn-secondary" id="calPrev"><i class="fas fa-chevron-left"></i></button>
-                    <button class="btn btn-sm btn-secondary" id="calToday">Hoy</button>
-                    <button class="btn btn-sm btn-secondary" id="calNext"><i class="fas fa-chevron-right"></i></button>
-                    <div class="cal-title">${monthName} ${year}</div>
-                </div>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-                    <div class="cal-view-selector">
-                        <button class="cal-view-btn ${currentView === 'mes' ? 'active' : ''}" data-cal-view="mes">Mes</button>
-                        <button class="cal-view-btn ${currentView === 'semana' ? 'active' : ''}" data-cal-view="semana">Semana</button>
-                        <button class="cal-view-btn ${currentView === 'agenda' ? 'active' : ''}" data-cal-view="agenda">Agenda</button>
-                    </div>
-                    <select class="cal-filter-select" id="calFilterType">
-                        <option value="all">Todos los tipos</option>
-                        <option value="gasto">Gastos</option>
-                        <option value="ingreso">Ingresos</option>
-                        <option value="pago">Pagos pendientes</option>
-                        <option value="viaje">Viajes</option>
-                        <option value="actividad">Actividades</option>
-                        <option value="transferencia">Transferencias</option>
-                        <option value="manual">Recordatorios</option>
-                    </select>
-                    <button class="btn btn-sm btn-primary" id="calNewEvent"><i class="fas fa-plus"></i> Crear evento</button>
-               9>
-            </div>
-
-            <div class="cal-summary">
-                <div class="cal-summary-card">
-                    <div class="cal-summary-label">Ingresos previstos</div>
-                    <div class="cal-summary-value income">${App.formatCurrency(totalIncome)}</div>
-                </div>
-                <div class="cal-summary-card">
-                    <div class="cal-summary-label">Gastos previstos</div>
-                    <div class="cal-summary-value expense">${App.formatCurrency(totalExpense)}</div>
-                </div>
-                <div class="cal-summary-card">
-                    <div class="cal-summary-label">Pagos pendientes</div>
-                    <div class="cal-summary-value">${pendingPayments} eventos</div>
-                </div>
-            </div>
-
-            <div id="calGridContainer"></div>
-        `;
-
-        // Eventos de navegación
-        view.querySelector('#calPrev').addEventListener('click', () => {
-            if (currentView === 'mes') currentDate.setMonth(currentDate.getMonth() - 1);
-            else currentDate.setDate(currentDate.getDate() - 7);
-            renderCalendarioWrapper();
-        });
-        view.querySelector('#calNext').addEventListener('click', () => {
-            if (currentView === 'mes') currentDate.setMonth(currentDate.getMonth() + 1);
-            else currentDate.setDate(currentDate.getDate() + 7);
-            renderCalendarioWrapper();
-        });
-        view.querySelector('#calToday').addEventListener('click', () => {
-            currentDate = new Date(2026, 9, 1); // Forzado a la fecha demo
-            renderCalendarioWrapper();
-        });
-        view.querySelector('#calNewEvent').addEventListener('click', () => openManualEventForm());
-        view.querySelector('#calFilterType').addEventListener('change', (e) => {
-            filters.type = e.target.value;
-            renderCalendarioWrapper();
-        });
-
-        view.querySelectorAll('[data-cal-view]').forEach(btn => {
-            btn.addEventListener('click', () => {
-                currentView = btn.dataset.calView;
-                renderCalendarioWrapper();
-            });
-        });
-
-        if (currentView === 'mes') renderMonthView();
-        else if (currentView === 'semana') renderWeekView();
-        else if (currentView === 'agenda') renderAgendaView();
+    function onModuleChange(e) {
+        if (!containerEl || !containerEl.isConnected) return;
+        const src = e && e.detail && e.detail.source;
+        if (src === 'calendario') return;
+        // Re-render si algún módulo del que dependemos cambia
+        try { render(containerEl); } catch (err) { /* noop */ }
     }
 
-    // =========================================================
-    // VISTA: MES
-    // =========================================================
-    function renderMonthView() {
-        const container = containerEl.querySelector('#calGridContainer');
-        const year = currentDate.getFullYear();
-        const month = currentDate.getMonth();
-        
-        const firstDay = new Date(year, month, 1);
-        const lastDay = new Date(year, month + 1, 0);
-        const startOffset = (firstDay.getDay() + 6) % 7; // Lunes = 0
-        
-        const startDate = new Date(year, month, 1 - startOffset);
-        const endDate = new Date(year, month, lastDay.getDate() + (6 - (lastDay.getDay() + 6) % 7));
-        
-        const startStr = startDate.toISOString().substring(0, 10);
-        const endStr = endDate.toISOString().substring(0, 10);
-        const events = getEventsForRange(startStr, endStr);
+    function onClick(e) {
+        // 1. Chip de evento
+        const chip = e.target.closest('[data-event-id]');
+        if (chip) { e.stopPropagation(); openEventDetail(chip.dataset.eventId); return; }
+        // 2. Acción explícita
+        const actionEl = e.target.closest('[data-action]');
+        if (actionEl) { handleAction(actionEl.dataset.action, actionEl); return; }
+        // 3. Clic en día
+        const dayCell = e.target.closest('[data-date]');
+        if (dayCell) { selectDay(dayCell.dataset.date); return; }
+        // 4. Clic fuera del modal
+        if (e.target.classList.contains('cal-modal-overlay')) e.target.classList.remove('active');
+    }
 
-        const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-        let html = '<div class="cal-month-grid">';
-        dayNames.forEach(d => html += `<div class="cal-day-header">${d}</div>`);
-
-        let current = new Date(startDate);
-        while (current <= endDate) {
-            const dateStr = current.toISOString().substring(0, 10);
-            const isToday = dateStr === '2026-10-30';
-            const isOtherMonth = current.getMonth() !== month;
-            const dayEvents = events.filter(e => e.date === dateStr);
-
-            html += `<div class="cal-day ${isOtherMonth ? 'other-month' : ''} ${isToday ? 'today' : ''}" data-date="${dateStr}">`;
-            html += `<div class="cal-day-num"><span>${current.getDate()}</span></div>`;
-            
-            const maxShow = 3;
-            dayEvents.slice(0, maxShow).forEach(ev => {
-                html += `<div class="cal-event-chip ${ev.type}" data-event-id="${ev.id}">
-                    ${ev.time ? `<i class="fas fa-clock" style="font-size: 9px;"></i> ` : ''}
-                    ${App.escapeHtml(ev.title)}
-                </div>`;
-            });
-            if (dayEvents.length > maxShow) {
-                html += `<div class="cal-more" data-date="${dateStr}">+ ${dayEvents.length - maxShow} más</div>`;
-            }
-            html += '</div>';
-            current.setDate(current.getDate() + 1);
+    function handleAction(action, el) {
+        switch (action) {
+            case 'nav-prev': navigate(-1); break;
+            case 'nav-next': navigate(+1); break;
+            case 'nav-today':
+                state.currentDate = new Date();
+                state.selectedDate = todayISO();
+                render(containerEl);
+                break;
+            case 'switch-view':
+                state.currentView = el.dataset.view;
+                render(containerEl);
+                break;
+            case 'close-modal':
+                el.closest('.cal-modal-overlay').classList.remove('active');
+                break;
+            case 'close-number-modal':
+                document.getElementById('calNumberModal').classList.remove('active');
+                break;
+            case 'go-origin':
+                goToOrigin(el.dataset.section, el.dataset.originId, el.dataset.tripId);
+                break;
+            case 'toggle-status':
+                toggleExpenseStatus(el.dataset.originId);
+                break;
+            case 'confirm-income':
+                confirmIncome(el.dataset.originId, el.dataset.person);
+                break;
+            case 'mark-paid':
+                markExpensePaid(el.dataset.originId);
+                break;
         }
-        html += '</div>';
-        container.innerHTML = html;
-
-        bindDayEvents();
     }
 
-    function bindDayEvents() {
-        containerEl.querySelectorAll('.cal-day').forEach(day => {
-            day.addEventListener('click', (e) => {
-                if (e.target.closest('.cal-event-chip')) {
-                    const eventId = e.target.closest('.cal-event-chip').dataset.eventId;
-                    openEventDetail(eventId);
-                } else if (e.target.closest('.cal-more')) {
-                    currentView = 'agenda';
-                    // Filtrar por esa fecha en la vista agenda (simplificado: navegamos a agenda)
-                    renderCurrentView();
-                } else {
-                    openManualEventForm(day.dataset.date);
+    function navigate(delta) {
+        if (state.currentView === 'agenda') return;
+        if (state.currentView === 'semana') {
+            state.currentDate = addDays(state.currentDate, delta * 7);
+        } else {
+            state.currentDate = addMonths(state.currentDate, delta);
+        }
+        render(containerEl);
+    }
+
+    function selectDay(iso) {
+        state.selectedDate = iso;
+        const sidebar = containerEl.querySelector('#calSidebar');
+        if (sidebar) sidebar.innerHTML = renderSidebarContent();
+        containerEl.querySelectorAll('[data-date]').forEach(el => {
+            el.classList.toggle('selected', el.dataset.date === iso);
+        });
+    }
+
+    /* =========================== ACCIONES CONTEXTUALES =========================== */
+
+    /** Ingresos · abrir modal de importe y confirmar cobro */
+    function confirmIncome(originId, pid) {
+        // salary-${pid}-${mk}
+        const salaryMatch = String(originId).match(/^salary-(.+)-(\d{4}-\d{2})$/);
+        if (salaryMatch) {
+            const [, personId, mk] = salaryMatch;
+            const sal = (window.App && typeof App.getSalary === 'function') ? App.getSalary(personId, mk) : null;
+            const theo = sal ? (sal.real != null ? sal.real : sal.theoretical) : 0;
+            openNumberModal(`Cobro real · ${getPersonName(personId)} · ${mk}`, theo, (amount) => {
+                if (window.App && typeof App.confirmIncomeReceipt === 'function') {
+                    App.confirmIncomeReceipt(personId, mk, amount);
+                } else if (window.App) {
+                    App.showToast('Confirma el cobro desde Ingresos personales', 'info');
+                    App.navigateTo && App.navigateTo('ingresos-personales');
                 }
+                closeDetailModal();
+                render(containerEl);
             });
-        });
-    }
-
-    // =========================================================
-    // VISTA: SEMANA
-    // =========================================================
-    function renderWeekView() {
-        const container = containerEl.querySelector('#calGridContainer');
-        const dayOfWeek = currentDate.getDay();
-        const diff = currentDate.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Lunes
-        const startOfWeek = new Date(currentDate.setDate(diff));
-        const endOfWeek = new Date(startOfWeek);
-        endOfWeek.setDate(startOfWeek.getDate() + 6);
-
-        const startStr = startOfWeek.toISOString().substring(0, 10);
-        const endStr = endOfWeek.toISOString().substring(0, 10);
-        const events = getEventsForRange(startStr, endStr);
-
-        const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-        let html = '<div class="cal-week-grid"><div class="cal-week-header"></div>';
-        
-        for (let i = 0; i < 7; i++) {
-            const d = new Date(startOfWeek);
-            d.setDate(startOfWeek.getDate() + i);
-            const dateStr = d.toISOString().substring(0, 10);
-            const isToday = dateStr === '2026-10-30';
-            html += `<div class="cal-week-header ${isToday ? 'today' : ''}">${dayNames[i]} ${d.getDate()}</div>`;
-        }
-
-        for (let i = 0; i < 7; i++) {
-            const d = new Date(startOfWeek);
-            d.setDate(startOfWeek.getDate() + i);
-            const dateStr = d.toISOString().substring(0, 10);
-            const dayEvents = events.filter(e => e.date === dateStr);
-            
-            html += `<div class="cal-week-col">`;
-            dayEvents.forEach(ev => {
-                const colorMap = { gasto: 'var(--danger)', ingreso: 'var(--success)', viaje: 'var(--info)', actividad: 'var(--warning)', pago: '#d97706', transferencia: 'var(--text-secondary)', manual: '#4338ca' };
-                const borderColor = colorMap[ev.type] || 'var(--primary)';
-                html += `
-                    <div class="cal-week-event" style="border-left-color: ${borderColor}; background: ${borderColor}15; color: ${borderColor};" data-event-id="${ev.id}">
-                        ${ev.time ? `<div style="font-weight: 600;">${ev.time}</div>` : ''}
-                        <div>${App.escapeHtml(ev.title)}</div>
-                        ${ev.isFinancial && ev.amount ? `<div style="font-weight: 600; margin-top: 2px;">${App.formatCurrency(ev.amount)}</div>` : ''}
-                    </div>
-                `;
-            });
-            html += `</div>`;
-        }
-        html += '</div>';
-        container.innerHTML = html;
-
-        container.querySelectorAll('.cal-week-event').forEach(el => {
-            el.addEventListener('click', () => openEventDetail(el.dataset.eventId));
-        });
-    }
-
-    // =========================================================
-    // VISTA: AGENDA
-    // =========================================================
-    function renderAgendaView() {
-        const container = containerEl.querySelector('#calGridContainer');
-        const year = currentDate.getFullYear();
-        const month = currentDate.getMonth();
-        const startStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-        const endStr = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
-        
-        const events = getEventsForRange(startStr, endStr);
-        
-        // Agrupar por fecha
-        const grouped = {};
-        events.forEach(ev => {
-            if (!grouped[ev.date]) grouped[ev.date] = [];
-            grouped[ev.date].push(ev);
-        });
-
-        if (Object.keys(grouped).length === 0) {
-            container.innerHTML = '<div class="acc-empty"><i class="fas fa-calendar-check"></i><h3>Sin eventos este mes</h3></div>';
             return;
         }
-
-        let html = '<div class="cal-agenda-list">';
-        Object.keys(grouped).sort().forEach(date => {
-            const d = new Date(date + 'T00:00:00');
-            const dayName = d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
-            
-            html += `<div class="cal-agenda-date-group">`;
-            html += `<div class="cal-agenda-date-header"><span>${dayName.charAt(0).toUpperCase() + dayName.slice(1)}</span><span>${grouped[date].length} eventos</span></div>`;
-            
-            grouped[date].forEach(ev => {
-                const iconMap = { gasto: 'fa-arrow-up', ingreso: 'fa-arrow-down', viaje: 'fa-plane', actividad: 'fa-map-marked-alt', pago: 'fa-credit-card', transferencia: 'fa-exchange-alt', manual: 'fa-bell' };
-                const colorMap = { gasto: 'var(--danger)', ingreso: 'var(--success)', viaje: 'var(--info)', actividad: 'var(--warning)', pago: '#d97706', transferencia: 'var(--text-secondary)', manual: '#4338ca' };
-                const icon = iconMap[ev.type] || 'fa-circle';
-                const color = colorMap[ev.type] || 'var(--primary)';
-
-                html += `
-                    <div class="cal-agenda-item" data-event-id="${ev.id}">
-                        <div class="cal-agenda-icon" style="background: ${color}20; color: ${color};">
-                            <i class="fas ${icon}"></i>
-                        </div>
-                        <div class="cal-agenda-info">
-                            <div class="cal-agenda-title">${App.escapeHtml(ev.title)}</div>
-                            <div class="cal-agenda-meta">
-                                ${ev.time ? `<span><i class="fas fa-clock"></i> ${ev.time}</span>` : ''}
-                                <span class="badge badge-neutral">${ev.source}</span>
-                                ${ev.status ? `<span class="badge badge-info">${ev.status}</span>` : ''}
-                            </div>
-                        </div>
-                        ${ev.isFinancial && ev.amount ? `<div class="cal-agenda-amount" style="color: ${ev.amount > 0 ? 'var(--success)' : 'var(--danger)'};">${App.formatCurrency(ev.amount)}</div>` : ''}
-                    </div>
-                `;
+        // extra-${pid}-${mk}-${itemId}
+        const extraMatch = String(originId).match(/^extra-(.+)-(\d{4}-\d{2})-(.+)$/);
+        if (extraMatch) {
+            const [, personId, mk, itemId] = extraMatch;
+            const items = (window.App && typeof App.getMonthExtras === 'function')
+                ? App.getMonthExtras(personId, mk) || []
+                : [];
+            const item = items.find(x => x.id === itemId);
+            const theo = item ? item.amount : 0;
+            openNumberModal(`Cobro extra · ${getPersonName(personId)} · ${mk}`, theo, (amount) => {
+                if (window.App && typeof App.confirmExtraReceipt === 'function') {
+                    App.confirmExtraReceipt(personId, mk, itemId, amount);
+                } else if (window.App) {
+                    App.showToast('Confirma el cobro desde Ingresos personales', 'info');
+                    App.navigateTo && App.navigateTo('ingresos-personales');
+                }
+                closeDetailModal();
+                render(containerEl);
             });
-            html += `</div>`;
-        });
-        html += '</div>';
-        container.innerHTML = html;
-
-        container.querySelectorAll('.cal-agenda-item').forEach(el => {
-            el.addEventListener('click', () => openEventDetail(el.dataset.eventId));
-        });
+            return;
+        }
+        // Bonus · no se puede confirmar desde aquí
+        if (window.App) App.showToast('Los bonus se confirman desde Ingresos personales', 'info');
     }
 
-    // =========================================================
-    // VISTA: PRÓXIMOS MOVIMIENTOS
-    // =========================================================
-    function renderProximos() {
-        const view = containerEl.querySelector('#calView-proximos');
-        const today = '2026-10-30';
-        const next30 = '2026-11-29';
-        const events = getEventsForRange(today, next30).filter(e => e.isFinancial || e.type === 'viaje' || e.type === 'pago');
-
-        view.innerHTML = `
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Próximos 30 días</div>
-                        <div class="card-subtitle">Eventos que requieren tu atención o planificación</div>
-                    </div>
-                </div>
-                ${events.length === 0 ? '<div class="acc-empty"><i class="fas fa-check-circle"></i><h3>Todo bajo control</h3><p>No hay eventos próximos pendientes.</p></div>' : `
-                    <div class="cal-upcoming-list">
-                        ${events.map(ev => {
-                            const daysUntil = Math.ceil((new Date(ev.date + 'T00:00:00') - new Date(today + 'T00:00:00')) / (1000 * 60 * 60 * 24));
-                            const urgencyClass = daysUntil <= 3 ? 'urgent' : daysUntil <= 7 ? 'warning' : 'normal';
-                            const iconMap = { gasto: 'fa-arrow-up', ingreso: 'fa-arrow-down', viaje: 'fa-plane', pago: 'fa-credit-card', transferencia: 'fa-exchange-alt' };
-                            const colorMap = { gasto: 'var(--danger)', ingreso: 'var(--success)', viaje: 'var(--info)', pago: '#d97706', transferencia: 'var(--text-secondary)' };
-                            
-                            return `
-                                <div class="cal-upcoming-card ${urgencyClass}" data-event-id="${ev.id}">
-                                    <div style="width: 40px; height: 40px; border-radius: 10px; background: ${colorMap[ev.type] || 'var(--primary)'}20; color: ${colorMap[ev.type] || 'var(--primary)'}; display: flex; align-items: center; justify-content: center; font-size: 16px;">
-                                        <i class="fas ${iconMap[ev.type] || 'fa-circle'}"></i>
-                                    </div>
-                                    <div style="flex: 1;">
-                                        <div style="font-weight: 600; font-size: 14px; margin-bottom: 2px;">${App.escapeHtml(ev.title)}</div>
-                                        <div style="font-size: 12px; color: var(--text-muted);">
-                                            ${App.formatDate(ev.date)} · ${daysUntil === 0 ? 'Hoy' : `En ${daysUntil} días`} · ${ev.source}
-                                        </div>
-                                    </div>
-                                    ${ev.isFinancial && ev.amount ? `<div style="font-weight: 700; font-size: 15px; color: ${ev.amount > 0 ? 'var(--success)' : 'var(--danger)'};">${App.formatCurrency(ev.amount)}</div>` : ''}
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                `}
-            </div>
-        `;
-
-        view.querySelectorAll('.cal-upcoming-card').forEach(el => {
-            el.addEventListener('click', () => openEventDetail(el.dataset.eventId));
-        });
+    /** Presupuesto · marcar como pagado delegando en el módulo */
+    function markExpensePaid(expenseId) {
+        if (!expenseId) return;
+        if (window.App && typeof App.goTo === 'function') {
+            // Invocación sin navegar: llamamos directamente al bridge
+            const mod = (App.data && App.data) ? true : true;
+            try {
+                // Presupuesto expone setExpenseStatus en su API pública
+                const pcApi = window.BudgetApp;
+                if (pcApi && typeof pcApi.setExpenseStatus === 'function') {
+                    pcApi.setExpenseStatus(expenseId, 'registrado');
+                } else {
+                    // Fallback: mutation directa
+                    const exp = (App.data.expenses || []).find(e => e.id === expenseId);
+                    if (exp) {
+                        exp.status = 'registrado';
+                        App.saveData();
+                        App.notifyModuleChange && App.notifyModuleChange('presupuesto-comun', { reason: 'expense-status', expenseId });
+                    }
+                }
+                closeDetailModal();
+                render(containerEl);
+                App.showToast && App.showToast('Gasto marcado como registrado', 'success');
+            } catch (err) { /* noop */ }
+        }
     }
 
-    // =========================================================
-    // VISTA: CONFIGURACIÓN
-    // =========================================================
-    function renderConfiguracion() {
-        const view = containerEl.querySelector('#calView-configuracion');
-        view.innerHTML = `
-            <div class="card">
-                <div class="card-header">
-                    <div>
-                        <div class="card-title">Configuración del Calendario</div>
-                        <div class="card-subtitle">Personaliza la visualización</div>
-                    </div>
-                </div>
-                <div class="acc-config-section">
-                    <h3><i class="fas fa-eye"></i> Visualización</h3>
-                    <div class="acc-config-row">
-                        <span class="label">Vista predeterminada</span>
-                        <select class="acc-filter-select" id="cfgCalDefaultView">
-                            <option value="mes" selected>Mes</option>
-                            <option value="semana">Semana</option>
-                            <option value="agenda">Agenda</option>
-                        </select>
-                    </div>
-                    <div class="acc-config-row">
-                        <span class="label">Mostrar eventos de viajes</span>
-                        <label class="acc-switch"><input type="checkbox" checked><span class="acc-slider"></span></label>
-                    </div>
-                    <div class="acc-config-row">
-                        <span class="label">Mostrar movimientos registrados</span>
-                        <label class="acc-switch"><input type="checkbox" checked><span class="acc-slider"></span></label>
-                    </div>
-                </div>
-            </div>
-        `;
+    function goToOrigin(section, originId, tripId) {
+        closeDetailModal();
+        if (!section) return;
+        if (section === 'presupuesto-comun' && typeof App.goTo === 'function') {
+            App.goTo('presupuesto-comun', 'openExpenseModal', [originId]);
+        } else if (section === 'viajes' && typeof App.goTo === 'function') {
+            App.goTo('viajes', 'openTripDetail', [tripId || originId, 'resumen']);
+        } else if (section === 'mi-dinero') {
+            App.navigateTo && App.navigateTo('mi-dinero');
+        } else if (section === 'ingresos-personales') {
+            App.navigateTo && App.navigateTo('ingresos-personales');
+        } else if (typeof App.navigateTo === 'function') {
+            App.navigateTo(section);
+        }
     }
 
-    // =========================================================
-    // MODAL: DETALLE DE EVENTO
-    // =========================================================
+    function toggleExpenseStatus(expenseId) {
+        const exp = (App.data.expenses || []).find(x => x.id === expenseId);
+        if (!exp) return;
+        const cyc = { pendiente: 'registrado', previsto: 'registrado', registrado: 'pendiente' };
+        exp.status = cyc[exp.status] || 'registrado';
+        App.saveData();
+        if (typeof App.addHistory === 'function') {
+            App.addHistory('presupuesto-comun', `Estado cambiado a ${exp.status}: ${exp.concept}`);
+        }
+        if (typeof App.notifyModuleChange === 'function') {
+            App.notifyModuleChange('calendario', { reason: 'expense-status' });
+        }
+        render(containerEl);
+        if (App.showToast) App.showToast(`Estado actualizado: ${exp.status}`, 'success');
+    }
+
+    /* =========================== MODALES =========================== */
+    function closeDetailModal() {
+        const m = document.getElementById('calDetailModal');
+        if (m) m.classList.remove('active');
+    }
+
+    function openNumberModal(label, defaultValue, onSave) {
+        const modal = document.getElementById('calNumberModal');
+        const title = document.getElementById('calNumberTitle');
+        const input = document.getElementById('calNumberInput');
+        const btn = document.getElementById('calNumberConfirm');
+        title.textContent = label;
+        input.value = Number(defaultValue || 0).toFixed(2);
+
+        const close = () => modal.classList.remove('active');
+        const confirm = () => {
+            const val = parseFloat(input.value);
+            if (isNaN(val)) return;
+            modal.classList.remove('active');
+            onSave(val);
+        };
+        btn.onclick = confirm;
+        input.onkeydown = (e) => { if (e.key === 'Enter') confirm(); if (e.key === 'Escape') close(); };
+        modal.classList.add('active');
+        setTimeout(() => { input.focus(); input.select(); }, 50);
+    }
+
+    function findEventById(id) {
+        return getAllEvents('2000-01-01', '2100-12-31').find(e => e.id === id) || null;
+    }
+
     function openEventDetail(eventId) {
-        // Buscar el evento en todas las fuentes
-        let ev = null;
-        const allEvents = getEventsForRange('2026-01-01', '2027-12-31');
-        ev = allEvents.find(e => e.id === eventId);
+        const ev = findEventById(eventId);
         if (!ev) return;
 
-        const modal = containerEl.querySelector('#calDetailModal');
-        const body = containerEl.querySelector('#calDetailBody');
-        const footer = containerEl.querySelector('#calDetailFooter');
-        containerEl.querySelector('#calDetailTitle').textContent = ev.title;
+        const modal = document.getElementById('calDetailModal');
+        const title = document.getElementById('calDetailTitle');
+        const body = document.getElementById('calDetailBody');
+        const footer = document.getElementById('calDetailFooter');
 
-        let originLink = '';
-        // Comprobamos si el módulo de origen existe a través del puente de App,
-        // sin referencias directas a otros módulos
-        const ORIGIN_LABELS = {
-            'presupuesto-comun': 'Ver en Presupuesto',
-            'viajes': 'Ver en Viajes',
-            'cuentas': 'Ver en Cuentas'
-        };
-        if (ORIGIN_LABELS[ev.originSection]) {
-            originLink = `<button class="btn btn-sm btn-secondary" id="btnGoOrigin"><i class="fas fa-external-link-alt"></i> ${ORIGIN_LABELS[ev.originSection]}</button>`;
-        }
+        title.textContent = ev.title;
 
         body.innerHTML = `
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
                 <div>
-                    <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Fecha</div>
-                    <div style="font-weight: 600;">${App.formatDate(ev.date)} ${ev.time ? `a las ${ev.time}` : ''}</div>
+                    <div class="cal-modal-meta-label">Fecha</div>
+                    <div style="font-weight:600">${fmtDayLong(ev.date)}</div>
                 </div>
                 <div>
-                    <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Tipo</div>
-                    <div style="font-weight: 600;">${ev.type.charAt(0).toUpperCase() + ev.type.slice(1)}</div>
+                    <div class="cal-modal-meta-label">Tipo</div>
+                    <div style="font-weight:600;text-transform:capitalize">${ev.type}</div>
                 </div>
-                ${ev.isFinancial && ev.amount !== undefined ? `
+                ${ev.amount != null ? `
                 <div>
-                    <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Importe</div>
-                    <div style="font-weight: 700; color: ${ev.amount > 0 ? 'var(--success)' : 'var(--danger)'};">${App.formatCurrency(ev.amount)}</div>
-                </div>
-                ` : ''}
+                    <div class="cal-modal-meta-label">Importe</div>
+                    <div style="font-weight:800;font-size:17px;color:${ev.amount > 0 ? 'var(--success)' : 'var(--danger)'}">
+                        ${ev.amount > 0 ? '+' : ''}${fmtAmount(ev.amount)}
+                    </div>
+                </div>` : ''}
                 <div>
-                    <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Origen</div>
-                    <div style="font-weight: 600;">${ev.source.charAt(0).toUpperCase() + ev.source.slice(1)}</div>
+                    <div class="cal-modal-meta-label">Origen</div>
+                    <div style="font-weight:600;text-transform:capitalize">${ev.source}</div>
                 </div>
             </div>
-            ${ev.person ? `<div style="margin-bottom: 12px; font-size: 13px;"><strong>Persona:</strong> ${App.getProfileName(ev.person)}</div>` : ''}
-            ${ev.status ? `<div style="margin-bottom: 12px; font-size: 13px;"><strong>Estado:</strong> ${ev.status}</div>` : ''}
-            
-            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap;">
-                ${originLink}
-                ${ev.source === 'manual' ? `<button class="btn btn-sm btn-secondary" id="btnEditManual"><i class="fas fa-edit"></i> Editar</button>` : ''}
-            </div>
+            ${ev.time ? `<div class="cal-modal-row"><strong>Hora:</strong> ${esc(ev.time)}</div>` : ''}
+            ${ev.person ? `<div class="cal-modal-row"><strong>Persona:</strong> ${App.getProfileName(ev.person)}</div>` : ''}
+            ${ev.status ? `<div class="cal-modal-row"><strong>Estado:</strong> ${ev.status}</div>` : ''}
+            ${ev.notes ? `<div class="cal-modal-row"><strong>Notas:</strong> ${esc(ev.notes)}</div>` : ''}
         `;
 
-        footer.innerHTML = `<button class="btn btn-secondary" data-close-cal>Cerrar</button>`;
+        const btns = [];
 
-        // Bind actions
-        const btnOrigin = body.querySelector('#btnGoOrigin');
-        if (btnOrigin) {
-            btnOrigin.addEventListener('click', () => {
-                modal.classList.remove('active');
-                // Sin acoplamiento directo: App.goTo navega y pide al módulo
-                // destino la acción correspondiente a través del puente de App.
-                switch (ev.originSection) {
-                    case 'presupuesto-comun':
-                        App.goTo('presupuesto-comun', 'openExpenseModal', ev.originId);
-                        break;
-                    case 'viajes':
-                        App.goTo('viajes', 'openTripDetail', [ev.tripId || ev.originId, 'resumen']);
-                        break;
-                    case 'cuentas':
-                        App.navigateTo('mi-dinero');
-                        break;
-                    default:
-                        App.navigateTo(ev.originSection);
-                }
-            });
-        }
-
-        const btnEdit = body.querySelector('#btnEditManual');
-        if (btnEdit) {
-            btnEdit.addEventListener('click', () => {
-                modal.classList.remove('active');
-                openManualEventForm(null, ev);
-            });
-        }
-
-        modal.classList.add('active');
-    }
-
-    // =========================================================
-    // MODAL: CREAR/EDITAR EVENTO MANUAL
-    // =========================================================
-    function openManualEventForm(preselectedDate = null, existingEvent = null) {
-        const modal = containerEl.querySelector('#calFormModal');
-        const body = containerEl.querySelector('#calFormBody');
-        containerEl.querySelector('#calFormTitle').textContent = existingEvent ? 'Editar evento' : 'Nuevo evento';
-
-        body.innerHTML = `
-            <input type="hidden" id="manualEventId" value="${existingEvent ? existingEvent.id : ''}">
-            <div class="cal-form-row single">
-                <div class="cal-form-group">
-                    <label class="cal-form-label">Título *</label>
-                    <input type="text" class="cal-form-input" id="manualTitle" value="${existingEvent ? App.escapeHtml(existingEvent.title) : ''}" required>
-                </div>
-            </div>
-            <div class="cal-form-row">
-                <div class="cal-form-group">
-                    <label class="cal-form-label">Tipo</label>
-                    <select class="cal-form-select" id="manualType">
-                        <option value="manual" ${existingEvent && existingEvent.type === 'manual' ? 'selected' : ''}>Recordatorio personal</option>
-                        <option value="gasto" ${existingEvent && existingEvent.type === 'gasto' ? 'selected' : ''}>Gasto previsto</option>
-                        <option value="ingreso" ${existingEvent && existingEvent.type === 'ingreso' ? 'selected' : ''}>Ingreso previsto</option>
-                    </select>
-                </div>
-                <div class="cal-form-group">
-                    <label class="cal-form-label">Persona</label>
-                    <select class="cal-form-select" id="manualPerson">
-                        <option value="conjunto" ${existingEvent && existingEvent.person === 'conjunto' ? 'selected' : ''}>Conjunto</option>
-                        ${App.data.profiles.map(p => `<option value="${p.id}" ${existingEvent && existingEvent.person === p.id ? 'selected' : ''}>${App.escapeHtml(p.name)}</option>`).join('')}
-                    </select>
-                </div>
-            </div>
-            <div class="cal-form-row">
-                <div class="cal-form-group">
-                    <label class="cal-form-label">Fecha *</label>
-                    <input type="date" class="cal-form-input" id="manualDate" value="${existingEvent ? existingEvent.date : (preselectedDate || new Date().toISOString().substring(0, 10))}" required>
-                </div>
-                <div class="cal-form-group">
-                    <label class="cal-form-label">Hora (opcional)</label>
-                    <input type="time" class="cal-form-input" id="manualTime" value="${existingEvent ? (existingEvent.time || '') : ''}">
-                </div>
-            </div>
-            <div class="cal-form-row">
-                <div class="cal-form-group">
-                    <label class="cal-form-label">Importe (€)</label>
-                    <input type="number" step="0.01" class="cal-form-input" id="manualAmount" value="${existingEvent && existingEvent.amount ? existingEvent.amount : ''}">
-                    <div class="cal-form-hint">Dejar en blanco si no es financiero</div>
-                </div>
-                <div class="cal-form-group">
-                    <label class="cal-form-label">Estado</label>
-                    <select class="cal-form-select" id="manualStatus">
-                        <option value="programado" ${existingEvent && existingEvent.status === 'programado' ? 'selected' : ''}>Programado</option>
-                        <option value="completado" ${existingEvent && existingEvent.status === 'completado' ? 'selected' : ''}>Completado</option>
-                        <option value="cancelado" ${existingEvent && existingEvent.status === 'cancelado' ? 'selected' : ''}>Cancelado</option
-                    </select>
-                </div>
-            </div>
-            <div class="cal-form-row single">
-                <div class="cal-form-group">
-                    <label class="cal-form-label">Notas</label>
-                    <textarea class="cal-form-textarea" id="manualNotes">${existingEvent ? App.escapeHtml(existingEvent.notes || '') : ''}</textarea>
-                </div>
-            </div>
-        `;
-
-        const saveBtn = containerEl.querySelector('#calSaveEventBtn');
-        const newBtn = saveBtn.cloneNode(true);
-        saveBtn.parentNode.replaceChild(newBtn, saveBtn);
-        newBtn.id = 'calSaveEventBtn';
-        newBtn.addEventListener('click', saveManualEvent);
-
-        modal.classList.add('active');
-    }
-
-    function saveManualEvent() {
-        const body = containerEl.querySelector('#calFormBody');
-        const id = body.querySelector('#manualEventId').value;
-        const title = body.querySelector('#manualTitle').value.trim();
-        const date = body.querySelector('#manualDate').value;
-
-        if (!title || !date) {
-            App.showToast('Título y fecha son obligatorios', 'error');
-            return;
-        }
-
-        const amountVal = body.querySelector('#manualAmount').value;
-        const eventData = {
-            title,
-            type: body.querySelector('#manualType').value,
-            date,
-            time: body.querySelector('#manualTime').value,
-            person: body.querySelector('#manualPerson').value,
-            amount: amountVal === '' ? null : parseFloat(amountVal),
-            status: body.querySelector('#manualStatus').value,
-            notes: body.querySelector('#manualNotes').value.trim()
-        };
-
-        if (id) {
-            const idx = App.data.calendarEvents.findIndex(e => e.id === id);
-            if (idx !== -1) {
-                App.data.calendarEvents[idx] = { ...App.data.calendarEvents[idx], ...eventData };
-                App.addHistory('calendar_event_updated', title);
+        if (ev.source === 'ingresos') {
+            if (ev.status !== 'registrado' && ev.originId.startsWith('salary-')) {
+                btns.push(`<button class="cal-btn-primary" data-action="confirm-income" data-origin-id="${ev.originId}" data-person="${ev.person}">✓ Registrar cobro real</button>`);
+            } else if (ev.status !== 'registrado' && ev.originId.startsWith('extra-')) {
+                btns.push(`<button class="cal-btn-primary" data-action="confirm-income" data-origin-id="${ev.originId}" data-person="${ev.person}">✓ Registrar cobro extra</button>`);
             }
-        } else {
-            eventData.id = App.generateId('cal');
-            App.data.calendarEvents.push(eventData);
-            App.addHistory('calendar_event_created', title);
+            btns.push(`<button class="cal-btn-ghost" data-action="go-origin" data-section="ingresos-personales" data-origin-id="${ev.originId}">Abrir en Ingresos</button>`);
+        } else if (ev.source === 'presupuesto') {
+            if (ev.status !== 'registrado') {
+                btns.push(`<button class="cal-btn-primary" data-action="mark-paid" data-origin-id="${ev.originId}">✓ Marcar pagado</button>`);
+            } else {
+                btns.push(`<button class="cal-btn-ghost" data-action="toggle-status" data-origin-id="${ev.originId}">↺ Marcar pendiente</button>`);
+            }
+            btns.push(`<button class="cal-btn-ghost" data-action="go-origin" data-section="presupuesto-comun" data-origin-id="${ev.originId}">Abrir en Presupuesto</button>`);
+        } else if (ev.source === 'dinero') {
+            btns.push(`<button class="cal-btn-primary" data-action="go-origin" data-section="mi-dinero" data-origin-id="${ev.originId}">Abrir en Dinero</button>`);
+        } else if (ev.source === 'viajes') {
+            btns.push(`<button class="cal-btn-primary" data-action="go-origin" data-section="viajes" data-origin-id="${ev.originId}" data-trip-id="${ev.tripId || ''}">Abrir en Viajes</button>`);
         }
+        btns.push(`<button class="cal-btn-ghost" data-action="close-modal">Cerrar</button>`);
+        footer.innerHTML = btns.join('');
 
-        App.saveData();
-        containerEl.querySelector('#calFormModal').classList.remove('active');
-        App.showToast('Evento guardado');
-        renderCurrentView();
+        modal.classList.add('active');
     }
 
-    // =========================================================
-    // INIT
-    // =========================================================
-    function init() {}
+    /* =========================== INIT / API =========================== */
+    function init(container) {
+        if (container) containerEl = container;
+        ensureStructures();
+    }
 
     return {
-        render,
-        init
+        render, init,
+        getEventsForDay,
+        getProjectedBalance,
+        getCurrentBalance: currentBalance,
+        getState: () => ({
+            currentDate: toISO(state.currentDate),
+            selectedDate: state.selectedDate,
+            currentView: state.currentView
+        })
     };
 })();
 
-// Registrar sección en la aplicación principal (API directa del módulo)
-App.registerSection('calendario', CalendarApp);
-
+if (window.App) {
+    App.registerSection('calendario', CalendarApp);
+    App.registerModule('calendario', CalendarApp);
+}
 window.CalendarApp = CalendarApp;
