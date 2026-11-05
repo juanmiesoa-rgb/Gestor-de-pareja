@@ -156,26 +156,32 @@ const DataService = (function () {
         await Promise.all(modules.map(m => flushOne(m)));
     }
 
-    async function fetchAll() {
-        const idToken = window.AuthService ? AuthService.getIdToken() : null;
-        let url = CONFIG.apiUrl + '?action=read';
-        if (idToken) url += '&id_token=' + encodeURIComponent(idToken);
-        else url += '&token=' + encodeURIComponent(CONFIG.token);
+ async function fetchAll() {
+    const idToken = window.AuthService ? AuthService.getIdToken() : null;
+    const payload = { action: 'read' };
+    if (idToken) payload.id_token = idToken;
+    else payload.token = CONFIG.token;
 
-        const r = await fetch(url, { method: 'GET' });
-        const json = await r.json();
-        if (!json.ok) {
-            if (json.error === 'unauthorized') {
-                if (window.AuthService) AuthService.requestReauth();
-                throw new Error('Sesión expirada');
-            }
-            if (json.error === 'forbidden') {
-                throw new Error('Tu cuenta (' + json.email + ') no tiene acceso a este Sheet.');
-            }
-            throw new Error(json.error || 'read failed');
+    // Usamos POST en lugar de GET para que el token no se corte
+    const r = await fetch(CONFIG.apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+    });
+    
+    const json = await r.json();
+    if (!json.ok) {
+        if (json.error === 'unauthorized') {
+            if (window.AuthService) AuthService.requestReauth();
+            throw new Error('Sesión expirada');
         }
-        return json.data;
+        if (json.error === 'forbidden') {
+            throw new Error('Tu cuenta (' + json.email + ') no tiene acceso a este Sheet.');
+        }
+        throw new Error(json.error || 'read failed');
     }
+    return json.data;
+}
 
     function getStatus() {
         return Object.assign({}, status, {
