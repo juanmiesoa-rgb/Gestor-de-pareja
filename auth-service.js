@@ -142,9 +142,10 @@ const AuthService = (function () {
     }
 
     function getIdToken() {
-        // Dejamos que el servidor (Apps Script) valide la expiración real
-        // para evitar problemas si el reloj del ordenador está desajustado.
-        return currentIdToken || null;
+        if (!currentIdToken) return null;
+        // Margen de seguridad de 5 minutos (300000 ms)
+        if (tokenExpiresAt && (tokenExpiresAt - 300000) < Date.now()) return null;
+        return currentIdToken;
     }
 
     function getUser() { return currentUser; }
