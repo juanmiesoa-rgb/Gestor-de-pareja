@@ -800,12 +800,21 @@ async function bootstrapApp() {
     if (appStarted) return;
     appStarted = true;
 
-    // --- VINCULACIÓN AUTOMÁTICA DE PERFIL ---
+    if (window.AuthService) AuthService.hideLogin();
+
+    // 1. Asegurar que los perfiles existen (por si Google Sheets los ha borrado)
+    if (!App.data.profiles || App.data.profiles.length === 0) {
+        App.data.profiles = [
+            { id: 'ana', name: 'Nena', initial: 'N', color: '#ec4899' },
+            { id: 'carlos', name: 'Bombón', initial: 'B', color: '#2563eb' }
+        ];
+    }
+
+    // 2. Asignar automáticamente el perfil según el correo
     if (window.AuthService) {
         const user = AuthService.getUser();
         if (user && user.email) {
-            // PON AQUÍ LOS CORREOS REALES DE CADA UNO
-            const emailNena = 'amcarranza216@gmail.com'; 
+            const emailNena = 'CORREO_DE_TU_PAREJA@gmail.com'; // <--- CAMBIA ESTO
             const emailBombon = 'juanmi.sexto.a@gmail.com'; 
 
             if (user.email === emailBombon) {
@@ -813,38 +822,24 @@ async function bootstrapApp() {
             } else if (user.email === emailNena) {
                 App.data.activeProfile = 'ana';    // Nena
             }
-            App.saveData(); 
         }
     }
-    // ----------------------------------------
 
-    // 1 · Ocultar login si estaba visible
-    if (window.AuthService) AuthService.hideLogin();
-
-    // 2 · Arrancar INMEDIATAMENTE con localStorage (0 ms)
+    // 3. Montar la app
     initTripManager();
     App.init();
 
-    // 3 · Refresh en background desde Sheets
+    // 4. Cargar los datos de Google Sheets
     if (window.DataService) {
         DataService.init();
     }
 
-    // 4 · Escuchar refresh del server → re-render selectivo
+    // 5. Escuchar cambios desde el servidor
     document.addEventListener('app:data-refreshed', () => {
-        console.info('[App] Datos externos actualizados · re-renderizando…');
         const tm = window.getTripManager && window.getTripManager();
         if (tm && tm.mounted) {
-            try {
-                const persisted = localStorage.getItem('finanzas_viajes_v2');
-                if (persisted) {
-                    const parsed = JSON.parse(persisted);
-                    if (parsed && Array.isArray(parsed.trips)) {
-                        tm.data = parsed;
-                        tm.render();
-                    }
-                }
-            } catch (e) {}
+            const p = localStorage.getItem('finanzas_viajes_v2');
+            if (p) { try { tm.data = JSON.parse(p); tm.render(); } catch (e) {} }
         }
         if (typeof App.refreshAll === 'function') App.refreshAll();
     });
