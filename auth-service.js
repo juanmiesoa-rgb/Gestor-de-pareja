@@ -142,9 +142,9 @@ const AuthService = (function () {
     }
 
     function getIdToken() {
-        if (!currentIdToken) return null;
-        if (tokenExpiresAt && tokenExpiresAt < Date.now()) return null;
-        return currentIdToken;
+        // Dejamos que el servidor (Apps Script) valide la expiración real
+        // para evitar problemas si el reloj del ordenador está desajustado.
+        return currentIdToken || null;
     }
 
     function getUser() { return currentUser; }
