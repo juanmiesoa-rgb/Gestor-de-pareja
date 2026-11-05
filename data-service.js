@@ -106,7 +106,7 @@ const DataService = (function () {
         timers[module] = setTimeout(() => flushOne(module), CONFIG.debounceMs);
     }
 
-   async function flushOne(module) {
+ async function flushOne(module) {
     if (!pending[module]) return;
     const data = pending[module];
     delete pending[module];
@@ -115,10 +115,13 @@ const DataService = (function () {
         status.syncing = true;
         emit();
 
-        const idToken = window.AuthService ? AuthService.getIdToken() : null;
-        // ENVIAMOS SIEMPRE EL TOKEN DE RESPALDO
-        const bodyPayload = { action: 'write', module, data, token: CONFIG.token };
-        if (idToken) bodyPayload.id_token = idToken;
+        // Enviamos SOLO el token de respaldo
+        const bodyPayload = { 
+            action: 'write', 
+            module, 
+            data,
+            token: CONFIG.token 
+        };
 
         const response = await fetch(CONFIG.apiUrl, {
             method: 'POST',
@@ -148,17 +151,17 @@ const DataService = (function () {
         emit();
     }
 }
-
     async function flush() {
         const modules = Object.keys(pending);
         await Promise.all(modules.map(m => flushOne(m)));
     }
 
- async function fetchAll() {
-    const idToken = window.AuthService ? AuthService.getIdToken() : null;
-    // ENVIAMOS SIEMPRE EL TOKEN DE RESPALDO
-    const payload = { action: 'read', token: CONFIG.token }; 
-    if (idToken) payload.id_token = idToken;
+  async function fetchAll() {
+    // Enviamos SOLO el token de respaldo para evitar conflictos con Google
+    const payload = { 
+        action: 'read',
+        token: CONFIG.token 
+    };
 
     const r = await fetch(CONFIG.apiUrl, {
         method: 'POST',
