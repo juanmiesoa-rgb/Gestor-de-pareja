@@ -23,7 +23,7 @@ const App = (function () {
             { id: 'ana', name: 'Nena', initial: 'N', color: '#ec4899' },
             { id: 'carlos', name: 'Bombón', initial: 'B', color: '#2563eb' }
         ],
-       activeProfile: '',
+        activeProfile: 'ana',
 
         /* ---------- Datos: TODO vacío · la fuente es el Google Sheet ---------- */
         accounts: [],
