@@ -1,16 +1,15 @@
 /* =============================================================================
-   AUTH-SERVICE.JS · Google Sign-In (Identity Services)
+   AUTH-SERVICE.JS · Google Sign-In (Identity Services) · v4
    ============================================================================= */
 const AuthService = (function () {
     'use strict';
 
     const CONFIG = {
-        // ⚠️ CAMBIA ESTO POR TU CLIENT ID DE GOOGLE CLOUD
-        clientId: '183798659982-8ul1bm5sq2lohn4cac9j4udtp7jv65uc.apps.googleusercontent.com' 
+        clientId: 'PEGA_AQUI_TU_CLIENT_ID.apps.googleusercontent.com' 
     };
 
     const STORAGE_USER_KEY = 'finanzas_auth_user';
-    const SESSION_TOKEN_KEY = 'finanzas_auth_id_token';
+    const STORAGE_TOKEN_KEY = 'finanzas_auth_id_token';
 
     let currentUser = null;
     let currentIdToken = null;
@@ -21,12 +20,6 @@ const AuthService = (function () {
     function loadScript() {
         return new Promise((resolve, reject) => {
             if (window.google && window.google.accounts && window.google.accounts.id) return resolve();
-            const existing = document.getElementById('gis-script');
-            if (existing) {
-                existing.addEventListener('load', resolve);
-                existing.addEventListener('error', reject);
-                return;
-            }
             const s = document.createElement('script');
             s.id = 'gis-script';
             s.src = 'https://accounts.google.com/gsi/client';
@@ -53,7 +46,7 @@ const AuthService = (function () {
         try { localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(u)); } catch (e) {}
     }
     function persistToken(credential, expiresAt) {
-        try { sessionStorage.setItem(SESSION_TOKEN_KEY, JSON.stringify({ credential, expiresAt })); } catch (e) {}
+        try { localStorage.setItem(STORAGE_TOKEN_KEY, JSON.stringify({ credential, expiresAt })); } catch (e) {}
     }
     function loadPersistedUser() {
         try {
@@ -63,16 +56,17 @@ const AuthService = (function () {
     }
     function loadPersistedToken() {
         try {
-            const raw = sessionStorage.getItem(SESSION_TOKEN_KEY);
+            const raw = localStorage.getItem(STORAGE_TOKEN_KEY);
             if (!raw) return null;
             const p = JSON.parse(raw);
-            if (!p.credential || !p.expiresAt || p.expiresAt < Date.now()) return null;
+            // Ignorar si caducó o le queda menos de 1 minuto
+            if (!p.credential || !p.expiresAt || p.expiresAt < (Date.now() + 60000)) return null;
             return p;
         } catch (e) { return null; }
     }
     function clearStorage() {
         try { localStorage.removeItem(STORAGE_USER_KEY); } catch (e) {}
-        try { sessionStorage.removeItem(SESSION_TOKEN_KEY); } catch (e) {}
+        try { localStorage.removeItem(STORAGE_TOKEN_KEY); } catch (e) {}
     }
 
     function handleCredentialResponse(response) {
@@ -85,6 +79,9 @@ const AuthService = (function () {
             showError('Token de Google inválido.');
             return;
         }
+        
+        console.log('[AuthService] Login correcto. Expira en:', Math.round((claims.exp * 1000 - Date.now()) / 60000), 'minutos');
+        
         currentIdToken = response.credential;
         tokenExpiresAt = (Number(claims.exp) || 0) * 1000;
         currentUser = {
@@ -104,21 +101,20 @@ const AuthService = (function () {
         await loadScript();
         initialized = true;
 
-        const persistedUser = loadPersistedUser();
-        if (persistedUser) currentUser = persistedUser;
-
         const persistedToken = loadPersistedToken();
         if (persistedToken) {
             currentIdToken = persistedToken.credential;
             tokenExpiresAt = persistedToken.expiresAt;
+            currentUser = loadPersistedUser();
+            console.log('[AuthService] Sesión restaurada. Expira en:', Math.round((tokenExpiresAt - Date.now()) / 60000), 'minutos');
         }
 
         google.accounts.id.initialize({
             client_id: CONFIG.clientId,
             callback: handleCredentialResponse,
-            auto_select: false,
-            cancel_on_tap_outside: false,
-            use_fedcm_for_prompt: true
+            auto_select: false, // Desactivado para evitar bloqueos del navegador
+            cancel_on_tap_outside: true,
+            use_fedcm_for_prompt: false // Desactivado, usamos solo el botón
         });
 
         const btn = document.getElementById('gsiButton');
@@ -138,12 +134,8 @@ const AuthService = (function () {
     }
 
     function signIn() {
-        if (!initialized) return init().then(signIn);
-        try {
-            google.accounts.id.prompt();
-        } catch (e) {
-            console.warn('[AuthService] signIn falló:', e);
-        }
+        if (!initialized) return init();
+        // Ya no usamos google.accounts.id.prompt() porque el botón ya hace la función
     }
 
     function signOut() {
@@ -159,9 +151,11 @@ const AuthService = (function () {
     }
 
     function requestReauth() {
+        currentUser = null;
         currentIdToken = null;
         tokenExpiresAt = 0;
-        showError('Tu sesión ha expirado. Vuelve a iniciar sesión.');
+        clearStorage();
+        showError('Tu sesión ha caducado. Por favor, vuelve a entrar.');
         showLogin();
         emit();
     }
@@ -169,7 +163,6 @@ const AuthService = (function () {
     function getIdToken() {
         if (!currentIdToken) return null;
         if (tokenExpiresAt && tokenExpiresAt < Date.now()) {
-            currentIdToken = null;
             return null;
         }
         return currentIdToken;
@@ -177,38 +170,17 @@ const AuthService = (function () {
 
     function getUser() { return currentUser; }
     function isSignedIn() { return !!getIdToken(); }
-
-    function onChange(fn) {
-        if (typeof fn === 'function') listeners.push(fn);
-    }
-
+    function onChange(fn) { if (typeof fn === 'function') listeners.push(fn); }
     function emit() {
         const payload = { user: currentUser, signedIn: isSignedIn() };
         listeners.forEach(fn => { try { fn(payload); } catch (e) {} });
-        if (window.App && typeof App.updateAuthUI === 'function') {
-            App.updateAuthUI(payload);
-        }
+        if (window.App && typeof App.updateAuthUI === 'function') App.updateAuthUI(payload);
     }
+    function showLogin() { const el = document.getElementById('authOverlay'); if (el) el.classList.add('active'); }
+    function hideLogin() { const el = document.getElementById('authOverlay'); if (el) el.classList.remove('active'); }
+    function showError(msg) { const el = document.getElementById('authError'); if (el) el.textContent = msg || ''; }
 
-    function showLogin() {
-        const el = document.getElementById('authOverlay');
-        if (el) el.classList.add('active');
-    }
-    function hideLogin() {
-        const el = document.getElementById('authOverlay');
-        if (el) el.classList.remove('active');
-    }
-    function showError(msg) {
-        const el = document.getElementById('authError');
-        if (el) el.textContent = msg || '';
-    }
-
-    return {
-        init, signIn, signOut, requestReauth,
-        getIdToken, getUser, isSignedIn, onChange,
-        showLogin, hideLogin, showError,
-        config: CONFIG
-    };
+    return { init, signIn, signOut, requestReauth, getIdToken, getUser, isSignedIn, onChange, showLogin, hideLogin, showError, config: CONFIG };
 })();
 
 window.AuthService = AuthService;
