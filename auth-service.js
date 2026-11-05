@@ -127,8 +127,18 @@ const AuthService = (function () {
     }
 
     function requestReauth() {
-        signOut(); // Forzamos salida limpia
-        showError('Sesión caducada. Vuelve a entrar.');
+        // En lugar de borrar la sesión a la primera, solo avisamos.
+        console.warn('[AuthService] Error de red o de servidor. Manteniendo sesión local.');
+        showError('Problema de conexión con el servidor. Reintentando...');
+        
+        // Solo cerramos sesión si de verdad el token ya caducó
+        if (tokenExpiresAt && tokenExpiresAt < Date.now()) {
+            currentUser = null;
+            currentIdToken = null;
+            try { localStorage.removeItem(STORAGE_USER_KEY); localStorage.removeItem(STORAGE_TOKEN_KEY); } catch (e) {}
+            showLogin();
+            emit();
+        }
     }
 
     function getIdToken() {
