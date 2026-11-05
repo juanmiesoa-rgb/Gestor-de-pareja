@@ -6,7 +6,7 @@ const AuthService = (function () {
 
     const CONFIG = {
         // ⚠️ PON AQUÍ TU CLIENT ID
-        clientId: 'PEGA_AQUI_TU_CLIENT_ID.apps.googleusercontent.com' 
+        clientId: '183798659982-8ul1bm5sq2lohn4cac9j4udtp7jv65uc.apps.googleusercontent.com' 
     };
 
     const STORAGE_USER_KEY = 'finanzas_auth_user';
