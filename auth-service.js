@@ -1,10 +1,11 @@
 /* =============================================================================
-   AUTH-SERVICE.JS · Google Sign-In (Identity Services) · v4
+   AUTH-SERVICE.JS · Google Sign-In (Identity Services) · v5
    ============================================================================= */
 const AuthService = (function () {
     'use strict';
 
     const CONFIG = {
+        // ⚠️ PON AQUÍ TU CLIENT ID
         clientId: 'PEGA_AQUI_TU_CLIENT_ID.apps.googleusercontent.com' 
     };
 
@@ -21,7 +22,6 @@ const AuthService = (function () {
         return new Promise((resolve, reject) => {
             if (window.google && window.google.accounts && window.google.accounts.id) return resolve();
             const s = document.createElement('script');
-            s.id = 'gis-script';
             s.src = 'https://accounts.google.com/gsi/client';
             s.async = true;
             s.defer = true;
@@ -42,34 +42,9 @@ const AuthService = (function () {
         } catch (e) { return null; }
     }
 
-    function persistUser(u) {
-        try { localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(u)); } catch (e) {}
-    }
-    function persistToken(credential, expiresAt) {
-        try { localStorage.setItem(STORAGE_TOKEN_KEY, JSON.stringify({ credential, expiresAt })); } catch (e) {}
-    }
-    function loadPersistedUser() {
-        try {
-            const raw = localStorage.getItem(STORAGE_USER_KEY);
-            return raw ? JSON.parse(raw) : null;
-        } catch (e) { return null; }
-    }
-    function loadPersistedToken() {
-        try {
-            const raw = localStorage.getItem(STORAGE_TOKEN_KEY);
-            if (!raw) return null;
-            const p = JSON.parse(raw);
-            // Ignorar si caducó o le queda menos de 1 minuto
-            if (!p.credential || !p.expiresAt || p.expiresAt < (Date.now() + 60000)) return null;
-            return p;
-        } catch (e) { return null; }
-    }
-    function clearStorage() {
-        try { localStorage.removeItem(STORAGE_USER_KEY); } catch (e) {}
-        try { localStorage.removeItem(STORAGE_TOKEN_KEY); } catch (e) {}
-    }
-
     function handleCredentialResponse(response) {
+        console.log('[AuthService] Callback disparado por Google:', response);
+        
         if (!response || !response.credential) {
             showError('No se recibió credencial de Google.');
             return;
@@ -80,18 +55,17 @@ const AuthService = (function () {
             return;
         }
         
-        console.log('[AuthService] Login correcto. Expira en:', Math.round((claims.exp * 1000 - Date.now()) / 60000), 'minutos');
-        
         currentIdToken = response.credential;
         tokenExpiresAt = (Number(claims.exp) || 0) * 1000;
         currentUser = {
             email: claims.email,
             name: claims.name || claims.email,
-            picture: claims.picture || '',
-            sub: claims.sub || ''
+            picture: claims.picture || ''
         };
-        persistUser(currentUser);
-        persistToken(currentIdToken, tokenExpiresAt);
+        
+        try { localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(currentUser)); } catch (e) {}
+        try { localStorage.setItem(STORAGE_TOKEN_KEY, JSON.stringify({ credential: currentIdToken, expiresAt: tokenExpiresAt })); } catch (e) {}
+        
         hideLogin();
         emit();
     }
@@ -101,20 +75,25 @@ const AuthService = (function () {
         await loadScript();
         initialized = true;
 
-        const persistedToken = loadPersistedToken();
-        if (persistedToken) {
-            currentIdToken = persistedToken.credential;
-            tokenExpiresAt = persistedToken.expiresAt;
-            currentUser = loadPersistedUser();
-            console.log('[AuthService] Sesión restaurada. Expira en:', Math.round((tokenExpiresAt - Date.now()) / 60000), 'minutos');
-        }
+        // Restaurar sesión si existe
+        try {
+            const raw = localStorage.getItem(STORAGE_TOKEN_KEY);
+            if (raw) {
+                const p = JSON.parse(raw);
+                if (p.credential && p.expiresAt > Date.now()) {
+                    currentIdToken = p.credential;
+                    tokenExpiresAt = p.expiresAt;
+                    currentUser = JSON.parse(localStorage.getItem(STORAGE_USER_KEY));
+                }
+            }
+        } catch (e) {}
 
         google.accounts.id.initialize({
             client_id: CONFIG.clientId,
             callback: handleCredentialResponse,
-            auto_select: false, // Desactivado para evitar bloqueos del navegador
-            cancel_on_tap_outside: true,
-            use_fedcm_for_prompt: false // Desactivado, usamos solo el botón
+            ux_mode: 'popup', // Forzar ventana emergente clásica
+            auto_select: false,
+            cancel_on_tap_outside: true
         });
 
         const btn = document.getElementById('gsiButton');
@@ -126,23 +105,20 @@ const AuthService = (function () {
                 text: 'signin_with',
                 shape: 'pill',
                 logo_alignment: 'left',
-                width: Math.min(320, window.innerWidth - 96)
+                width: 280
             });
         }
 
         emit();
     }
 
-    function signIn() {
-        if (!initialized) return init();
-        // Ya no usamos google.accounts.id.prompt() porque el botón ya hace la función
-    }
+    function signIn() { init(); }
 
     function signOut() {
         currentUser = null;
         currentIdToken = null;
         tokenExpiresAt = 0;
-        clearStorage();
+        try { localStorage.removeItem(STORAGE_USER_KEY); localStorage.removeItem(STORAGE_TOKEN_KEY); } catch (e) {}
         if (window.google && google.accounts && google.accounts.id) {
             try { google.accounts.id.disableAutoSelect(); } catch (e) {}
         }
@@ -151,20 +127,13 @@ const AuthService = (function () {
     }
 
     function requestReauth() {
-        currentUser = null;
-        currentIdToken = null;
-        tokenExpiresAt = 0;
-        clearStorage();
-        showError('Tu sesión ha caducado. Por favor, vuelve a entrar.');
-        showLogin();
-        emit();
+        signOut(); // Forzamos salida limpia
+        showError('Sesión caducada. Vuelve a entrar.');
     }
 
     function getIdToken() {
         if (!currentIdToken) return null;
-        if (tokenExpiresAt && tokenExpiresAt < Date.now()) {
-            return null;
-        }
+        if (tokenExpiresAt && tokenExpiresAt < Date.now()) return null;
         return currentIdToken;
     }
 
