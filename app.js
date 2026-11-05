@@ -20,10 +20,10 @@ const App = (function () {
     const DEFAULT_DATA = {
         /* ---------- Usuarios (no es demo · son los perfiles de la app) ---------- */
         profiles: [
-            { id: 'ana', name: 'Ana', initial: 'A', color: '#ec4899' },
-            { id: 'carlos', name: 'Carlos', initial: 'C', color: '#2563eb' }
+            { id: 'ana', name: 'Nena', initial: 'N', color: '#ec4899' },
+            { id: 'carlos', name: 'Bombón', initial: 'B', color: '#2563eb' }
         ],
-        activeProfile: 'ana',
+       activeProfile: '',
 
         /* ---------- Datos: TODO vacío · la fuente es el Google Sheet ---------- */
         accounts: [],
