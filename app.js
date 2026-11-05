@@ -800,6 +800,24 @@ async function bootstrapApp() {
     if (appStarted) return;
     appStarted = true;
 
+    // --- VINCULACIÓN AUTOMÁTICA DE PERFIL ---
+    if (window.AuthService) {
+        const user = AuthService.getUser();
+        if (user && user.email) {
+            // PON AQUÍ LOS CORREOS REALES DE CADA UNO
+            const emailNena = 'amcarranza216@gmail.com'; 
+            const emailBombon = 'juanmi.sexto.a@gmail.com'; 
+
+            if (user.email === emailBombon) {
+                App.data.activeProfile = 'carlos'; // Bombón
+            } else if (user.email === emailNena) {
+                App.data.activeProfile = 'ana';    // Nena
+            }
+            App.saveData(); 
+        }
+    }
+    // ----------------------------------------
+
     // 1 · Ocultar login si estaba visible
     if (window.AuthService) AuthService.hideLogin();
 
