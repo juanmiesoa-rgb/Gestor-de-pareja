@@ -106,50 +106,48 @@ const DataService = (function () {
         timers[module] = setTimeout(() => flushOne(module), CONFIG.debounceMs);
     }
 
-    async function flushOne(module) {
-        if (!pending[module]) return;
-        const data = pending[module];
-        delete pending[module];
+   async function flushOne(module) {
+    if (!pending[module]) return;
+    const data = pending[module];
+    delete pending[module];
 
-        try {
-            status.syncing = true;
-            emit();
+    try {
+        status.syncing = true;
+        emit();
 
-            const idToken = window.AuthService ? AuthService.getIdToken() : null;
-            const bodyPayload = { action: 'write', module, data };
-            if (idToken) bodyPayload.id_token = idToken;
-            else bodyPayload.token = CONFIG.token;
+        const idToken = window.AuthService ? AuthService.getIdToken() : null;
+        // ENVIAMOS SIEMPRE EL TOKEN DE RESPALDO
+        const bodyPayload = { action: 'write', module, data, token: CONFIG.token };
+        if (idToken) bodyPayload.id_token = idToken;
 
-            const response = await fetch(CONFIG.apiUrl, {
-                method: 'POST',
-                // text/plain evita CORS preflight (Apps Script no maneja OPTIONS)
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify(bodyPayload)
-            });
+        const response = await fetch(CONFIG.apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(bodyPayload)
+        });
 
-            const json = await response.json();
-            
-            if (!json.ok) {
-                if (json.error === 'unauthorized') {
-                    if (window.AuthService) AuthService.requestReauth();
-                }
-                throw new Error(json.error || 'write failed');
+        const json = await response.json();
+        
+        if (!json.ok) {
+            if (json.error === 'unauthorized') {
+                if (window.AuthService) AuthService.requestReauth();
             }
-
-            status.connected = true;
-            status.lastSync = Date.now();
-            status.lastError = null;
-        } catch (e) {
-            console.warn('[DataService] flushOne falló (' + module + '):', e);
-            status.connected = false;
-            status.lastError = e.message || String(e);
-            // Re-encolar para reintentar
-            pending[module] = data;
-        } finally {
-            status.syncing = false;
-            emit();
+            throw new Error(json.error || 'write failed');
         }
+
+        status.connected = true;
+        status.lastSync = Date.now();
+        status.lastError = null;
+    } catch (e) {
+        console.warn('[DataService] flushOne falló (' + module + '):', e);
+        status.connected = false;
+        status.lastError = e.message || String(e);
+        pending[module] = data;
+    } finally {
+        status.syncing = false;
+        emit();
     }
+}
 
     async function flush() {
         const modules = Object.keys(pending);
@@ -158,11 +156,10 @@ const DataService = (function () {
 
  async function fetchAll() {
     const idToken = window.AuthService ? AuthService.getIdToken() : null;
-    const payload = { action: 'read' };
+    // ENVIAMOS SIEMPRE EL TOKEN DE RESPALDO
+    const payload = { action: 'read', token: CONFIG.token }; 
     if (idToken) payload.id_token = idToken;
-    else payload.token = CONFIG.token;
 
-    // Usamos POST en lugar de GET para que el token no se corte
     const r = await fetch(CONFIG.apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
