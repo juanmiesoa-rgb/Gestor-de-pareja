@@ -12,7 +12,7 @@ const DataService = (function () {
 
     const CONFIG = {
         // ⚠️ EDITA ESTOS DOS VALORES con los que obtuviste en el despliegue del Web App
-        apiUrl: 'https://script.google.com/macros/s/AKfycbzY9a-OJ_KG5eapvSmZmu9Lx4rv0yRWiKQwPL86poPsyR6w0TJcGzCb-YB1ocnuFu5H/exec',
+        apiUrl: 'https://script.google.com/macros/s/AKfycbwCFEoAoe6WeShWyWUm-ast-HNuATa0Q7zW7XjYaXQFX3kt19UqB8gSqDLjS-fEspxP/exec',
         token: '15770e57-c8e2-4591-980f-31212777a050-a5fd3bff-e360-49c0-88b4-2a56b8a8d46a',
         debounceMs: 2000
     };
