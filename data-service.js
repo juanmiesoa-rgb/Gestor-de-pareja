@@ -1,5 +1,5 @@
 /* =============================================================================
-   DATA-SERVICE.JS · v4 — Sincronización segura (Anti-borrado de Sheet)
+   DATA-SERVICE.JS · v5 — Sincronización blindada (Anti-borrado)
    ============================================================================= */
 const DataService = (function () {
     'use strict';
@@ -21,7 +21,7 @@ const DataService = (function () {
     const timers = {};                  
     const status = { connected: false, lastSync: null, lastError: null, syncing: false, phase: 'idle' };
     let _refreshInFlight = false;
-    let isFirstReadComplete = false; 
+    let isFirstReadComplete = false; // 🔒 CANDADO MAESTRO
 
     const listeners = [];
 
@@ -31,10 +31,11 @@ const DataService = (function () {
         const success = await refreshFromServer();
         if (success) {
             isFirstReadComplete = true; 
-            console.log('[DataService] Lectura inicial exitosa. Guardado en Sheet habilitado.');
+            console.log('[DataService] Lectura exitosa. Guardado HABILITADO.');
         } else {
-            console.warn('[DataService] ⚠️ Lectura inicial fallida. Guardado BLOQUEADO.');
+            console.warn('[DataService] ⚠️ Lectura fallida. Guardado BLOQUEADO para proteger datos.');
         }
+        return success;
     }
 
     async function refreshFromServer() {
@@ -47,14 +48,13 @@ const DataService = (function () {
 
             const data = await fetchAll();
 
-            // 🛡️ ESCUDO: Si el servidor devuelve categorías vacías pero tenemos locales, abortamos.
+            // 🛡️ ESCUDO: Si el servidor devuelve 0 categorías y teníamos, abortamos
             if (data.app && (!data.app.pcCategories || data.app.pcCategories.length === 0)) {
                 const localRaw = localStorage.getItem('finanzas_data');
                 if (localRaw) {
                     const localData = JSON.parse(localRaw);
                     if (localData.pcCategories && localData.pcCategories.length > 0) {
-                        console.warn('[DataService] ⚠️ El servidor devolvió datos vacíos, pero localmente hay datos. Abortando para proteger.');
-                        throw new Error('Protección: El servidor devolvió vacío.');
+                        throw new Error('Protección: El servidor devolvió datos vacíos.');
                     }
                 }
             }
@@ -108,8 +108,9 @@ const DataService = (function () {
     function saveStored(key, value) {
         try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
 
+        // 🔒 EL CANDADO: Si la lectura inicial falló, NO se envía nada al Sheet
         if (!isFirstReadComplete) {
-            console.log('[DataService] Guardado bloqueado: lectura inicial no completada.');
+            console.warn('[DataService] 🛑 Guardado bloqueado: la app no ha leído el Sheet correctamente.');
             return;
         }
 
@@ -172,6 +173,7 @@ const DataService = (function () {
     }
 
     async function flush() {
+        if (!isFirstReadComplete) return;
         const modules = Object.keys(pending);
         await Promise.all(modules.map(m => flushOne(m)));
     }
@@ -212,6 +214,7 @@ const DataService = (function () {
     }
 
     window.addEventListener('beforeunload', () => {
+        if (!isFirstReadComplete) return;
         const idToken = window.AuthService ? AuthService.getIdToken() : null;
         if (!idToken) return;
         Object.keys(pending).forEach(m => {
