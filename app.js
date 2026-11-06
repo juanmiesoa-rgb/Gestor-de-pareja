@@ -878,16 +878,6 @@ async function bootstrapApp() {
     if (appStarted) return;
     appStarted = true;
 
-    // 🔒 COMPROBACIÓN DE SEGURIDAD: Exigir que el token sea válido (no solo que exista el usuario)
-    if (window.AuthService) {
-        if (!AuthService.isSignedIn()) {
-            console.warn('[App] Sin sesión válida (token expirado o ausente).');
-            AuthService.showLogin();
-            appStarted = false; // Permitir reintentar
-            return;
-        }
-    }
-
     if (window.AuthService) AuthService.hideLogin();
 
     // 1. Asegurar que los perfiles existen
@@ -902,26 +892,21 @@ async function bootstrapApp() {
     if (window.AuthService) {
         const user = AuthService.getUser();
         if (user && user.email) {
-            // ⚠️ EMAILS REALES
-            const emailNena = 'amcarranza216@gmail.com';   // Nena
-            const emailBombon = 'juanmi.sexto.a@gmail.com'; // Bombón
-
-            if (user.email.toLowerCase() === emailBombon) {
-                App.data.activeProfile = 'carlos'; // Bombón
-            } else if (user.email.toLowerCase() === emailNena) {
-                App.data.activeProfile = 'ana';    // Nena
-            }
+            const emailNena = 'amcarranza216@gmail.com';
+            const emailBombon = 'juanmi.sexto.a@gmail.com';
+            if (user.email.toLowerCase() === emailBombon) App.data.activeProfile = 'carlos';
+            else if (user.email.toLowerCase() === emailNena) App.data.activeProfile = 'ana';
         }
     }
 
-    // 3. Montar la app
+    // 3. Cargar los datos de Google Sheets PRIMERO (esperamos a que termine)
+    if (window.DataService) {
+        await DataService.init();
+    }
+
+    // 4. Montar la app (ya con los datos reales cargados)
     initTripManager();
     App.init();
-
-    // 4. Cargar los datos de Google Sheets
-    if (window.DataService) {
-        DataService.init();
-    }
 
     // 5. Escuchar cambios desde el servidor
     document.addEventListener('app:data-refreshed', () => {
