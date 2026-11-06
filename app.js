@@ -155,6 +155,15 @@ const App = (function () {
     function generateId(prefix = 'id') {
         return prefix + '-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     }
+    function formatRelativeTime(ts) {
+        if (!ts) return '';
+        const diff = Math.floor((Date.now() - ts) / 1000);
+        if (diff < 5) return 'ahora mismo';
+        if (diff < 60) return 'hace ' + diff + 's';
+        if (diff < 3600) return 'hace ' + Math.floor(diff / 60) + ' min';
+        if (diff < 86400) return 'hace ' + Math.floor(diff / 3600) + ' h';
+        return 'hace ' + Math.floor(diff / 86400) + ' d';
+    }
 
     /* =========================================================
        TOAST Y CONFIRMACIÓN

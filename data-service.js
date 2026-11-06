@@ -26,16 +26,15 @@ const DataService = (function () {
 
     const pending = {};                 // { module: dataJson }
     const timers = {};                  // { module: timeoutId }
-    const status = { connected: false, lastSync: null, lastError: null, syncing: false };
+    const status = { connected: false, lastSync: null, lastError: null, syncing: false, phase: 'idle' };
+    let _refreshInFlight = false;
     const listeners = [];
 
     /* -------- API pública -------- */
 
     async function init() {
-        // 1 · FASE CACHE · arrancar con lo que hay en localStorage (instantáneo)
-        // (nada que hacer aquí: la app leerá de localStorage al montar)
-
-        // 2 · FASE NETWORK · refresh en background (no bloquea)
+        status.phase = 'connecting';
+        emit();
         refreshFromServer().catch(e => console.warn('[DataService] background refresh:', e));
     }
 
@@ -44,9 +43,13 @@ const DataService = (function () {
      * y dispara 'app:data-refreshed' para que la UI se re-renderice.
      */
     async function refreshFromServer() {
+        if (_refreshInFlight) return;
+        _refreshInFlight = true;
         try {
             status.syncing = true;
+            status.phase = 'reading';
             emit();
+
             const data = await fetchAll();
 
             let anyChange = false;
@@ -63,6 +66,7 @@ const DataService = (function () {
             status.connected = true;
             status.lastSync = Date.now();
             status.lastError = null;
+            status.phase = 'connected';
 
             if (anyChange) {
                 console.info('[DataService] Datos actualizados desde Sheets');
@@ -72,7 +76,9 @@ const DataService = (function () {
             console.warn('[DataService] refresh falló:', e);
             status.connected = false;
             status.lastError = e.message || String(e);
+            status.phase = /sesión|expirada|unauthorized/i.test(e.message || '') ? 'error' : 'disconnected';
         } finally {
+            _refreshInFlight = false;
             status.syncing = false;
             emit();
         }
@@ -105,86 +111,89 @@ const DataService = (function () {
         timers[module] = setTimeout(() => flushOne(module), CONFIG.debounceMs);
     }
 
-async function flushOne(module) {
-    if (!pending[module]) return;
-    const data = pending[module];
-    delete pending[module];
+    async function flushOne(module) {
+        if (!pending[module]) return;
+        const data = pending[module];
+        delete pending[module];
 
-    try {
-        status.syncing = true;
-        emit();
+        try {
+            status.syncing = true;
+            status.phase = 'writing';
+            emit();
 
-        const idToken = window.AuthService ? AuthService.getIdToken() : null;
-        if (!idToken) {
-            // Sin sesión válida: re-encolar y no perder datos
-            pending[module] = data;
-            status.connected = false;
-            status.lastError = 'Sin sesión';
-            return;
-        }
-
-        const bodyPayload = { action: 'write', module, data, id_token: idToken };
-
-        const response = await fetch(CONFIG.apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify(bodyPayload)
-        });
-
-        const json = await response.json();
-        
-        if (!json.ok) {
-            if (json.error === 'unauthorized') {
-                if (window.AuthService) AuthService.requestReauth();
+            const idToken = window.AuthService ? AuthService.getIdToken() : null;
+            if (!idToken) {
+                pending[module] = data;
+                status.connected = false;
+                status.lastError = 'Sin sesión';
+                status.phase = 'error';
+                return;
             }
-            throw new Error(json.error || 'write failed');
-        }
 
-        status.connected = true;
-        status.lastSync = Date.now();
-        status.lastError = null;
-    } catch (e) {
-        console.warn('[DataService] flushOne falló (' + module + '):', e);
-        status.connected = false;
-        status.lastError = e.message || String(e);
-        pending[module] = data;
-    } finally {
-        status.syncing = false;
-        emit();
+            const bodyPayload = { action: 'write', module, data, id_token: idToken };
+
+            const response = await fetch(CONFIG.apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(bodyPayload)
+            });
+
+            const json = await response.json();
+
+            if (!json.ok) {
+                if (json.error === 'unauthorized') {
+                    if (window.AuthService) AuthService.requestReauth();
+                }
+                throw new Error(json.error || 'write failed');
+            }
+
+            status.connected = true;
+            status.lastSync = Date.now();
+            status.lastError = null;
+            status.phase = 'connected';
+        } catch (e) {
+            console.warn('[DataService] flushOne falló (' + module + '):', e);
+            status.connected = false;
+            status.lastError = e.message || String(e);
+            status.phase = /sesión|unauthorized/i.test(e.message || '') ? 'error' : 'disconnected';
+            pending[module] = data;
+        } finally {
+            status.syncing = false;
+            emit();
+        }
     }
-}
     async function flush() {
         const modules = Object.keys(pending);
         await Promise.all(modules.map(m => flushOne(m)));
     }
 
-async function fetchAll() {
-    const idToken = window.AuthService ? AuthService.getIdToken() : null;
-    if (!idToken) {
-        throw new Error('Sesión expirada. Vuelve a iniciar sesión.');
-    }
-
-    const payload = { action: 'read', id_token: idToken };
-
-    const r = await fetch(CONFIG.apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
-    });
-    
-    const json = await r.json();
-    if (!json.ok) {
-        if (json.error === 'unauthorized') {
-            if (window.AuthService) AuthService.requestReauth();
-            throw new Error('Sesión expirada');
+    async function fetchAll() {
+        const idToken = window.AuthService ? AuthService.getIdToken() : null;
+        if (!idToken) {
+            throw new Error('Sesión expirada. Vuelve a iniciar sesión.');
         }
-        if (json.error === 'forbidden') {
-            throw new Error('Tu cuenta (' + json.email + ') no tiene acceso a este Sheet.');
+
+        const payload = { action: 'read', id_token: idToken };
+
+        const r = await fetch(CONFIG.apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+        });
+        
+        const json = await r.json();
+        if (!json.ok) {
+            if (json.error === 'unauthorized') {
+                if (window.AuthService) AuthService.requestReauth();
+                throw new Error('Sesión expirada');
+            }
+            if (json.error === 'forbidden') {
+                throw new Error('Tu cuenta (' + json.email + ') no tiene acceso a este Sheet.');
+            }
+            throw new Error(json.error || 'read failed');
         }
-        throw new Error(json.error || 'read failed');
+        return json.data;
     }
-    return json.data;
-}
 
     function getStatus() {
         return Object.assign({}, status, {
@@ -218,6 +227,20 @@ async function fetchAll() {
             });
         } catch (e) {}
     });
+
+    window.addEventListener('online', () => {
+        if (status.phase === 'disconnected') {
+            status.phase = 'connecting';
+            emit();
+            refreshFromServer().catch(() => {});
+        }
+    });
+    window.addEventListener('offline', () => {
+        status.connected = false;
+        status.lastError = 'Sin conexión a internet';
+        status.phase = 'disconnected';
+        emit();
+    });
 });
 
     return {
@@ -227,6 +250,7 @@ async function fetchAll() {
         flush,
         getStatus,
         onStatusChange,
+        forceRefresh: refreshFromServer,   // ← añadido
         config: CONFIG
     };
 })();

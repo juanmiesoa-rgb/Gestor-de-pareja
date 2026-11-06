@@ -350,6 +350,102 @@
         .user-signout { background: none; border: none; color: var(--text-muted); cursor: pointer; width: 28px; height: 28px; border-radius: 50%; font-size: 12px; flex-shrink: 0; transition: all .15s; }
         .user-signout:hover { background: var(--danger-light); color: var(--danger); }
         @media (max-width: 640px) { .user-name { display: none; } .auth-card { padding: 36px 24px 28px; } }
+
+        /* ===== Sync Status (sidebar footer) ===== */
+        .sidebar-footer {
+            padding: 12px 14px;
+            border-top: 1px solid var(--border);
+            background: var(--bg-sidebar);
+            flex-shrink: 0;
+        }
+
+        .sync-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 11px;
+            border-radius: 10px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+            user-select: none;
+        }
+        .sync-status:hover {
+            border-color: var(--primary);
+            background: var(--border-light);
+            box-shadow: var(--shadow-sm);
+        }
+        .sync-status:active { transform: scale(0.99); }
+
+        .sync-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            flex-shrink: 0;
+            transition: background .2s ease, box-shadow .2s ease;
+            position: relative;
+            box-sizing: border-box;
+        }
+
+        /* Spinner animado para estados activos */
+        .sync-status.state-connecting .sync-dot,
+        .sync-status.state-reading .sync-dot,
+        .sync-status.state-writing .sync-dot {
+            background: transparent;
+            border: 2px solid color-mix(in srgb, var(--primary) 30%, transparent);
+            border-top-color: var(--primary);
+            animation: syncSpin .7s linear infinite;
+        }
+
+        .sync-status.state-connected .sync-dot {
+            background: var(--success);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 20%, transparent);
+        }
+        .sync-status.state-disconnected .sync-dot {
+            background: var(--warning);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 20%, transparent);
+        }
+        .sync-status.state-error .sync-dot {
+            background: var(--danger);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent);
+            animation: syncErrorPulse 1.4s ease-in-out infinite;
+        }
+
+        @keyframes syncSpin { to { transform: rotate(360deg); } }
+        @keyframes syncErrorPulse {
+            0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent); }
+            50%      { box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 10%, transparent); }
+        }
+
+        .sync-info {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            flex: 1;
+            line-height: 1.3;
+        }
+        .sync-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sync-detail {
+            font-size: 10.5px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 1px;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar-footer { padding: 10px 12px; }
+        }
     </style>
 </head>
 <body>
@@ -394,6 +490,16 @@
                     <i class="fas fa-plane"></i><span>Viajes</span>
                 </a>
             </nav>
+
+            <div class="sidebar-footer">
+                <div class="sync-status state-connecting" id="syncStatusBox" title="Estado de conexión con Google Sheets">
+                    <span class="sync-dot" id="syncDot"></span>
+                    <div class="sync-info">
+                        <span class="sync-label" id="syncLabel">Iniciando…</span>
+                        <span class="sync-detail" id="syncDetail">Google Sheets</span>
+                    </div>
+                </div>
+            </div>
 
         </aside>
 
