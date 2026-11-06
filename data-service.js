@@ -1,17 +1,10 @@
 /* =============================================================================
-   DATA-SERVICE.JS · Sincronización localStorage ↔ Google Sheet vía Apps Script
-   -----------------------------------------------------------------------------
-   · init()         → lee los 4 módulos del Sheet y los inyecta en localStorage
-   · loadStored()   → lectura síncrona desde localStorage (con fallback al defaults)
-   · saveStored()   → escritura inmediata en localStorage + sync debounced a Sheets
-   · flush()        → fuerza escritura pendiente (antes de cerrar pestaña)
-   · getStatus()    → estado de conexión
+   DATA-SERVICE.JS · v3 — Sincronización segura (Anti-borrado de Sheet)
    ============================================================================= */
 const DataService = (function () {
     'use strict';
 
     const CONFIG = {
-        // ⚠️ EDITA ESTOS DOS VALORES con los que obtuviste en el despliegue del Web App
         apiUrl: 'https://script.google.com/macros/s/AKfycbwCFEoAoe6WeShWyWUm-ast-HNuATa0Q7zW7XjYaXQFX3kt19UqB8gSqDLjS-fEspxP/exec',
         debounceMs: 2000
     };
@@ -24,10 +17,14 @@ const DataService = (function () {
     };
     const KEY_BY_MODULE = Object.fromEntries(Object.entries(MODULE_BY_KEY).map(([k, v]) => [v, k]));
 
-    const pending = {};                 // { module: dataJson }
-    const timers = {};                  // { module: timeoutId }
+    const pending = {};                 
+    const timers = {};                  
     const status = { connected: false, lastSync: null, lastError: null, syncing: false, phase: 'idle' };
     let _refreshInFlight = false;
+    
+    // 🔒 CANDADO DE SEGURIDAD: Evita que la app guarde datos antes de leer
+    let isFirstReadComplete = false; 
+
     const listeners = [];
 
     /* -------- API pública -------- */
@@ -35,15 +32,20 @@ const DataService = (function () {
     async function init() {
         status.phase = 'connecting';
         emit();
-        refreshFromServer().catch(e => console.warn('[DataService] background refresh:', e));
+        
+        // Intentamos la primera lectura de forma estricta
+        const success = await refreshFromServer();
+        
+        if (success) {
+            isFirstReadComplete = true; 
+            console.log('[DataService] Lectura inicial exitosa. Guardado en Sheet habilitado.');
+        } else {
+            console.warn('[DataService] ⚠️ Lectura inicial fallida. El guardado en el Sheet está BLOQUEADO para proteger tus datos.');
+        }
     }
 
-    /**
-     * Sincroniza desde Sheets. Si detecta cambios, actualiza localStorage
-     * y dispara 'app:data-refreshed' para que la UI se re-renderice.
-     */
     async function refreshFromServer() {
-        if (_refreshInFlight) return;
+        if (_refreshInFlight) return false;
         _refreshInFlight = true;
         try {
             status.syncing = true;
@@ -72,11 +74,13 @@ const DataService = (function () {
                 console.info('[DataService] Datos actualizados desde Sheets');
                 document.dispatchEvent(new CustomEvent('app:data-refreshed'));
             }
+            return true;
         } catch (e) {
             console.warn('[DataService] refresh falló:', e);
             status.connected = false;
             status.lastError = e.message || String(e);
             status.phase = /sesión|expirada|unauthorized/i.test(e.message || '') ? 'error' : 'disconnected';
+            return false;
         } finally {
             _refreshInFlight = false;
             status.syncing = false;
@@ -102,7 +106,13 @@ const DataService = (function () {
         // 1 · Escribir en localStorage (siempre, para que la UI responda al instante)
         try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
 
-        // 2 · Encolar sync a Sheets
+        // 🔒 2 · CANDADO: Si no hemos leído el Sheet, no enviamos nada al servidor
+        if (!isFirstReadComplete) {
+            console.log('[DataService] Guardado bloqueado: no se ha completado la lectura inicial.');
+            return;
+        }
+
+        // 3 · Encolar sync a Sheets
         const module = MODULE_BY_KEY[key];
         if (!module) return;
 
@@ -162,6 +172,7 @@ const DataService = (function () {
             emit();
         }
     }
+
     async function flush() {
         const modules = Object.keys(pending);
         await Promise.all(modules.map(m => flushOne(m)));
@@ -169,9 +180,7 @@ const DataService = (function () {
 
     async function fetchAll() {
         const idToken = window.AuthService ? AuthService.getIdToken() : null;
-        if (!idToken) {
-            throw new Error('Sesión expirada. Vuelve a iniciar sesión.');
-        }
+        if (!idToken) throw new Error('Sesión expirada. Vuelve a iniciar sesión.');
 
         const payload = { action: 'read', id_token: idToken };
 
@@ -213,35 +222,38 @@ const DataService = (function () {
         }
     }
 
-    // Flush al cerrar pestaña
+    // Flush al cerrar pestaña (Corregido el cierre de llaves)
     window.addEventListener('beforeunload', () => {
-    const idToken = window.AuthService ? AuthService.getIdToken() : null;
-    if (!idToken) return;
-    Object.keys(pending).forEach(m => {
-        try {
-            fetch(CONFIG.apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ id_token: idToken, action: 'write', module: m, data: pending[m] }),
-                keepalive: true
-            });
-        } catch (e) {}
+        const idToken = window.AuthService ? AuthService.getIdToken() : null;
+        if (!idToken) return;
+        Object.keys(pending).forEach(m => {
+            try {
+                fetch(CONFIG.apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ id_token: idToken, action: 'write', module: m, data: pending[m] }),
+                    keepalive: true
+                });
+            } catch (e) {}
+        });
     });
 
     window.addEventListener('online', () => {
         if (status.phase === 'disconnected') {
             status.phase = 'connecting';
             emit();
-            refreshFromServer().catch(() => {});
+            refreshFromServer().then(success => {
+                if (success && !isFirstReadComplete) isFirstReadComplete = true;
+            }).catch(() => {});
         }
     });
+    
     window.addEventListener('offline', () => {
         status.connected = false;
         status.lastError = 'Sin conexión a internet';
         status.phase = 'disconnected';
         emit();
     });
-});
 
     return {
         init,
@@ -250,7 +262,7 @@ const DataService = (function () {
         flush,
         getStatus,
         onStatusChange,
-        forceRefresh: refreshFromServer,   // ← añadido
+        forceRefresh: refreshFromServer, 
         config: CONFIG
     };
 })();
