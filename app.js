@@ -366,6 +366,7 @@ const App = (function () {
        ========================================================= */
     return {
         get data() { return data; },
+        reloadData: () => { data = loadData(); },
         saveData, resetData, addHistory,
         navigateTo, goTo, registerSection, registerModule,
         currentSection: () => currentSection,
@@ -811,14 +812,14 @@ async function bootstrapApp() {
     // 🔒 1. LEER EL SHEET Y ESPERAR
     if (window.DataService) {
         const success = await DataService.init();
-        if (success) {
-            // 🔥 Recargar datos en memoria de cada módulo tras leer el Sheet
-            if (typeof App.reloadFromStorage === 'function') App.reloadFromStorage();
-            if (window.DineroApp && typeof DineroApp.reloadFromStorage === 'function') DineroApp.reloadFromStorage();
-            if (window.IngresosModulo && typeof IngresosModulo.reloadFromStorage === 'function') IngresosModulo.reloadFromStorage();
-            // TripManager lee su localStorage al construirse; nada que recargar aquí.
+
+        
+        if (!success) {
+            App.showToast('⚠️ No se pudo leer Google Sheets. Modo solo lectura.', 'error');
         } else {
-            App.showToast('⚠️ No se pudo leer Google Sheets. La app está en modo solo lectura para proteger tus datos.', 'error');
+            App.reloadData(); 
+            console.log('[app.js] Datos recargados desde el Sheet:', App.data.accounts, App.data.pcCategories);
+
         }
     }
 
@@ -832,6 +833,9 @@ async function bootstrapApp() {
         if (window.DineroApp && typeof DineroApp.reloadFromStorage === 'function') DineroApp.reloadFromStorage();
         if (window.IngresosModulo && typeof IngresosModulo.reloadFromStorage === 'function') IngresosModulo.reloadFromStorage();
 
+        // Volvemos a recargar si hay cambios en segundo plano
+        App.reloadData();
+        
         const tm = window.getTripManager && window.getTripManager();
         if (tm && tm.mounted) {
             try {
