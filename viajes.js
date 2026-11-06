@@ -372,6 +372,17 @@
         }
         static uid(prefix) { return prefix + '-' + Math.random().toString(36).slice(2, 8); }
 
+        _generateDaysForTrip(startDate, endDate) {
+            const days = [];
+            const cur = new Date(startDate + 'T00:00:00');
+            const end = new Date(endDate + 'T00:00:00');
+            while (cur <= end) {
+                days.push({ date: TripManager.iso(cur), items: [] });
+                cur.setDate(cur.getDate() + 1);
+            }
+            return days;
+        }
+
         get today() { return TripManager.iso(new Date()); }
 
         get trips() { return this.data.trips; }
@@ -1424,8 +1435,12 @@ _emptyTripsState() {
             if (end < start) { this._toast('El regreso no puede ser anterior a la salida', 'error'); return; }
             trip.name = form.elements['et-name'].value.trim() || trip.name;
             trip.destination = form.elements['et-dest'].value.trim() || trip.destination;
+            const oldStart = trip.startDate, oldEnd = trip.endDate;
             trip.startDate = start;
             trip.endDate = end;
+            if (start !== oldStart || end !== oldEnd) {
+                trip.days = this._generateDaysForTrip(start, end);
+            }
             trip.budgetLimit = Math.max(parseFloat(form.elements['et-budget'].value) || 0, 0);
             trip.image = form.elements['et-img'].value.trim() || trip.image;
             trip.notes = form.elements['et-notes'].value;
@@ -1502,7 +1517,7 @@ _emptyTripsState() {
                 budgetLimit,
                 notes,
                 categories: [],
-                days: [],
+                days: this._generateDaysForTrip(startDate, endDate),
                 activities: []
             };
 
@@ -1631,8 +1646,9 @@ _emptyTripsState() {
                     break;
                 case 'add-expense': {
                     const trip = this.selectedTrip;
-                    if (trip) {
-                        trip.days[+el.dataset.day].items.push({ category: 'Otros', budgeted: 0, real: 0 });
+                    const dayIdx = +el.dataset.day;
+                    if (trip && trip.days[dayIdx]) {
+                        trip.days[dayIdx].items.push({ category: 'Otros', budgeted: 0, real: 0 });
                         this._render_detail();
                         const inputs = this.mount.querySelectorAll(`#tm-view-detail [data-day="${el.dataset.day}"][data-action="day-budgeted"]`);
                         const last = inputs[inputs.length - 1];

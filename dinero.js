@@ -14,13 +14,13 @@
 const DineroApp = (function () {
     'use strict';
 
-    const TODAY_ISO = new Date().toISOString().slice(0, 10);
+    function todayISO() { return new Date().toISOString().slice(0, 10); }
 
     /* =========================================================
        UTILIDADES DE FECHA
        ========================================================= */
     function addDays(iso, n) {
-        const d = new Date((iso || TODAY_ISO) + 'T00:00:00');
+        const d = new Date((iso || todayISO()) + 'T00:00:00');
         d.setDate(d.getDate() + n);
         return toISO(d);
     }
@@ -30,7 +30,7 @@ const DineroApp = (function () {
     }
     function daysFromToday(iso) {
         if (!iso) return Infinity;
-        const a = new Date(TODAY_ISO + 'T00:00:00');
+        const a = new Date(todayISO() + 'T00:00:00');
         const b = new Date(iso + 'T00:00:00');
         return Math.round((b - a) / 86400000);
     }
@@ -203,7 +203,7 @@ const DineroApp = (function () {
         if (remaining <= 0) return '¡Objetivo alcanzado! 🎉';
         const stepsPerMonth = g.frequency === 'weekly' ? 4.33 : g.frequency === 'biweekly' ? 2 : 1;
         const months = Math.ceil(remaining / (g.contribution * stepsPerMonth));
-        return fmtDate(addMonths(g.nextDate || TODAY_ISO, months - 1));
+        return fmtDate(addMonths(g.nextDate || todayISO(), months - 1));
     }
     function periodLabel(p) {
         return { weekly: 'Semanal', biweekly: 'Quincenal', monthly: 'Mensual', quarterly: 'Trimestral', semiannual: 'Semestral', annual: 'Anual' }[p] || p;
@@ -733,10 +733,14 @@ const DineroApp = (function () {
     /* =========================================================
        EVENTOS
        ========================================================= */
+    let _keyboardBound = false;
     function bindGlobal() {
         const root = containerEl.querySelector('#dv2ModalRoot');
-        root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+        if (root) root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+        if (!_keyboardBound) {
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+            _keyboardBound = true;
+        }
     }
 
     function bindLeft(left) {
@@ -814,7 +818,7 @@ const DineroApp = (function () {
             if (exists) return exists;
         }
         const mv = {
-            id: uid('mv'), date: m.date || TODAY_ISO,
+            id: uid('mv'), date: m.date || todayISO(),
             concept: m.concept, amount: m.amount, type: m.type,
             accountId: m.accountId || null, link: m.link || null
         };
@@ -839,21 +843,21 @@ const DineroApp = (function () {
 
         // Anti-duplicado: si ya hay movimiento hoy para esta cuota, no repetir
         const already = data.movements.find(m =>
-            m.link && m.link.kind === 'loan' && m.link.id === l.id && m.date === TODAY_ISO
+            m.link && m.link.kind === 'loan' && m.link.id === l.id && m.date === todayISO()
         );
         if (already) return;
 
         const n = l.paidCount + 1;
         l.payments = l.payments || [];
-        l.payments.push({ id: uid('lp'), date: TODAY_ISO, amount: l.installmentAmount, n });
+        l.payments.push({ id: uid('lp'), date: todayISO(), amount: l.installmentAmount, n });
         l.paidCount = n;
-        l.nextDate = l.paidCount < l.installments ? addMonths(TODAY_ISO, 1) : null;
+        l.nextDate = l.paidCount < l.installments ? addMonths(todayISO(), 1) : null;
 
         const acc = getAccounts().find(a =>
             (a.name || '').toLowerCase().includes(String(l.accountName || '').toLowerCase().split(' ')[0])
         );
         registerMovement({
-            date: TODAY_ISO, concept: `Cuota #${n} · ${l.name}`,
+            date: todayISO(), concept: `Cuota #${n} · ${l.name}`,
             amount: -l.installmentAmount, type: 'out',
             accountId: acc ? acc.id : null,
             link: { kind: 'loan', id: l.id }
@@ -961,7 +965,7 @@ const DineroApp = (function () {
             ${f('f1', 'Nombre / concepto', inp('dv2CName', { value: c ? c.name : '', placeholder: 'Ej. Recibo de la luz' }))}
             <div class="dv2-row2">
                 ${f('f2', 'Importe (€)', inp('dv2CAmt', { type: 'number', step: '0.01', min: '0', value: c ? c.amount : '' }))}
-                ${f('f3', 'Fecha de cobro', inp('dv2CDate', { type: 'date', value: c ? c.dueDate : TODAY_ISO }))}
+                ${f('f3', 'Fecha de cobro', inp('dv2CDate', { type: 'date', value: c ? c.dueDate : todayISO() }))}
             </div>
             ${f('f4', 'Cuenta asociada', sel('dv2CAcc', accOpts, c ? c.accountId : (accOpts[0] || {}).v))}
             ${f('f5', 'Nota (opcional)', inp('dv2CNote', { value: c ? c.note || '' : '', placeholder: 'Detalles…' }))}
@@ -1016,7 +1020,7 @@ const DineroApp = (function () {
             const c = data.commitments.find(x => x.id === b.dataset.cexec);
             if (!c) return;
             c.executed = true;
-            registerMovement({ date: TODAY_ISO, concept: c.name, amount: -c.amount, type: 'out', accountId: c.accountId, link: null });
+            registerMovement({ date: todayISO(), concept: c.name, amount: -c.amount, type: 'out', accountId: c.accountId, link: null });
             closeModal(); toast('Compromiso ejecutado y descontado del saldo real');
         });
     }
@@ -1088,13 +1092,13 @@ const DineroApp = (function () {
                 if (targetId) {
                     const t = data.wallets.find(x => x.id === targetId);
                     if (!t || isNaN(amt) || amt <= 0) { toast('Importe no válido para transferir', 'error'); return; }
-                    w.movements.push({ id: uid('wm'), date: TODAY_ISO, concept: `Transferencia → ${t.name}`, amount: amt, type: 'out' });
-                    t.movements.push({ id: uid('wm'), date: TODAY_ISO, concept: `Transferencia ← ${w.name}`, amount: amt, type: 'in' });
+                    w.movements.push({ id: uid('wm'), date: todayISO(), concept: `Transferencia → ${t.name}`, amount: amt, type: 'out' });
+                    t.movements.push({ id: uid('wm'), date: todayISO(), concept: `Transferencia ← ${w.name}`, amount: amt, type: 'in' });
                     saveData(); closeModal(); renderAll(); toast('Transferencia interna realizada');
                     return;
                 }
                 if (isNaN(amt) || amt <= 0) { toast('Introduce un importe válido', 'error'); return; }
-                w.movements.push({ id: uid('wm'), date: TODAY_ISO, concept, amount: amt, type });
+                w.movements.push({ id: uid('wm'), date: todayISO(), concept, amount: amt, type });
                 saveData(); closeModal(); renderAll();
                 toast(type === 'in' ? 'Dinero añadido al monedero' : 'Dinero retirado del monedero');
             };
@@ -1143,14 +1147,14 @@ const DineroApp = (function () {
             `
             ${f('qw1', 'Importe (€)', inp('dv2QWAmt', { type: 'number', step: '0.01', min: '0', placeholder: '0,00' }))}
             ${f('qw2', 'Concepto', inp('dv2QWCon', { placeholder: isOut ? 'Ej. Compra semanal' : 'Ej. Aportación' }))}
-            ${f('qw3', 'Fecha', inp('dv2QWDate', { type: 'date', value: TODAY_ISO }))}`,
+            ${f('qw3', 'Fecha', inp('dv2QWDate', { type: 'date', value: todayISO() }))}`,
             `<button class="btn btn-secondary" id="dv2QWCancel">Cancelar</button><button class="btn btn-primary" id="dv2QWSave"><i class="fas fa-check"></i> Registrar</button>`
         );
         body.parentElement.querySelector('#dv2QWCancel').onclick = () => openWalletDetailModal(w.id);
         body.parentElement.querySelector('#dv2QWSave').onclick = () => {
             const amount = round2(parseFloat(body.querySelector('#dv2QWAmt').value));
             const concept = body.querySelector('#dv2QWCon').value.trim() || (isOut ? 'Gasto' : 'Ingreso');
-            const date = body.querySelector('#dv2QWDate').value || TODAY_ISO;
+            const date = body.querySelector('#dv2QWDate').value || todayISO();
             if (isNaN(amount) || amount <= 0) { toast('Importe no válido', 'error'); return; }
             if (isOut && amount > bal) { toast(`El monedero solo tiene ${fmtMoney(bal)}`, 'error'); return; }
             w.movements.push({ id: uid('wm'), date, concept, amount, type: isOut ? 'out' : 'in' });
@@ -1182,8 +1186,8 @@ const DineroApp = (function () {
             if (isNaN(amt) || amt <= 0) { toast('Importe no válido', 'error'); return; }
             if (amt > bal) { toast('No hay suficiente saldo en el monedero origen', 'error'); return; }
             const to = data.wallets.find(x => x.id === toId); if (!to) return;
-            fromW.movements.push({ id: uid('wm'), date: TODAY_ISO, concept: `→ ${to.name}: ${note}`, amount: amt, type: 'out' });
-            to.movements.push({ id: uid('wm'), date: TODAY_ISO, concept: `← ${fromW.name}: ${note}`, amount: amt, type: 'in' });
+            fromW.movements.push({ id: uid('wm'), date: todayISO(), concept: `→ ${to.name}: ${note}`, amount: amt, type: 'out' });
+            to.movements.push({ id: uid('wm'), date: todayISO(), concept: `← ${fromW.name}: ${note}`, amount: amt, type: 'in' });
             saveData();
             toast(`Transferidos ${fmtMoney(amt)} a ${to.name}`);
             openWalletDetailModal(fromW.id);
@@ -1339,13 +1343,13 @@ const DineroApp = (function () {
         );
         bindEntityActions(body, {
             charge: () => {
-                r.history.push({ id: uid('rh'), date: TODAY_ISO, amount: r.amount, note: 'Cobro registrado manualmente' });
+                r.history.push({ id: uid('rh'), date: todayISO(), amount: r.amount, note: 'Cobro registrado manualmente' });
                 const acc = getAccounts().find(a => (a.name || '').toLowerCase().includes(String(r.accountName || '').toLowerCase().split(' ')[0]));
-                if (acc) registerMovement({ date: TODAY_ISO, concept: r.name, amount: -r.amount, type: 'out', accountId: acc.id, link: { kind: 'recurring', id: r.id } });
+                if (acc) registerMovement({ date: todayISO(), concept: r.name, amount: -r.amount, type: 'out', accountId: acc.id, link: { kind: 'recurring', id: r.id } });
                 else { saveData(); renderAll(); }
                 if (r.nextDate) {
                     const stepDays = r.period === 'weekly' ? 7 : r.period === 'quarterly' ? 91 : r.period === 'semiannual' ? 182 : r.period === 'annual' ? 365 : 30;
-                    let nd = r.nextDate; while (nd <= TODAY_ISO) nd = addDays(nd, stepDays);
+                    let nd = r.nextDate; while (nd <= todayISO()) nd = addDays(nd, stepDays);
                     r.nextDate = nd; saveData();
                 }
                 toast(`Cobro de ${r.name} registrado`);
@@ -1433,7 +1437,7 @@ const DineroApp = (function () {
                 <button type="button" data-mode="full">Total (${fmtMoney(remaining)})</button>
             </div>
             ${f('fp1', 'Importe a registrar (€)', inp('dv2DPAmt', { type: 'number', step: '0.01', min: '0', value: remaining }))}
-            ${f('fp2', 'Fecha', inp('dv2DPDate', { type: 'date', value: TODAY_ISO }))}
+            ${f('fp2', 'Fecha', inp('dv2DPDate', { type: 'date', value: todayISO() }))}
             ${f('fp3', 'Nota', inp('dv2DPNote', { placeholder: 'Ej. Ingreso en MyInvestor' }))}`,
             `<button class="btn btn-secondary" id="dv2DPCancel">Cancelar</button><button class="btn btn-primary" id="dv2DPSave"><i class="fas fa-check"></i> Confirmar devolución</button>`
         );
@@ -1451,7 +1455,7 @@ const DineroApp = (function () {
             if (isNaN(amt) || amt <= 0) { toast('Importe no válido', 'error'); return; }
             const capped = Math.min(amt, remaining);
             d.returned = round2(d.returned + capped);
-            d.history.push({ id: uid('dh'), date: body.querySelector('#dv2DPDate').value || TODAY_ISO, amount: capped, note: body.querySelector('#dv2DPNote').value.trim() });
+            d.history.push({ id: uid('dh'), date: body.querySelector('#dv2DPDate').value || todayISO(), amount: capped, note: body.querySelector('#dv2DPNote').value.trim() });
             saveData(); closeModal(); renderAll();
             toast(d.returned >= d.total ? `«${d.name}» completada ✅` : `Devolución parcial registrada`);
         };
@@ -1474,7 +1478,7 @@ const DineroApp = (function () {
                 ${f('fl4', 'Importe por cuota (€)', inp('dv2LQi', { type: 'number', step: '0.01', min: '0', value: l ? l.installmentAmount : '' }))}
                 ${f('fl5', 'Cuotas ya pagadas', inp('dv2LPaid', { type: 'number', min: '0', value: l ? l.paidCount : 0 }))}
             </div>
-            ${f('fl6', 'Próximo recibo', inp('dv2LNext', { type: 'date', value: l ? l.nextDate || '' : TODAY_ISO }))}
+            ${f('fl6', 'Próximo recibo', inp('dv2LNext', { type: 'date', value: l ? l.nextDate || '' : todayISO() }))}
             ${f('fl7', 'Cuenta asociada', sel('dv2LAcc', accNames, l ? l.accountName : (accNames[0] || {}).v))}`,
             `${l ? '<button class="dv2-danger-link" id="dv2LDel">Eliminar</button>' : ''}<button class="btn btn-secondary" id="dv2LCancel">Cancelar</button><button class="btn btn-primary" id="dv2LSave"><i class="fas fa-save"></i> Guardar</button>`
         );
@@ -1496,7 +1500,7 @@ const DineroApp = (function () {
             const paidCount = Math.max(0, parseInt(body.querySelector('#dv2LPaid').value) || 0);
             if (!name || isNaN(financed) || isNaN(installments) || isNaN(installmentAmount) || installments <= 0) { toast('Revisa los datos del préstamo', 'error'); return; }
             const obj = {
-                id: l ? l.id : uid('l'), emoji: pickedEmoji(body), name, financed, installments,
+                id: l ? l.id : uid('loan'), emoji: pickedEmoji(body), name, financed, installments,
                 installmentAmount, paidCount: Math.min(paidCount, installments),
                 nextDate: body.querySelector('#dv2LNext').value || null,
                 accountName: body.querySelector('#dv2LAcc').value,
@@ -1528,7 +1532,7 @@ const DineroApp = (function () {
                 ${f('fg4', 'Frecuencia de aportación', sel('dv2GFreq', freqs, g ? g.frequency : 'monthly'))}
                 ${f('fg5', 'Importe por aportación (€)', inp('dv2GContrib', { type: 'number', step: '0.01', min: '0', value: g ? g.contribution : '' }))}
             </div>
-            ${f('fg6', 'Próxima aportación programada', inp('dv2GNext', { type: 'date', value: g ? g.nextDate || '' : TODAY_ISO }))}`,
+            ${f('fg6', 'Próxima aportación programada', inp('dv2GNext', { type: 'date', value: g ? g.nextDate || '' : todayISO() }))}`,
             `${g && g.id !== 'g-trip-fund' ? '<button class="dv2-danger-link" id="dv2GDel">Eliminar</button>' : ''}<button class="btn btn-secondary" id="dv2GCancel">Cancelar</button><button class="btn btn-primary" id="dv2GSave"><i class="fas fa-save"></i> Guardar</button>`
         );
         bindEmojiPicker(body);
@@ -1566,7 +1570,7 @@ const DineroApp = (function () {
             <div style="font-size:12.5px;color:var(--text-secondary)">${gn.target != null ? `Ahorrado: <strong>${fmtMoney(gn.saved)}</strong> de ${fmtMoney(gn.target)} · faltan <strong>${fmtMoney(goalRemaining(gn))}</strong>` : `Ahorro libre: <strong>${fmtMoney(gn.saved)}</strong>`}</div>
             <div class="dv2-row2">
                 ${f('fc1', 'Importe (€)', inp('dv2GAmt', { type: 'number', step: '0.01', min: '0', value: gn.contribution || '' }))}
-                ${f('fc2', 'Fecha', inp('dv2GDate', { type: 'date', value: TODAY_ISO }))}
+                ${f('fc2', 'Fecha', inp('dv2GDate', { type: 'date', value: todayISO() }))}
             </div>
             <div class="dv2-field"><label>Vincular a cuenta (descuenta el Saldo Real)</label>
                 ${sel('dv2GAcc', [{ v: '', l: '— Sin efecto en saldo (solo registro) —' }].concat(getAccounts().map(a => ({ v: a.id, l: `${a.icon || '🏦'} ${a.name}` }))), '')}
@@ -1577,7 +1581,7 @@ const DineroApp = (function () {
         body.parentElement.querySelector('#dv2GASave').onclick = () => {
             const amt = round2(parseFloat(body.querySelector('#dv2GAmt').value));
             if (isNaN(amt) || amt <= 0) { toast('Importe no válido', 'error'); return; }
-            const date = body.querySelector('#dv2GDate').value || TODAY_ISO;
+            const date = body.querySelector('#dv2GDate').value || todayISO();
             gn.saved = round2(gn.saved + amt);
             gn.contributions = gn.contributions || [];
             gn.contributions.push({ id: uid('gc'), date, amount: amt });
@@ -1609,7 +1613,7 @@ const DineroApp = (function () {
                 ${f('fr3', 'Periodicidad', sel('dv2RPeriod', periods, r ? r.period : 'monthly'))}
             </div>
             <div class="dv2-row2">
-                ${f('fr4', 'Próximo cobro', inp('dv2RNext', { type: 'date', value: r ? r.nextDate || '' : TODAY_ISO }))}
+                ${f('fr4', 'Próximo cobro', inp('dv2RNext', { type: 'date', value: r ? r.nextDate || '' : todayISO() }))}
                 ${f('fr5', 'Cuenta asociada', sel('dv2RAcc', accNames, r ? r.accountName : (accNames[0] || {}).v))}
             </div>
             <div class="dv2-field"><label>Estado</label>
@@ -1674,7 +1678,7 @@ const DineroApp = (function () {
             </div>
             ${fxNote()}
             <div class="dv2-row2">
-                ${f('fm3', 'Fecha', inp('dv2MDate', { type: 'date', value: TODAY_ISO }))}
+                ${f('fm3', 'Fecha', inp('dv2MDate', { type: 'date', value: todayISO() }))}
                 ${f('fm4', 'Tipo', sel('dv2MType', types, 'out'))}
             </div>
             ${f('fm5', 'Cuenta', sel('dv2MAcc', accOpts, (accOpts[0] || {}).v))}
@@ -1813,7 +1817,7 @@ const DineroApp = (function () {
     function distributeExtraIncome(payload) {
         const {
             amount, savingsPct = 0, tripsPct = 0, personalPct = 0,
-            date = TODAY_ISO, concept = 'Reparto de extra',
+            date = todayISO(), concept = 'Reparto de extra',
             accountId
         } = payload || {};
         const total = round2(Number(amount) || 0);
@@ -1867,7 +1871,7 @@ const DineroApp = (function () {
         }
         const accId = payload.accountId || (getAccounts()[0] || {}).id;
         const mv = {
-            id: uid('mv'), date: payload.date || TODAY_ISO,
+            id: uid('mv'), date: payload.date || todayISO(),
             concept: payload.concept || 'Ingreso',
             amount: amt, type: 'in',
             accountId: accId, link
@@ -1891,7 +1895,7 @@ const DineroApp = (function () {
         }
         const accId = payload.accountId || (getAccounts()[0] || {}).id;
         const mv = {
-            id: uid('mv'), date: payload.date || TODAY_ISO,
+            id: uid('mv'), date: payload.date || todayISO(),
             concept: payload.concept || 'Gasto',
             amount: -amt, type: 'out',
             accountId: accId, link
@@ -1925,7 +1929,7 @@ const DineroApp = (function () {
         if (amt <= 0) return null;
         g.contributions = g.contributions || [];
         g.contributions.push({
-            id: uid('sc'), date: date || TODAY_ISO,
+            id: uid('sc'), date: date || todayISO(),
             amount: amt, payer: payer || '',
             note: note || 'Aportación'
         });
@@ -1937,6 +1941,7 @@ const DineroApp = (function () {
 
     return {
         render, init, onThemeChange,
+        reloadFromStorage: () => { data = loadData(); },
 
         /* Fase 1 */
         getLoans: () => data.loans.filter(l => l.status !== 'archived'),

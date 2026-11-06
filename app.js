@@ -1,15 +1,5 @@
 /* =============================================================================
-   APP.JS · v2 — Shell + puente completo entre módulos
-   -----------------------------------------------------------------------------
-   Contiene:
-     · DEFAULT_DATA sin duplicidades (Fase 1)
-     · Migración automática e idempotente de datos antiguos (Fase 1)
-     · Puente completo App (lectura + escritura cruzada) (Fase 2)
-     · Notificación con dedup + guarda anti-bucle (Fase 2)
-     · Utilidades compartidas (formato, storage, estilos, toast, confirm)
-     · Navegación entre secciones con contenedor por sección
-     · Tema, menú móvil, perfil
-     · Arranque + montaje de TripManager
+   APP.JS · v3 — Shell + puente completo (fix init duplicado + reloadFromStorage)
    ============================================================================= */
 const App = (function () {
     'use strict';
@@ -18,52 +8,25 @@ const App = (function () {
        DATOS POR DEFECTO (sin duplicidades)
        ========================================================= */
     const DEFAULT_DATA = {
-        /* ---------- Usuarios (no es demo · son los perfiles de la app) ---------- */
         profiles: [
             { id: 'ana', name: 'Nena', initial: 'N', color: '#ec4899' },
             { id: 'carlos', name: 'Bombón', initial: 'B', color: '#2563eb' }
         ],
         activeProfile: 'ana',
-
-        /* ---------- Datos: TODO vacío · la fuente es el Google Sheet ---------- */
-        accounts: [],
-        categories: [],
-        expenses: [],
-        budgets: [],
-        trips: [],
-        calendarEvents: [],
-        transfers: [],
-        tripActivities: [],
-        tripReservations: [],
-
-        /* ---------- Configuración por defecto (no es demo · son valores iniciales) ---------- */
+        accounts: [], categories: [], expenses: [], budgets: [], trips: [],
+        calendarEvents: [], transfers: [], tripActivities: [], tripReservations: [],
         settings: {
-            defaultPeriod: 'monthly',
-            rollover: false,
-            includePlanned: false,
-            thresholdWarning: 80,
-            thresholdDanger: 100,
-            alertUncategorized: true,
-            alertNoBudget: true,
-            showBudgetCard: true,
-            showExpensesCard: true,
-            showRemainingCard: true,
-            showDeviationCard: true,
-            recentCount: 5,
-            defaultSort: 'date-desc'
+            defaultPeriod: 'monthly', rollover: false, includePlanned: false,
+            thresholdWarning: 80, thresholdDanger: 100, alertUncategorized: true,
+            alertNoBudget: true, showBudgetCard: true, showExpensesCard: true,
+            showRemainingCard: true, showDeviationCard: true,
+            recentCount: 5, defaultSort: 'date-desc'
         },
         history: [],
-
-        /* ---------- Presupuesto común · estructura mínima (sin categorías, sin datos) ---------- */
-        pcCategories: [],
-        pcSubcategories: [],
-        pcWeeks: [],
+        pcCategories: [], pcSubcategories: [], pcWeeks: [],
         pcMyInvestorTarget: 0,
         pcReconciliation: {
-            initialBalance: 0,
-            weeksClosed: {},
-            loansPaid: {},
-            realBalances: {}
+            initialBalance: 0, weeksClosed: {}, loansPaid: {}, realBalances: {}
         }
     };
 
@@ -119,10 +82,7 @@ const App = (function () {
     }
 
     function addHistory(action, detail) {
-        data.history.unshift({
-            timestamp: new Date().toISOString(),
-            action, detail
-        });
+        data.history.unshift({ timestamp: new Date().toISOString(), action, detail });
         if (data.history.length > 100) data.history = data.history.slice(0, 100);
         saveData();
     }
@@ -136,7 +96,7 @@ const App = (function () {
     }
     function formatDate(dateStr) {
         if (!dateStr) return '—';
-        const d = new Date(dateStr + 'T00:00:00');
+        const d = new Date(String(dateStr).slice(0, 10) + 'T00:00:00');
         if (isNaN(d.getTime())) return dateStr;
         return new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
     }
@@ -231,10 +191,8 @@ const App = (function () {
         detail = detail || {};
         const key = source + '|' + (detail.reason || '');
         const now = Date.now();
-
         const last = _recentNotifies.get(key);
         if (last && now - last < 100) return;
-
         _recentNotifies.set(key, now);
         setTimeout(() => _recentNotifies.delete(key), 200);
 
@@ -265,32 +223,6 @@ const App = (function () {
     const SECTION_ALIASES = { 'inicio': 'presupuesto-comun', 'home': 'presupuesto-comun', 'presupuesto': 'presupuesto-comun' };
 
     function normalizeSectionName(name) { return SECTION_ALIASES[name] || name; }
-
-    function init() {
-        initTheme();
-        initMobileMenu();
-        updateProfileUI();
-
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                e.preventDefault();
-                navigateTo(normalizeSectionName(item.dataset.section));
-            });
-        });
-
-        // Click en el indicador de sincronización → forzar refresh
-        const syncBox = document.getElementById('syncStatusBox');
-        if (syncBox) {
-            syncBox.addEventListener('click', () => {
-                if (!window.DataService || typeof DataService.forceRefresh !== 'function') return;
-                const s = DataService.getStatus();
-                if (s.syncing) return;
-                DataService.forceRefresh().catch(() => {});
-            });
-        }
-
-        navigateTo(normalizeSectionName('presupuesto-comun'));
-    }  
 
     function navigateTo(section) {
         section = normalizeSectionName(section);
@@ -334,12 +266,8 @@ const App = (function () {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    function registerSection(name, module) {
-        sections[normalizeSectionName(name)] = module;
-    }
-    function registerModule(key, api) {
-        modules[key] = api;
-    }
+    function registerSection(name, module) { sections[normalizeSectionName(name)] = module; }
+    function registerModule(key, api) { modules[key] = api; }
 
     function goTo(section, action, params) {
         navigateTo(section);
@@ -378,9 +306,7 @@ const App = (function () {
         const theme = document.documentElement.getAttribute('data-theme');
         document.getElementById('themeToggle').innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
     }
-    function isDarkMode() {
-        return document.documentElement.getAttribute('data-theme') === 'dark';
-    }
+    function isDarkMode() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
     function initMobileMenu() {
         document.getElementById('menuToggle').addEventListener('click', () => {
             document.getElementById('sidebar').classList.toggle('open');
@@ -408,7 +334,7 @@ const App = (function () {
     }
 
     /* =========================================================
-       INIT
+       INIT (ÚNICA · con click en syncStatusBox)
        ========================================================= */
     function init() {
         initTheme();
@@ -422,11 +348,21 @@ const App = (function () {
             });
         });
 
+        const syncBox = document.getElementById('syncStatusBox');
+        if (syncBox) {
+            syncBox.addEventListener('click', () => {
+                if (!window.DataService || typeof DataService.forceRefresh !== 'function') return;
+                const s = DataService.getStatus();
+                if (s.syncing) return;
+                DataService.forceRefresh().catch(() => {});
+            });
+        }
+
         navigateTo(normalizeSectionName('presupuesto-comun'));
     }
 
     /* =========================================================
-       BRIDGE COMPLETO (Fase 1 + Fase 2)
+       BRIDGE COMPLETO
        ========================================================= */
     return {
         get data() { return data; },
@@ -440,6 +376,9 @@ const App = (function () {
         notifyModuleChange,
         isModuleReady: (name) => !!modules[name],
         init,
+
+        /* 🔥 NUEVO · recargar data en memoria desde localStorage */
+        reloadFromStorage: () => { data = loadData(); },
 
         updateSyncBadge: (status) => {
             const box = document.getElementById('syncStatusBox');
@@ -456,19 +395,13 @@ const App = (function () {
 
             switch (phase) {
                 case 'connecting':
-                    labelText = 'Conectando…';
-                    detailText = 'Iniciando conexión';
-                    stateClass = 'state-connecting';
+                    labelText = 'Conectando…'; detailText = 'Iniciando conexión'; stateClass = 'state-connecting';
                     break;
                 case 'reading':
-                    labelText = 'Leyendo…';
-                    detailText = 'Descargando datos';
-                    stateClass = 'state-reading';
+                    labelText = 'Leyendo…'; detailText = 'Descargando datos'; stateClass = 'state-reading';
                     break;
                 case 'writing':
-                    labelText = 'Escribiendo…';
-                    detailText = 'Guardando cambios';
-                    stateClass = 'state-writing';
+                    labelText = 'Escribiendo…'; detailText = 'Guardando cambios'; stateClass = 'state-writing';
                     break;
                 case 'connected':
                     if (pendingCount > 0) {
@@ -482,9 +415,7 @@ const App = (function () {
                     }
                     break;
                 case 'error':
-                    labelText = 'Sesión expirada';
-                    detailText = 'Vuelve a iniciar sesión';
-                    stateClass = 'state-error';
+                    labelText = 'Sesión expirada'; detailText = 'Vuelve a iniciar sesión'; stateClass = 'state-error';
                     break;
                 case 'disconnected':
                 default: {
@@ -523,9 +454,7 @@ const App = (function () {
             }
         },
 
-        /* ---------- FASE 1 · Acceso unificado ---------- */
         getAccounts: () => data.accounts || [],
-
         getLoans: () => {
             const mod = modules['mi-dinero'];
             return (mod && typeof mod.getLoans === 'function') ? mod.getLoans() : [];
@@ -554,20 +483,16 @@ const App = (function () {
             }
             return null;
         },
-
-        /* ---------- FASE 2 · Lectura cruzada ---------- */
         getSharedContributionRules: () => {
             const mod = modules['ingresos-personales'];
             return (mod && typeof mod.getSharedContributionRules === 'function')
-                ? mod.getSharedContributionRules()
-                : null;
+                ? mod.getSharedContributionRules() : null;
         },
         pcSummary: (period) => {
             const mod = modules['presupuesto-comun'];
             if (mod && typeof mod.getPcSummary === 'function') {
                 try { return mod.getPcSummary(period); } catch (e) { return null; }
             }
-            // Fallback
             try {
                 const cats = data.pcCategories || [];
                 let fixed = 0, variable = 0;
@@ -627,8 +552,6 @@ const App = (function () {
             const mod = modules['mi-dinero'];
             return (mod && typeof mod.getSavings === 'function') ? mod.getSavings() : null;
         },
-
-        /* ---------- FASE 2 · Escritura cruzada ---------- */
         registerIncomeMovement: (payload) => {
             const mod = modules['mi-dinero'];
             if (mod && typeof mod.registerExternalIncome === 'function') {
@@ -727,9 +650,7 @@ const App = (function () {
         },
         getMonthExtras: (pid, mk) => {
             const mod = modules['ingresos-personales'];
-            return (mod && typeof mod.getMonthExtras === 'function')
-                ? mod.getMonthExtras(pid, mk)
-                : [];
+            return (mod && typeof mod.getMonthExtras === 'function') ? mod.getMonthExtras(pid, mk) : [];
         },
     };
 })();
@@ -738,7 +659,6 @@ window.App = App;
 
 /* =============================================================================
    REGISTRO DE MÓDULOS EN EL PUENTE
-   (cada script de módulo se auto-registra también; aquí reforzamos la API)
    ============================================================================= */
 App.registerModule('presupuesto-comun', {
     openExpenseModal: (id) => window.BudgetApp && BudgetApp.openExpenseModal(id),
@@ -813,14 +733,8 @@ App.registerModule('calendario', {
         if (!window.App) return;
         if (typeof window.App.registerModule === 'function') {
             window.App.registerModule('viajes', {
-                openTripDetail: (tripId, tab = 'resumen') => {
-                    tm.selectTrip(tripId || null);
-                    tm.switchTab(tab);
-                },
-                openTripModal: (tripId) => {
-                    if (tripId) tm.selectTrip(tripId);
-                    tm.openEditTripModal();
-                },
+                openTripDetail: (tripId, tab = 'resumen') => { tm.selectTrip(tripId || null); tm.switchTab(tab); },
+                openTripModal: (tripId) => { if (tripId) tm.selectTrip(tripId); tm.openEditTripModal(); },
                 openPaymentsModal: (tripId, itemId) => tm.openPaymentsModal(tripId, itemId),
                 backToList: () => { tm.selectTrip(null); tm.switchTab('resumen'); },
                 getState: () => tm.getState && tm.getState()
@@ -838,11 +752,8 @@ App.registerModule('calendario', {
     function syncTripIntoGlobalState(trip) {
         if (!window.App || !window.App.data || !Array.isArray(window.App.data.trips)) return;
         const record = {
-            id: trip.id,
-            name: trip.name,
-            destination: trip.destination,
-            startDate: trip.startDate,
-            endDate: trip.endDate,
+            id: trip.id, name: trip.name, destination: trip.destination,
+            startDate: trip.startDate, endDate: trip.endDate,
             budget: trip.budgetLimit,
             spent: trip.categories.reduce((s, c) =>
                 s + c.items.reduce((x, i) => x + i.payments.reduce((p, q) => p + q.amount, 0), 0), 0),
@@ -900,9 +811,14 @@ async function bootstrapApp() {
     // 🔒 1. LEER EL SHEET Y ESPERAR
     if (window.DataService) {
         const success = await DataService.init();
-        if (!success) {
+        if (success) {
+            // 🔥 Recargar datos en memoria de cada módulo tras leer el Sheet
+            if (typeof App.reloadFromStorage === 'function') App.reloadFromStorage();
+            if (window.DineroApp && typeof DineroApp.reloadFromStorage === 'function') DineroApp.reloadFromStorage();
+            if (window.IngresosModulo && typeof IngresosModulo.reloadFromStorage === 'function') IngresosModulo.reloadFromStorage();
+            // TripManager lee su localStorage al construirse; nada que recargar aquí.
+        } else {
             App.showToast('⚠️ No se pudo leer Google Sheets. La app está en modo solo lectura para proteger tus datos.', 'error');
-            // Forzamos a que la app se monte, pero DataService no dejará guardar nada.
         }
     }
 
@@ -910,18 +826,25 @@ async function bootstrapApp() {
     initTripManager();
     App.init();
 
+    // 3. Refrescos futuros → recargar datos + re-render
     document.addEventListener('app:data-refreshed', () => {
+        if (typeof App.reloadFromStorage === 'function') App.reloadFromStorage();
+        if (window.DineroApp && typeof DineroApp.reloadFromStorage === 'function') DineroApp.reloadFromStorage();
+        if (window.IngresosModulo && typeof IngresosModulo.reloadFromStorage === 'function') IngresosModulo.reloadFromStorage();
+
         const tm = window.getTripManager && window.getTripManager();
         if (tm && tm.mounted) {
-            const p = localStorage.getItem('finanzas_viajes_v2');
-            if (p) { try { tm.data = JSON.parse(p); tm.render(); } catch (e) {} }
+            try {
+                const p = localStorage.getItem('finanzas_viajes_v2');
+                if (p) tm.data = JSON.parse(p);
+                tm.render();
+            } catch (e) {}
         }
         if (typeof App.refreshAll === 'function') App.refreshAll();
     });
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Si no hay servicio de auth (por si acaso), arrancamos normal
     if (!window.AuthService) {
         console.warn('[App] AuthService no cargado. Arrancando sin login.');
         bootstrapApp();
@@ -929,7 +852,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     try {
-        // 1. Cargar el SDK de Google
         await AuthService.init();
     } catch (e) {
         console.error('[App] Error al cargar Google Sign-In:', e);
@@ -937,24 +859,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    // 2. Configurar el botón de cerrar sesión
     const signOutBtn = document.getElementById('signOutBtn');
     if (signOutBtn) {
         signOutBtn.onclick = () => {
             AuthService.signOut();
-            appStarted = false; 
+            appStarted = false;
         };
     }
 
-    // 3. Comprobar si ya hay sesión
     if (!AuthService.isSignedIn()) {
         AuthService.showLogin();
-        AuthService.onChange(({ signedIn }) => {
-            if (signedIn) bootstrapApp();
-        });
+        AuthService.onChange(({ signedIn }) => { if (signedIn) bootstrapApp(); });
         return;
     }
 
-    // 4. Si ya está logueado, arrancar
     bootstrapApp();
 });

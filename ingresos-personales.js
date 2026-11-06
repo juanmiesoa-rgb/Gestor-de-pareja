@@ -1772,6 +1772,7 @@ const IngresosModulo = (function () {
 
         return {
         render, init, onThemeChange,
+        reloadFromStorage: () => { state = loadState(); },
         computeSalary, estimateIrpf, getMaxPays,
         getEquity, getDistributionAmounts, getSharedContributionRules, getPcNeeds,
         getState: () => { ensureState(); return JSON.parse(JSON.stringify(state)); },

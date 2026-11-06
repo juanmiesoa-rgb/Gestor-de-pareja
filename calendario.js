@@ -698,12 +698,10 @@ const CalendarApp = (function () {
 
     /* =========================== EVENTOS =========================== */
     function bind() {
-        if (!containerEl) return;
+        if (!containerEl || listenersBound) return;
         containerEl.addEventListener('click', onClick);
-        if (!listenersBound) {
-            document.addEventListener('app:module-changed', onModuleChange);
-            listenersBound = true;
-        }
+        document.addEventListener('app:module-changed', onModuleChange);
+        listenersBound = true;
     }
 
     function onModuleChange(e) {

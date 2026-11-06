@@ -159,14 +159,13 @@ const AuthService = (function () {
 
     function requestReauth() {
         console.warn('[AuthService] Servidor rechazó el token. Cerrando sesión forzosamente.');
-        currentUser = null;
-        currentIdToken = null;
         tokenExpiresAt = 0;
         try { 
             localStorage.removeItem(STORAGE_USER_KEY); 
             localStorage.removeItem(STORAGE_TOKEN_KEY); 
         } catch (e) {}
         showError('Sesión inválida o expirada. Por favor, vuelve a iniciar sesión.');
+        initialized = false;
         showLogin();
         emit();
     }

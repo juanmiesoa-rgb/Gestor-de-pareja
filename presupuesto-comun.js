@@ -628,15 +628,19 @@ const BudgetApp = (function () {
         if (opts.pcWeekId) exp.pcWeekId = opts.pcWeekId;
 
         data().expenses.push(exp);
-        
-        if (String(targetId).includes('groceries')) syncAccountWithGroceries(amount);
+
+        let accountId = mapAccountName(opts.account);
+        if (!accountId && String(targetId).includes('groceries')) {
+            accountId = getGroceriesAccountId();
+        }
 
         if (window.App && typeof App.registerExpenseMovement === 'function') {
             App.registerExpenseMovement({
-                amount: Math.abs(exp.amount), concept: exp.concept, date: exp.date, 
-                accountId: mapAccountName(opts.account), link: { kind: 'expense', id: exp.id }
+                amount: Math.abs(exp.amount), concept: exp.concept, date: exp.date,
+                accountId, link: { kind: 'expense', id: exp.id }
             });
         }
+        
         App.saveData();
         App.addHistory('presupuesto-comun', `Movimiento: ${exp.concept} (${fmt(exp.amount)})`);
         render();
@@ -741,22 +745,17 @@ const BudgetApp = (function () {
         
         div.querySelector('#eaCancel').onclick = closeModal;
         const save = () => {
-            const newVal = Number(inp.value);
-            const diff = newVal - cur;
-            
-            syncGroceriesWithAccount(acc.id, newVal);
-            
-            // Forzamos la actualización en el array para evitar referencias perdidas
             const accToUpdate = data().accounts.find(a => a.id === acc.id);
-            if (accToUpdate) accToUpdate.balance = newVal;
-            
-            if (diff !== 0 && window.App && typeof App.registerExpenseMovement === 'function') {
-                App.registerExpenseMovement({
-                    amount: Math.abs(diff), concept: `Ajuste cuenta: ${acc.name}`, date: new Date().toISOString().slice(0, 10),
-                    accountId: acc.id, link: { kind: 'adjustment', id: 'adj-' + Date.now() }, isIncome: diff > 0
-                });
+            if (!accToUpdate) { closeModal(); return; }
+            const newVal = Number(inp.value) || 0;
+            accToUpdate.balance = newVal;
+            syncGroceriesWithAccount(acc.id, newVal);
+            App.saveData();
+            if (window.App && typeof App.notifyModuleChange === 'function') {
+                App.notifyModuleChange('presupuesto-comun', { reason: 'account-balance-updated' });
             }
-            App.saveData(); closeModal(); render();
+            closeModal();
+            render();
         };
         div.querySelector('#eaSave').onclick = save;
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
@@ -950,7 +949,8 @@ const BudgetApp = (function () {
         containerEl.querySelectorAll('[data-tick]').forEach(btn => btn.onclick = e => {
             e.stopPropagation();
             const id = btn.getAttribute('data-tick');
-            if (id.startsWith('loan-')) {
+            const isLoan = pcLoans().some(l => l.id === id);
+            if (isLoan) {
                 App.payLoanInstallment(id);
                 render();
             } else {
@@ -967,17 +967,16 @@ const BudgetApp = (function () {
     }
 
     return {
-        init: (container) => {
-            containerEl = container;
-            if (!weekCount(currentPeriod)) {
-                data().pcWeeks = allWeeks().concat(generateMonthWeeks(currentPeriod, 4, 0));
-            }
-            render();
-        },
-        render, openWeekCountModal, editWeekBudget: openWeekBudgetModal, openWeekSpentModal,
-        openCatSpentModal, openSubSpentModal, equalizeWeek, openEditAccountModal,
-        openNewAccountModal, openUpdateBalanceModal, openExpenseModal: () => {},
-        getPcSummary: () => ({ period: currentPeriod, total: totalBudgetDefined() })
+    init: (container) => {
+        containerEl = container;
+        const hasWeeks = allWeeks().some(w => String(w.period || '').slice(0, 7) === currentPeriod);
+        if (!hasWeeks) {
+            data().pcWeeks = allWeeks()
+                .filter(w => String(w.period || '').slice(0, 7) !== currentPeriod)
+                .concat(generateMonthWeeks(currentPeriod, 4, 0));
+            App.saveData();
+        }
+        // No llamamos render() aquí: navigateTo ya lo hace justo después.
     };
 })();
 
