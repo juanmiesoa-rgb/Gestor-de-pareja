@@ -158,21 +158,17 @@ const AuthService = (function () {
     }
 
     function requestReauth() {
-        console.warn('[AuthService] Sesión inválida o expirada. Solicitando re-login.');
-        showError('Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.');
-        
-        // Forzar cierre de sesión si el token ya no es válido o está en margen de seguridad
-        if (!getIdToken()) {
-            currentUser = null;
-            currentIdToken = null;
-            tokenExpiresAt = 0;
-            try { 
-                localStorage.removeItem(STORAGE_USER_KEY); 
-                localStorage.removeItem(STORAGE_TOKEN_KEY); 
-            } catch (e) {}
-            showLogin();
-            emit();
-        }
+        console.warn('[AuthService] Servidor rechazó el token. Cerrando sesión forzosamente.');
+        currentUser = null;
+        currentIdToken = null;
+        tokenExpiresAt = 0;
+        try { 
+            localStorage.removeItem(STORAGE_USER_KEY); 
+            localStorage.removeItem(STORAGE_TOKEN_KEY); 
+        } catch (e) {}
+        showError('Sesión inválida o expirada. Por favor, vuelve a iniciar sesión.');
+        showLogin();
+        emit();
     }
 
     function getIdToken() {
