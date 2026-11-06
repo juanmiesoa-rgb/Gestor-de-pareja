@@ -107,7 +107,13 @@ const BudgetApp = (function () {
         'vacia':    { label: 'Vacía',    cls: 'st-empty',   badge: 'pc-badge-gray' }
     };
 
-    function weeksFor(period) { return allWeeks().filter(w => String(w.start).substring(0, 7) === period); }
+    function weeksFor(period) { 
+        return allWeeks().filter(w => {
+            // Usamos el campo 'period' si existe (nuestra nueva BD), si no, la fecha
+            const wp = w.period ? String(w.period) : String(w.start).substring(0, 7);
+            return wp === period;
+        }); 
+    }
     function generateMonthWeeks(period, count) {
         const [y, m] = period.split('-').map(Number);
         const first = new Date(y, m - 1, 1);
@@ -526,7 +532,7 @@ const BudgetApp = (function () {
         if (!accounts.length) {
             return `<div class="pc-panel pc-panel--accent" style="--panel-accent:#2563eb">
                 <div class="pc-panel-title"><span class="pc-dot"></span> 🏦 Estado de Cuentas</div>
-                <div class="pc-empty">No hay cuentas configuradas. Añádelas en el módulo de Dinero.</div>
+                <div class="pc-empty">No hay cuentas configuradas.</div>
             </div>`;
         }
 
