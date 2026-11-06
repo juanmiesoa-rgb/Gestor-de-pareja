@@ -916,7 +916,7 @@ async function bootstrapApp() {
 
     document.addEventListener('app:data-refreshed', () => {
         // Volvemos a recargar si hay cambios en segundo plano
-        data = loadData();
+        App.reloadData();
         
         const tm = window.getTripManager && window.getTripManager();
         if (tm && tm.mounted) {
