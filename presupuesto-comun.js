@@ -1,5 +1,5 @@
 /* =============================================================================
-   PRESUPUESTO-COMUN.JS · v22 — Focus garantizado, Categorías por defecto y Lógica
+   PRESUPUESTO-COMUN.JS · v23 — Sin defaults, focus perfecto y lectura limpia
    ============================================================================= */
 const BudgetApp = (function () {
     'use strict';
@@ -20,9 +20,11 @@ const BudgetApp = (function () {
        ========================================================= */
     function focusInput(inp) {
         if (!inp) return;
-        inp.focus();
-        inp.select();
-        setTimeout(() => { if (document.body.contains(inp)) { inp.focus(); inp.select(); } }, 50);
+        // requestAnimationFrame asegura que el DOM esté pintado antes de hacer focus
+        requestAnimationFrame(() => {
+            inp.focus();
+            inp.select();
+        });
     }
 
     function shortDate(iso) { 
@@ -97,21 +99,6 @@ const BudgetApp = (function () {
     /* =========================================================
        CATEGORÍAS Y GASTOS
        ========================================================= */
-    function ensureDefaultCategories() {
-        if (data().pcCategories && data().pcCategories.length > 0) return;
-        
-        const defaultAcc = getAccounts().length > 0 ? getAccounts()[0].name : '';
-        const defaults = [
-            { id: 'pc-groceries', name: 'Groceries & Leisure', label: 'GROCERIES', icon: '🛒', budget: 0, order: 10, color: '#10b981', account: defaultAcc },
-            { id: 'pc-others', name: 'Others', label: 'OTHERS', icon: '📦', budget: 0, order: 20, color: '#64748b', account: defaultAcc },
-            { id: 'pc-rent', name: 'Rent', label: 'RENT', icon: '🏠', budget: 0, order: 30, color: '#6366f1', account: defaultAcc },
-            { id: 'pc-utilities', name: 'Utilities', label: 'UTILITIES', icon: '💡', budget: 0, order: 40, color: '#f59e0b', account: defaultAcc },
-            { id: 'pc-savings', name: 'Savings', label: 'SAVINGS', icon: '💰', budget: 0, order: 50, color: '#8b5cf6', account: defaultAcc },
-            { id: 'pc-loans', name: 'Loans', label: 'LOANS', icon: '🏦', budget: 0, order: 60, color: '#ef4444', account: defaultAcc }
-        ];
-        data().pcCategories = defaults;
-    }
-
     function pcCats()    { return (data().pcCategories || []).slice().sort((a, b) => (a.order || 99) - (b.order || 99)); }
     function pcSubs(pid) { return (data().pcSubcategories || []).filter(s => s.parentId === pid); }
     function pcWeeks()   { return weeksFor(currentPeriod); }
@@ -183,7 +170,7 @@ const BudgetApp = (function () {
     function combinedRealBalance() { return getAccounts().reduce((s, a) => s + Number(a.balance || 0), 0); }
 
     /* =========================================================
-       UTILIDADES Y LÓGICA DEL FONDO COMÚN
+       UTILIDADES
        ========================================================= */
     function fmt(n) { return App.formatCurrency(Number(n) || 0); }
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -759,7 +746,10 @@ const BudgetApp = (function () {
             
             syncGroceriesWithAccount(acc.id, newVal);
             
-            acc.balance = newVal;
+            // Forzamos la actualización en el array para evitar referencias perdidas
+            const accToUpdate = data().accounts.find(a => a.id === acc.id);
+            if (accToUpdate) accToUpdate.balance = newVal;
+            
             if (diff !== 0 && window.App && typeof App.registerExpenseMovement === 'function') {
                 App.registerExpenseMovement({
                     amount: Math.abs(diff), concept: `Ajuste cuenta: ${acc.name}`, date: new Date().toISOString().slice(0, 10),
@@ -979,7 +969,6 @@ const BudgetApp = (function () {
     return {
         init: (container) => {
             containerEl = container;
-            ensureDefaultCategories();
             if (!weekCount(currentPeriod)) {
                 data().pcWeeks = allWeeks().concat(generateMonthWeeks(currentPeriod, 4, 0));
             }
