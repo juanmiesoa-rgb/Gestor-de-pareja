@@ -266,6 +266,32 @@ const App = (function () {
 
     function normalizeSectionName(name) { return SECTION_ALIASES[name] || name; }
 
+    function init() {
+        initTheme();
+        initMobileMenu();
+        updateProfileUI();
+
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                navigateTo(normalizeSectionName(item.dataset.section));
+            });
+        });
+
+        // Click en el indicador de sincronización → forzar refresh
+        const syncBox = document.getElementById('syncStatusBox');
+        if (syncBox) {
+            syncBox.addEventListener('click', () => {
+                if (!window.DataService || typeof DataService.forceRefresh !== 'function') return;
+                const s = DataService.getStatus();
+                if (s.syncing) return;
+                DataService.forceRefresh().catch(() => {});
+            });
+        }
+
+        navigateTo(normalizeSectionName('presupuesto-comun'));
+    }
+
     function navigateTo(section) {
         section = normalizeSectionName(section);
         if (!sections[section]) {
@@ -478,7 +504,7 @@ const App = (function () {
             label.textContent = labelText;
             detail.textContent = detailText;
             box.title = 'Google Sheets · ' + labelText + (detailText ? ' · ' + detailText : '') + ' (clic para reintentar)';
-        }
+        },
 
         updateAuthUI: (payload) => {
             const chip = document.getElementById('userChip');
