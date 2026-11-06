@@ -172,10 +172,8 @@ const AuthService = (function () {
     }
 
     function getIdToken() {
-        if (!currentIdToken) return null;
-        // Margen de seguridad de 5 minutos (300000 ms)
-        if (tokenExpiresAt && (tokenExpiresAt - 300000) < Date.now()) return null;
-        return currentIdToken;
+        // Enviamos el token tal cual. El servidor ya comprobará si ha expirado.
+        return currentIdToken || null;
     }
 
     function getUser() { return currentUser; }
