@@ -900,9 +900,12 @@ async function bootstrapApp() {
     // 🔒 1. LEER EL SHEET Y ESPERAR
     if (window.DataService) {
         const success = await DataService.init();
+        
         if (!success) {
-            App.showToast('⚠️ No se pudo leer Google Sheets. La app está en modo solo lectura para proteger tus datos.', 'error');
-            // Forzamos a que la app se monte, pero DataService no dejará guardar nada.
+            App.showToast('⚠️ No se pudo leer Google Sheets. Modo solo lectura.', 'error');
+        } else {
+            // 🔥 AQUÍ ESTÁ LA MAGIA: Recargamos la variable en memoria con los datos que acaban de llegar
+            data = loadData(); 
         }
     }
 
@@ -911,6 +914,9 @@ async function bootstrapApp() {
     App.init();
 
     document.addEventListener('app:data-refreshed', () => {
+        // Volvemos a recargar si hay cambios en segundo plano
+        data = loadData();
+        
         const tm = window.getTripManager && window.getTripManager();
         if (tm && tm.mounted) {
             const p = localStorage.getItem('finanzas_viajes_v2');
