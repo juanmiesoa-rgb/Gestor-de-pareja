@@ -522,55 +522,57 @@ const BudgetApp = (function () {
     }
 
     function accountsPanelHtml() {
-        const r = recon();
-        const expected = trExpected();
-        const real = trReal();
-        const rows = [
-            { name: 'Trade Republic', icon: '📈', target: expected, realVal: real, key: 'tr' },
-            { name: 'MyInvestor', icon: '🏦', target: miTarget(), realVal: accountRealBalance('MyInvestor'), key: 'mi' }
-        ];
-        const html = rows.map(a => {
-            const d = a.realVal - a.target;
-            return `<div class="pc-account-row" data-editacc="${a.key}" title="Clic para editar el saldo real de ${esc(a.name)}">
-                <div><b>${a.icon} ${esc(a.name)}</b> <span class="pc-acc-hint">✏️</span>
-                    <div class="pc-week-dates">Saldo objetivo: <b class="pc-num">${fmt(a.target)}</b></div></div>
+        const accounts = getAccounts();
+        if (!accounts.length) {
+            return `<div class="pc-panel pc-panel--accent" style="--panel-accent:#2563eb">
+                <div class="pc-panel-title"><span class="pc-dot"></span> 🏦 Estado de Cuentas</div>
+                <div class="pc-empty">No hay cuentas configuradas. Añádelas en el módulo de Dinero.</div>
+            </div>`;
+        }
+
+        const html = accounts.map(a => {
+            // Usamos el saldo real de la cuenta
+            const realVal = Number(a.balance) || 0;
+            return `<div class="pc-account-row" data-editacc="${a.id}" title="Clic para editar el saldo real de ${esc(a.name)}">
+                <div><b>${a.icon || '🏦'} ${esc(a.name)}</b> <span class="pc-acc-hint">✏️</span>
+                    <div class="pc-week-dates">Tipo: <b>${esc(a.type || 'conjunta')}</b></div></div>
                 <div style="text-align:right">
-                    <div class="pc-num pc-acc-real">${fmt(a.realVal)}</div>
-                    ${badge('Desv. ' + (d >= 0 ? '+' : '') + fmt(d), d >= 0 ? 'pc-badge-green' : 'pc-badge-red')}
+                    <div class="pc-num pc-acc-real">${fmt(realVal)}</div>
                 </div></div>`;
         }).join('');
+
         return `<div class="pc-panel pc-panel--accent" style="--panel-accent:#2563eb">
             <div class="pc-panel-title"><span class="pc-dot"></span> 🏦 Estado de Cuentas</div>
             ${html}</div>`;
     }
 
-    function openEditAccountModal(key) {
-        const isTR = key === 'tr';
-        const cur = isTR ? trReal() : accountRealBalance('MyInvestor');
+    function openEditAccountModal(accId) {
+        const acc = getAccounts().find(a => a.id === accId);
+        if (!acc) return;
+
+        const cur = Number(acc.balance) || 0;
         closeModal();
         const div = document.createElement('div');
         div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
-        div.innerHTML = `<div class="pc-modal"><h3>${isTR ? '📈 Trade Republic' : '🏦 MyInvestor'} · Saldo real</h3>
+        div.innerHTML = `<div class="pc-modal"><h3>${acc.icon || '🏦'} ${esc(acc.name)} · Saldo real</h3>
             <div class="pc-field"><label>Saldo real en banco (€)</label>
-                <input id="eaVal" type="number" step="0.01" value="${Number(cur).toFixed(2)}"></div>
+                <input id="eaVal" type="number" step="0.01" value="${cur.toFixed(2)}"></div>
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="eaCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="eaSave">Guardar</button></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         div.querySelector('#eaCancel').onclick = closeModal;
         const inp = div.querySelector('#eaVal'); inp.focus(); inp.select();
+        
         const save = () => {
             const v = Number(inp.value || 0);
-            if (isTR) recon().realBalances[currentPeriod] = v;
-            else {
-                const acc = getAccounts().find(x => (x.name || '').toLowerCase().includes('myinvestor'));
-                if (acc) acc.balance = v; else getAccounts().push({ id: 'acc-mi', name: 'MyInvestor', balance: v, icon: '🏦' });
-            }
+            acc.balance = v;
             App.saveData();
             App.notifyModuleChange('presupuesto-comun', { reason: 'account-updated' });
-            App.addHistory('presupuesto-comun', `Saldo real ${isTR ? 'Trade Republic' : 'MyInvestor'}: ${fmt(v)}`);
+            App.addHistory('presupuesto-comun', `Saldo real ${acc.name}: ${fmt(v)}`);
             closeModal(); render(); App.showToast('Saldo actualizado', 'success');
         };
+        
         div.querySelector('#eaSave').onclick = save;
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') closeModal(); });
     }
