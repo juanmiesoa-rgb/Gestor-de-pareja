@@ -880,7 +880,6 @@ async function bootstrapApp() {
 
     if (window.AuthService) AuthService.hideLogin();
 
-    // 1. Asegurar que los perfiles existen
     if (!App.data.profiles || App.data.profiles.length === 0) {
         App.data.profiles = [
             { id: 'ana', name: 'Nena', initial: 'N', color: '#ec4899' },
@@ -888,7 +887,6 @@ async function bootstrapApp() {
         ];
     }
 
-    // 2. Asignar automáticamente el perfil según el correo
     if (window.AuthService) {
         const user = AuthService.getUser();
         if (user && user.email) {
@@ -899,16 +897,19 @@ async function bootstrapApp() {
         }
     }
 
-    // 3. Cargar los datos de Google Sheets PRIMERO (esperamos a que termine)
+    // 🔒 1. LEER EL SHEET Y ESPERAR
     if (window.DataService) {
-        await DataService.init();
+        const success = await DataService.init();
+        if (!success) {
+            App.showToast('⚠️ No se pudo leer Google Sheets. La app está en modo solo lectura para proteger tus datos.', 'error');
+            // Forzamos a que la app se monte, pero DataService no dejará guardar nada.
+        }
     }
 
-    // 4. Montar la app (ya con los datos reales cargados)
+    // 2. Montar la app CON los datos ya cargados
     initTripManager();
     App.init();
 
-    // 5. Escuchar cambios desde el servidor
     document.addEventListener('app:data-refreshed', () => {
         const tm = window.getTripManager && window.getTripManager();
         if (tm && tm.mounted) {
