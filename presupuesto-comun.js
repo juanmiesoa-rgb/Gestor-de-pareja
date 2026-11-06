@@ -1000,6 +1000,5 @@ const BudgetApp = (function () {
         getPcSummary: () => ({ period: currentPeriod, total: totalBudgetDefined() })
     };
 })();
-
 window.BudgetApp = BudgetApp;
 if (window.App && typeof App.registerSection === 'function') App.registerSection('presupuesto-comun', BudgetApp);
