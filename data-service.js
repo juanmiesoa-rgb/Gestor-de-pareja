@@ -13,7 +13,6 @@ const DataService = (function () {
     const CONFIG = {
         // ⚠️ EDITA ESTOS DOS VALORES con los que obtuviste en el despliegue del Web App
         apiUrl: 'https://script.google.com/macros/s/AKfycbwCFEoAoe6WeShWyWUm-ast-HNuATa0Q7zW7XjYaXQFX3kt19UqB8gSqDLjS-fEspxP/exec',
-        token: '15770e57-c8e2-4591-980f-31212777a050-a5fd3bff-e360-49c0-88b4-2a56b8a8d46a',
         debounceMs: 2000
     };
 
@@ -106,7 +105,7 @@ const DataService = (function () {
         timers[module] = setTimeout(() => flushOne(module), CONFIG.debounceMs);
     }
 
- async function flushOne(module) {
+async function flushOne(module) {
     if (!pending[module]) return;
     const data = pending[module];
     delete pending[module];
@@ -115,13 +114,16 @@ const DataService = (function () {
         status.syncing = true;
         emit();
 
-        // Enviamos SOLO el token de respaldo
-        const bodyPayload = { 
-            action: 'write', 
-            module, 
-            data,
-            token: CONFIG.token 
-        };
+        const idToken = window.AuthService ? AuthService.getIdToken() : null;
+        if (!idToken) {
+            // Sin sesión válida: re-encolar y no perder datos
+            pending[module] = data;
+            status.connected = false;
+            status.lastError = 'Sin sesión';
+            return;
+        }
+
+        const bodyPayload = { action: 'write', module, data, id_token: idToken };
 
         const response = await fetch(CONFIG.apiUrl, {
             method: 'POST',
@@ -156,12 +158,13 @@ const DataService = (function () {
         await Promise.all(modules.map(m => flushOne(m)));
     }
 
-  async function fetchAll() {
-    // Enviamos SOLO el token de respaldo para evitar conflictos con Google
-    const payload = { 
-        action: 'read',
-        token: CONFIG.token 
-    };
+async function fetchAll() {
+    const idToken = window.AuthService ? AuthService.getIdToken() : null;
+    if (!idToken) {
+        throw new Error('Sesión expirada. Vuelve a iniciar sesión.');
+    }
+
+    const payload = { action: 'read', id_token: idToken };
 
     const r = await fetch(CONFIG.apiUrl, {
         method: 'POST',
@@ -203,18 +206,19 @@ const DataService = (function () {
 
     // Flush al cerrar pestaña
     window.addEventListener('beforeunload', () => {
-        // No esperamos respuesta, pero lanzamos las escrituras
-        Object.keys(pending).forEach(m => {
-            try {
-                fetch(CONFIG.apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ token: CONFIG.token, action: 'write', module: m, data: pending[m] }),
-                    keepalive: true
-                });
-            } catch (e) {}
-        });
+    const idToken = window.AuthService ? AuthService.getIdToken() : null;
+    if (!idToken) return;
+    Object.keys(pending).forEach(m => {
+        try {
+            fetch(CONFIG.apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ id_token: idToken, action: 'write', module: m, data: pending[m] }),
+                keepalive: true
+            });
+        } catch (e) {}
     });
+});
 
     return {
         init,
