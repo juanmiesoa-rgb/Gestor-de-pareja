@@ -430,6 +430,7 @@ const App = (function () {
        ========================================================= */
     return {
         get data() { return data; },
+        reloadData: () => { data = loadData(); },
         saveData, resetData, addHistory,
         navigateTo, goTo, registerSection, registerModule,
         currentSection: () => currentSection,
@@ -904,8 +905,8 @@ async function bootstrapApp() {
         if (!success) {
             App.showToast('⚠️ No se pudo leer Google Sheets. Modo solo lectura.', 'error');
         } else {
-            // 🔥 AQUÍ ESTÁ LA MAGIA: Recargamos la variable en memoria con los datos que acaban de llegar
-            data = loadData(); 
+            App.reloadData(); // 👈 LLAMAMOS AL MÉTODO INTERNO
+            console.log('[app.js] Datos recargados:', App.data.accounts); 
         }
     }
 
