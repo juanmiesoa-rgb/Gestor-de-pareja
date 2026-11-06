@@ -1,5 +1,5 @@
 /* =============================================================================
-   PRESUPUESTO-COMUN.JS · v18 — Definitivo (Modales fuera, Préstamos y Fondo)
+   PRESUPUESTO-COMUN.JS · v19 — Foco en modales, Cuentas y Lógica Groceries
    ============================================================================= */
 const BudgetApp = (function () {
     'use strict';
@@ -16,7 +16,7 @@ const BudgetApp = (function () {
     let containerEl = null;
 
     /* =========================================================
-       HELPERS DE FECHAS
+       HELPERS
        ========================================================= */
     function shortDate(iso) { 
         if (!iso) return '—'; 
@@ -37,16 +37,11 @@ const BudgetApp = (function () {
         return acc ? acc.id : null;
     }
 
-    /* =========================================================
-       HISTORIAL DE PRESUPUESTOS (Herencia)
-       ========================================================= */
     function getHistoricalBudget(item, period) {
         if (item.createdAt && period < item.createdAt) return null;
-
         if (item.budgetHistory && item.budgetHistory[period] !== undefined) {
             return item.budgetHistory[period] === null ? null : Number(item.budgetHistory[period]);
         }
-        
         const history = item.budgetHistory || {};
         const pastMonths = Object.keys(history).filter(m => m < period).sort().reverse();
         if (pastMonths.length > 0) {
@@ -67,7 +62,6 @@ const BudgetApp = (function () {
         const [y, m] = period.split('-').map(Number);
         let start = new Date(y, m - 1, 1);
         
-        // Noviembre 2026 empieza el día 2
         if (period === FIRST_MONTH) {
             start = new Date(y, m - 1, 2);
         } else {
@@ -201,7 +195,7 @@ const BudgetApp = (function () {
     function syncAccountWithGroceries(amount) {
         const gAccId = getGroceriesAccountId();
         if (!gAccId) return;
-        const acc = getAccounts().find(a => a.id === gAccId);
+        const acc = data().accounts.find(a => a.id === gAccId);
         if (acc) { acc.balance = Number(acc.balance) - Number(amount); App.saveData(); }
     }
 
@@ -419,7 +413,7 @@ const BudgetApp = (function () {
     }
 
     /* =========================================================
-       MODALES (Con cierre al hacer clic fuera)
+       MODALES
        ========================================================= */
     function closeModal() { const b = document.getElementById('pcBackdrop'); if (b) b.remove(); }
 
@@ -430,10 +424,7 @@ const BudgetApp = (function () {
         const spent = sum(movs);
         const diff = w.budget - spent;
         if (Math.abs(diff) < 0.005) return;
-
-        addMovement('pc-groceries', diff, { 
-            concept: `Ajuste semana: ${w.label}`, pcWeekId: w.id, date: new Date().toISOString().slice(0, 10)
-        });
+        addMovement('pc-groceries', diff, { concept: `Ajuste semana: ${w.label}`, pcWeekId: w.id, date: new Date().toISOString().slice(0, 10) });
     }
 
     function openWeekCountModal() {
@@ -456,6 +447,7 @@ const BudgetApp = (function () {
             <button class="pc-btn pc-btn-primary" id="wcSave">Aplicar</button></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const inp = div.querySelector('#wcB'); setTimeout(() => { inp.focus(); inp.select(); }, 100);
         div.querySelector('#wcCancel').onclick = closeModal;
         div.querySelector('#wcSave').onclick = () => {
             const n = Number(div.querySelector('#wcN').value);
@@ -493,6 +485,7 @@ const BudgetApp = (function () {
             </div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const inp = div.querySelector('#wsVal'); setTimeout(() => { inp.focus(); inp.select(); }, 100);
         
         div.querySelector('#wsCancel').onclick = closeModal;
         div.querySelector('#wsList').onclick = () => { closeModal(); openMovementsListModal('pc-groceries', weekId); };
@@ -501,9 +494,7 @@ const BudgetApp = (function () {
         const save = () => {
             const newVal = Number(div.querySelector('#wsVal').value);
             const diff = newVal - spent;
-            if (Math.abs(diff) > 0.005) {
-                addMovement('pc-groceries', diff, { concept: 'Ajuste manual semana', pcWeekId: weekId });
-            }
+            if (Math.abs(diff) > 0.005) addMovement('pc-groceries', diff, { concept: 'Ajuste manual semana', pcWeekId: weekId });
             closeModal(); render();
         };
         div.querySelector('#wsSave').onclick = save;
@@ -539,6 +530,7 @@ const BudgetApp = (function () {
             </div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const inp = div.querySelector('#gsVal'); setTimeout(() => { inp.focus(); inp.select(); }, 100);
         
         div.querySelector('#gsCancel').onclick = closeModal;
         div.querySelector('#gsList').onclick = () => { closeModal(); openMovementsListModal(rowId); };
@@ -547,9 +539,7 @@ const BudgetApp = (function () {
         const save = () => {
             const newVal = Number(div.querySelector('#gsVal').value);
             const diff = newVal - spent;
-            if (Math.abs(diff) > 0.005) {
-                addMovement(rowId, diff, { concept: 'Ajuste manual' });
-            }
+            if (Math.abs(diff) > 0.005) addMovement(rowId, diff, { concept: 'Ajuste manual' });
             closeModal(); render();
         };
         div.querySelector('#gsSave').onclick = save;
@@ -597,6 +587,7 @@ const BudgetApp = (function () {
             </div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const inp = div.querySelector('#amDesc'); setTimeout(() => inp.focus(), 100);
         
         div.querySelector('#amCancel').onclick = closeModal;
         const save = () => {
@@ -660,6 +651,8 @@ const BudgetApp = (function () {
             </div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const inp = div.querySelector('#eaName'); setTimeout(() => { inp.focus(); inp.select(); }, 100);
+        
         div.querySelector('#eaCancel').onclick = closeModal;
         div.querySelector('#eaSave').onclick = () => {
             acc.name = div.querySelector('#eaName').value.trim() || acc.name;
@@ -697,6 +690,7 @@ const BudgetApp = (function () {
             </div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const inp = div.querySelector('#naName'); setTimeout(() => inp.focus(), 100);
         
         div.querySelector('#naCancel').onclick = closeModal;
         div.querySelector('#naSave').onclick = () => {
@@ -716,7 +710,7 @@ const BudgetApp = (function () {
     }
 
     function openUpdateBalanceModal(accId) {
-        const acc = getAccounts().find(a => a.id === accId);
+        const acc = data().accounts.find(a => a.id === accId);
         if (!acc) return;
         const cur = Number(acc.balance) || 0;
         closeModal();
@@ -728,6 +722,8 @@ const BudgetApp = (function () {
             <button class="pc-btn pc-btn-primary" id="eaSave">Ajustar</button></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const inp = div.querySelector('#eaVal'); setTimeout(() => { inp.focus(); inp.select(); }, 100);
+        
         div.querySelector('#eaCancel').onclick = closeModal;
         const save = () => {
             const newVal = Number(div.querySelector('#eaVal').value);
@@ -760,6 +756,8 @@ const BudgetApp = (function () {
             <button class="pc-btn pc-btn-primary" id="wbSave">Guardar</button></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const inp = div.querySelector('#wbVal'); setTimeout(() => { inp.focus(); inp.select(); }, 100);
+        
         div.querySelector('#wbCancel').onclick = closeModal;
         const save = () => {
             w.budget = Number(div.querySelector('#wbVal').value) || 0;
@@ -781,6 +779,9 @@ const BudgetApp = (function () {
         const currentBudget = getHistoricalBudget(item, currentPeriod);
         const budgetField = derivedNote ? '' : `<div class="pc-field"><label>Presupuesto desde ${currentPeriod} (€)</label><input id="mBudget" type="number" step="0.01" value="${currentBudget === null ? '' : currentBudget}"></div>`;
         
+        const accOpts = getAccounts().map(a => `<option value="${esc(a.name)}" ${item.account === a.name ? 'selected' : ''}>${esc(a.name)}</option>`).join('');
+        const accField = `<div class="pc-field"><label>Cuenta vinculada</label><select id="mAcc">${accOpts}</select></div>`;
+
         const div = document.createElement('div');
         div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
         div.innerHTML = `<div class="pc-modal"><h3>${item.icon || '⚙️'} Editar ${isSub ? 'subcategoría' : 'categoría'}</h3>
@@ -788,6 +789,7 @@ const BudgetApp = (function () {
             <div class="pc-field"><label>Nombre</label><input id="mName" value="${esc(item.name)}"></div>
             <div class="pc-field"><label>Icono</label><input id="mIcon" value="${esc(item.icon || '')}" maxlength="4"></div>
             ${budgetField}
+            ${accField}
             <div style="display:flex; gap:8px; margin-top:16px;">
                 <button class="pc-btn pc-btn-ghost" id="mList" style="flex:1;">Ver Movimientos</button>
                 <button class="pc-btn pc-btn-primary" id="mAdd" style="flex:1;">＋ Añadir Movimiento</button>
@@ -798,6 +800,7 @@ const BudgetApp = (function () {
                 <button class="pc-btn pc-btn-primary" id="mSave">Guardar</button></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const inp = div.querySelector('#mBudget') || div.querySelector('#mName'); setTimeout(() => { if (inp) { inp.focus(); inp.select(); } }, 100);
         
         div.querySelector('#mCancel').onclick = closeModal;
         div.querySelector('#mList').onclick = () => { closeModal(); openMovementsListModal(item.id); };
@@ -806,12 +809,26 @@ const BudgetApp = (function () {
         div.querySelector('#mSave').onclick = () => {
             item.name = div.querySelector('#mName').value.trim() || item.name;
             item.icon = div.querySelector('#mIcon').value.trim() || item.icon;
+            item.account = div.querySelector('#mAcc').value;
+            
             if (!derivedNote) {
                 const bv = div.querySelector('#mBudget').value;
                 const newBudget = bv === '' ? null : Number(bv);
                 if (!item.budgetHistory) item.budgetHistory = {};
                 item.budgetHistory[currentPeriod] = newBudget;
                 item.budget = newBudget;
+                
+                // Si es Groceries, actualizamos las semanas
+                if (item.id === 'pc-groceries' && newBudget !== null) {
+                    const weeks = pcWeeks();
+                    if (weeks.length > 0) {
+                        const perWeek = newBudget / weeks.length;
+                        weeks.forEach(w => { 
+                            const rw = allWeeks().find(x => x.id === w.id);
+                            if (rw) rw.budget = perWeek;
+                        });
+                    }
+                }
             }
             App.saveData(); closeModal(); render();
         };
@@ -831,6 +848,8 @@ const BudgetApp = (function () {
     function openNewCatModal() {
         closeModal();
         const parents = pcCats().map(c => `<option value="${c.id}">${c.icon} ${esc(c.name)}</option>`).join('');
+        const accOpts = getAccounts().map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+        
         const div = document.createElement('div');
         div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
         div.innerHTML = `<div class="pc-modal"><h3>🗂️ Nueva categoría</h3>
@@ -839,10 +858,12 @@ const BudgetApp = (function () {
             <div class="pc-field"><label>Nombre</label><input id="cName" placeholder="Ej. Cenas fuera"></div>
             <div class="pc-field"><label>Icono (emoji)</label><input id="cIcon" value="📦" maxlength="4"></div>
             <div class="pc-field"><label>Presupuesto (€)</label><input id="cBudget" type="number" step="0.01"></div>
+            <div class="pc-field"><label>Cuenta vinculada</label><select id="cAcc">${accOpts}</select></div>
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="cCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="cSave">Crear</button></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        const inp = div.querySelector('#cName'); setTimeout(() => inp.focus(), 100);
         
         div.querySelector('#cCancel').onclick = closeModal;
         div.querySelector('#cType').onchange = e => { div.querySelector('#cParentWrap').style.display = e.target.value === 'sub' ? '' : 'none'; };
@@ -857,7 +878,7 @@ const BudgetApp = (function () {
                 id: (isSub ? 'pcs-' : 'pc-') + Date.now().toString(36),
                 name, icon: div.querySelector('#cIcon').value.trim() || '📦',
                 budget: initialBudget,
-                account: '',
+                account: div.querySelector('#cAcc').value,
                 createdAt: currentPeriod,
                 budgetHistory: initialBudget !== null ? { [currentPeriod]: initialBudget } : {}
             };
