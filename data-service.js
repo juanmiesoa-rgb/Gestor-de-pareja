@@ -1,5 +1,5 @@
 /* =============================================================================
-   DATA-SERVICE.JS · v5 — Sincronización blindada (Anti-borrado)
+   DATA-SERVICE.JS · v6 — Sincronización limpia
    ============================================================================= */
 const DataService = (function () {
     'use strict';
@@ -21,7 +21,7 @@ const DataService = (function () {
     const timers = {};                  
     const status = { connected: false, lastSync: null, lastError: null, syncing: false, phase: 'idle' };
     let _refreshInFlight = false;
-    let isFirstReadComplete = false; // 🔒 CANDADO MAESTRO
+    let isFirstReadComplete = false; // 🔒 CANDADO MAESTRO (solo bloquea escritura)
 
     const listeners = [];
 
@@ -47,17 +47,6 @@ const DataService = (function () {
             emit();
 
             const data = await fetchAll();
-
-            // 🛡️ ESCUDO: Si el servidor devuelve 0 categorías y teníamos, abortamos
-            if (data.app && (!data.app.pcCategories || data.app.pcCategories.length === 0)) {
-                const localRaw = localStorage.getItem('finanzas_data');
-                if (localRaw) {
-                    const localData = JSON.parse(localRaw);
-                    if (localData.pcCategories && localData.pcCategories.length > 0) {
-                        throw new Error('Protección: El servidor devolvió datos vacíos.');
-                    }
-                }
-            }
 
             let anyChange = false;
             Object.entries(KEY_BY_MODULE).forEach(([mod, key]) => {
