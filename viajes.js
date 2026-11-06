@@ -1120,26 +1120,39 @@
                 </div>`;
             }).join('');
         }
+
         _activitiesCarouselInner(trip) {
+            const days = trip.days || [];
+            if (!days.length) return '<div class="tm-empty" style="padding:10px;">Sin días configurados.</div>';
+
             const byDay = {};
-            trip.activities.forEach(a => { (byDay[a.day] = byDay[a.day] || []).push(a); });
-            const days = Object.keys(byDay).sort();
-            if (!days.length) return '<div class="tm-empty" style="padding:10px;">Sin actividades programadas.</div>';
-            return days.map(day => {
-                const rows = byDay[day].map(a => `
-                    <div class="tm-act-row" data-action="activity-modal" data-trip="${trip.id}" data-activity="${a.id}" tabindex="0" role="button">
-                        <span class="tm-act-time">${TripManager.esc(a.time.split('–')[0].trim())}</span>
+            (trip.activities || []).forEach(a => { (byDay[a.day] = byDay[a.day] || []).push(a); });
+
+            return days.map((d, i) => {
+                const dayActs = (byDay[d.date] || []).slice().sort((a, b) =>
+                    String(a.time || '').localeCompare(String(b.time || ''))
+                );
+                const rows = dayActs.map(a => `
+                    <div class="tm-act-row" data-action="edit-activity" data-trip="${trip.id}" data-activity="${a.id}" tabindex="0" role="button">
+                        <span class="tm-act-time">${TripManager.esc(String(a.time || '').split('–')[0].trim() || '—')}</span>
                         <span class="tm-act-name">${TripManager.esc(a.title)}</span>
                         <span class="tm-act-cost">${TripManager.fmt(a.cost)}</span>
                         <span class="tm-badge tm-badge-${a.paid ? 'pagado' : 'pendiente'}">${a.paid ? 'Pagado' : 'Pendiente'}</span>
                     </div>`).join('');
                 return `
                 <div class="tm-day-card tm-day-card-h">
-                    <div class="tm-day-head"><div class="tm-day-title">${TripManager.cap(TripManager.longDate(day))}</div></div>
-                    <div class="tm-act-list">${rows}</div>
+                    <div class="tm-day-head">
+                        <div class="tm-day-title">${TripManager.cap(TripManager.longDate(d.date))}
+                            <small>Día ${i + 1}/${days.length}</small></div>
+                    </div>
+                    <div class="tm-act-list">${rows || '<div class="tm-empty" style="padding:8px;font-size:12px;">Sin actividades.</div>'}</div>
+                    <button type="button" class="tm-btn tm-btn-ghost tm-btn-sm" data-action="add-activity" data-day="${d.date}" style="margin-top:8px;">
+                        ＋ Añadir actividad
+                    </button>
                 </div>`;
             }).join('');
         }
+
         _applyScroll(kind) {
             const track = this.mount.querySelector('#tm-track-' + kind);
             if (track) track.scrollLeft = this.state[kind + 'Scroll'] || 0;
@@ -1483,6 +1496,85 @@
                 </div>`);
         }
 
+        
+        _openActivityFormModal(trip, dayIso, activityId) {
+            const existing = activityId ? (trip.activities || []).find(a => a.id === activityId) : null;
+            const isEdit = !!existing;
+            const travelers = trip.travelers || [];
+            const payerOpts = (travelers.length ? travelers : ['Ana', 'Luis']).map(t =>
+                `<option ${existing && existing.payer === t ? 'selected' : ''}>${TripManager.esc(t)}</option>`
+            ).join('');
+            this.openModal(
+                isEdit ? '✏️ Editar actividad' : '➕ Nueva actividad',
+                TripManager.cap(TripManager.longDate(dayIso)),
+                `<form id="tm-act-form">
+                    <div class="tm-form-grid">
+                        <div class="tm-field full"><label>Título *</label>
+                            <input class="tm-input" id="ac-title" required
+                                   value="${existing ? TripManager.esc(existing.title) : ''}"
+                                   placeholder="Ej. Visitar templo Fushimi Inari"></div>
+                        <div class="tm-field"><label>Hora</label>
+                            <input class="tm-input" id="ac-time"
+                                   value="${existing ? TripManager.esc(existing.time || '') : '09:00–11:00'}"
+                                   placeholder="09:00–11:00"></div>
+                        <div class="tm-field"><label>Ubicación</label>
+                            <input class="tm-input" id="ac-location"
+                                   value="${existing ? TripManager.esc(existing.location || '') : ''}"
+                                   placeholder="Kioto"></div>
+                        <div class="tm-field"><label>Coste (€)</label>
+                            <input class="tm-input" id="ac-cost" type="number" min="0" step="0.01"
+                                   value="${existing ? (existing.cost || 0) : 0}"></div>
+                        <div class="tm-field"><label>Pagador/a</label>
+                            <select class="tm-input" id="ac-payer">${payerOpts}</select></div>
+                        <div class="tm-field full"><label>Notas</label>
+                            <textarea class="tm-input" id="ac-notes" rows="2">${existing ? TripManager.esc(existing.notes || '') : ''}</textarea></div>
+                        <div class="tm-field full">
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                                <input type="checkbox" id="ac-paid" ${existing && existing.paid ? 'checked' : ''}> Ya pagado
+                            </label>
+                        </div>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;">
+                        ${isEdit ? '<button type="button" class="tm-btn tm-btn-ghost" id="ac-del" style="margin-right:auto;color:var(--tm-danger)">🗑️ Eliminar</button>' : ''}
+                        <button type="button" class="tm-btn tm-btn-ghost" data-action="close-modal">Cancelar</button>
+                        <button type="submit" class="tm-btn tm-btn-primary">💾 Guardar</button>
+                    </div>
+                </form>`
+            );
+            const form = this.mount.querySelector('#tm-act-form');
+            const delBtn = form.querySelector('#ac-del');
+            if (delBtn) {
+                delBtn.addEventListener('click', () => {
+                    trip.activities = (trip.activities || []).filter(a => a.id !== activityId);
+                    this._schedulePersist();
+                    this.closeModal();
+                    this._render_detail();
+                    this._toast('Actividad eliminada');
+                });
+            }
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const payload = {
+                    day: dayIso,
+                    title: form.querySelector('#ac-title').value.trim(),
+                    time: form.querySelector('#ac-time').value.trim() || '—',
+                    location: form.querySelector('#ac-location').value.trim(),
+                    cost: Math.max(parseFloat(form.querySelector('#ac-cost').value) || 0, 0),
+                    payer: form.querySelector('#ac-payer').value,
+                    notes: form.querySelector('#ac-notes').value.trim(),
+                    paid: form.querySelector('#ac-paid').checked
+                };
+                if (!payload.title) { this._toast('El título es obligatorio', 'error'); return; }
+                if (!trip.activities) trip.activities = [];
+                if (isEdit) Object.assign(existing, payload);
+                else trip.activities.push({ id: TripManager.uid('act'), ...payload });
+                this._schedulePersist();
+                this.closeModal();
+                this._render_detail();
+                this._toast(isEdit ? 'Actividad actualizada' : 'Actividad añadida');
+            });
+        }
+
         openEditTripModal() {
             const trip = this.selectedTrip;
             if (!trip) return;
@@ -1719,6 +1811,18 @@
                 case 'activity-modal':
                     this.openActivityModal(el.dataset.trip, el.dataset.activity);
                     break;
+                case 'add-activity': {
+                    const trip = this.selectedTrip;
+                    if (!trip) break;
+                    this._openActivityFormModal(trip, el.dataset.day, null);
+                    break;
+                }
+                case 'edit-activity': {
+                    const trip = this.selectedTrip;
+                    const act = trip && (trip.activities || []).find(a => a.id === el.dataset.activity);
+                    if (act) this._openActivityFormModal(trip, act.day, act.id);
+                    break;
+                }
                 case 'toggle-activity-paid': {
                     const trip = this.trips.find(t => t.id === el.dataset.trip);
                     const act = trip && trip.activities.find(a => a.id === el.dataset.activity);
