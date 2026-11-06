@@ -1,5 +1,5 @@
 /* =============================================================================
-   DATA-SERVICE.JS · v3 — Sincronización segura (Anti-borrado de Sheet)
+   DATA-SERVICE.JS · v4 — Sincronización segura (Anti-borrado de Sheet)
    ============================================================================= */
 const DataService = (function () {
     'use strict';
@@ -21,26 +21,19 @@ const DataService = (function () {
     const timers = {};                  
     const status = { connected: false, lastSync: null, lastError: null, syncing: false, phase: 'idle' };
     let _refreshInFlight = false;
-    
-    // 🔒 CANDADO DE SEGURIDAD: Evita que la app guarde datos antes de leer
     let isFirstReadComplete = false; 
 
     const listeners = [];
 
-    /* -------- API pública -------- */
-
     async function init() {
         status.phase = 'connecting';
         emit();
-        
-        // Intentamos la primera lectura de forma estricta
         const success = await refreshFromServer();
-        
         if (success) {
             isFirstReadComplete = true; 
             console.log('[DataService] Lectura inicial exitosa. Guardado en Sheet habilitado.');
         } else {
-            console.warn('[DataService] ⚠️ Lectura inicial fallida. El guardado en el Sheet está BLOQUEADO para proteger tus datos.');
+            console.warn('[DataService] ⚠️ Lectura inicial fallida. Guardado BLOQUEADO.');
         }
     }
 
@@ -53,6 +46,18 @@ const DataService = (function () {
             emit();
 
             const data = await fetchAll();
+
+            // 🛡️ ESCUDO: Si el servidor devuelve categorías vacías pero tenemos locales, abortamos.
+            if (data.app && (!data.app.pcCategories || data.app.pcCategories.length === 0)) {
+                const localRaw = localStorage.getItem('finanzas_data');
+                if (localRaw) {
+                    const localData = JSON.parse(localRaw);
+                    if (localData.pcCategories && localData.pcCategories.length > 0) {
+                        console.warn('[DataService] ⚠️ El servidor devolvió datos vacíos, pero localmente hay datos. Abortando para proteger.');
+                        throw new Error('Protección: El servidor devolvió vacío.');
+                    }
+                }
+            }
 
             let anyChange = false;
             Object.entries(KEY_BY_MODULE).forEach(([mod, key]) => {
@@ -71,7 +76,6 @@ const DataService = (function () {
             status.phase = 'connected';
 
             if (anyChange) {
-                console.info('[DataService] Datos actualizados desde Sheets');
                 document.dispatchEvent(new CustomEvent('app:data-refreshed'));
             }
             return true;
@@ -79,7 +83,7 @@ const DataService = (function () {
             console.warn('[DataService] refresh falló:', e);
             status.connected = false;
             status.lastError = e.message || String(e);
-            status.phase = /sesión|expirada|unauthorized/i.test(e.message || '') ? 'error' : 'disconnected';
+            status.phase = 'error';
             return false;
         } finally {
             _refreshInFlight = false;
@@ -95,24 +99,20 @@ const DataService = (function () {
             if (raw) {
                 const parsed = JSON.parse(raw);
                 return (defaults && typeof defaults === 'object' && !Array.isArray(defaults))
-                    ? Object.assign(clone(defaults), parsed)
-                    : parsed;
+                    ? Object.assign(clone(defaults), parsed) : parsed;
             }
         } catch (e) {}
         return clone(defaults);
     }
 
     function saveStored(key, value) {
-        // 1 · Escribir en localStorage (siempre, para que la UI responda al instante)
         try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
 
-        // 🔒 2 · CANDADO: Si no hemos leído el Sheet, no enviamos nada al servidor
         if (!isFirstReadComplete) {
-            console.log('[DataService] Guardado bloqueado: no se ha completado la lectura inicial.');
+            console.log('[DataService] Guardado bloqueado: lectura inicial no completada.');
             return;
         }
 
-        // 3 · Encolar sync a Sheets
         const module = MODULE_BY_KEY[key];
         if (!module) return;
 
@@ -141,7 +141,6 @@ const DataService = (function () {
             }
 
             const bodyPayload = { action: 'write', module, data, id_token: idToken };
-
             const response = await fetch(CONFIG.apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -149,7 +148,6 @@ const DataService = (function () {
             });
 
             const json = await response.json();
-
             if (!json.ok) {
                 if (json.error === 'unauthorized') {
                     if (window.AuthService) AuthService.requestReauth();
@@ -183,7 +181,6 @@ const DataService = (function () {
         if (!idToken) throw new Error('Sesión expirada. Vuelve a iniciar sesión.');
 
         const payload = { action: 'read', id_token: idToken };
-
         const r = await fetch(CONFIG.apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -196,33 +193,24 @@ const DataService = (function () {
                 if (window.AuthService) AuthService.requestReauth();
                 throw new Error('Sesión expirada');
             }
-            if (json.error === 'forbidden') {
-                throw new Error('Tu cuenta (' + json.email + ') no tiene acceso a este Sheet.');
-            }
+            if (json.error === 'forbidden') throw new Error('Tu cuenta no tiene acceso.');
             throw new Error(json.error || 'read failed');
         }
         return json.data;
     }
 
     function getStatus() {
-        return Object.assign({}, status, {
-            pendingModules: Object.keys(pending)
-        });
+        return Object.assign({}, status, { pendingModules: Object.keys(pending) });
     }
 
-    function onStatusChange(fn) {
-        if (typeof fn === 'function') listeners.push(fn);
-    }
+    function onStatusChange(fn) { if (typeof fn === 'function') listeners.push(fn); }
 
     function emit() {
         const s = getStatus();
         listeners.forEach(fn => { try { fn(s); } catch (e) {} });
-        if (window.App && typeof App.updateSyncBadge === 'function') {
-            App.updateSyncBadge(s);
-        }
+        if (window.App && typeof App.updateSyncBadge === 'function') App.updateSyncBadge(s);
     }
 
-    // Flush al cerrar pestaña (Corregido el cierre de llaves)
     window.addEventListener('beforeunload', () => {
         const idToken = window.AuthService ? AuthService.getIdToken() : null;
         if (!idToken) return;
@@ -255,16 +243,7 @@ const DataService = (function () {
         emit();
     });
 
-    return {
-        init,
-        loadStored,
-        saveStored,
-        flush,
-        getStatus,
-        onStatusChange,
-        forceRefresh: refreshFromServer, 
-        config: CONFIG
-    };
+    return { init, loadStored, saveStored, flush, getStatus, onStatusChange, forceRefresh: refreshFromServer, config: CONFIG };
 })();
 
 window.DataService = DataService;
