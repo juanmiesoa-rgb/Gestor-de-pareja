@@ -158,15 +158,18 @@ const AuthService = (function () {
     }
 
     function requestReauth() {
-        // En lugar de borrar la sesión a la primera, solo avisamos.
-        console.warn('[AuthService] Error de red o de servidor. Manteniendo sesión local.');
-        showError('Problema de conexión con el servidor. Reintentando...');
+        console.warn('[AuthService] Sesión inválida o expirada. Solicitando re-login.');
+        showError('Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.');
         
-        // Solo cerramos sesión si de verdad el token ya caducó
-        if (tokenExpiresAt && tokenExpiresAt < Date.now()) {
+        // Forzar cierre de sesión si el token ya no es válido o está en margen de seguridad
+        if (!getIdToken()) {
             currentUser = null;
             currentIdToken = null;
-            try { localStorage.removeItem(STORAGE_USER_KEY); localStorage.removeItem(STORAGE_TOKEN_KEY); } catch (e) {}
+            tokenExpiresAt = 0;
+            try { 
+                localStorage.removeItem(STORAGE_USER_KEY); 
+                localStorage.removeItem(STORAGE_TOKEN_KEY); 
+            } catch (e) {}
             showLogin();
             emit();
         }

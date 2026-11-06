@@ -290,7 +290,7 @@ const App = (function () {
         }
 
         navigateTo(normalizeSectionName('presupuesto-comun'));
-    }
+    }  
 
     function navigateTo(section) {
         section = normalizeSectionName(section);
@@ -878,13 +878,11 @@ async function bootstrapApp() {
     if (appStarted) return;
     appStarted = true;
 
-    // 🔒 COMPROBACIÓN DE SEGURIDAD: Solo usuarios autorizados
+    // 🔒 COMPROBACIÓN DE SEGURIDAD: Exigir que el token sea válido (no solo que exista el usuario)
     if (window.AuthService) {
-        const user = AuthService.getUser();
-        if (!user || !user.email || !AuthService.isEmailAllowed(user.email)) {
-            console.warn('[App] Intento de acceso no autorizado o sin sesión válida.');
+        if (!AuthService.isSignedIn()) {
+            console.warn('[App] Sin sesión válida (token expirado o ausente).');
             AuthService.showLogin();
-            AuthService.showError('Debes iniciar sesión con una cuenta autorizada.');
             appStarted = false; // Permitir reintentar
             return;
         }
