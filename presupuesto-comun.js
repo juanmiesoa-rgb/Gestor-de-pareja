@@ -34,9 +34,16 @@ const BudgetApp = (function () {
     function mapAccountName(name) {
         if (!name) return null;
         const accounts = getAccounts();
-        const lower = String(name).toLowerCase().trim();
-        let acc = accounts.find(a => String(a.name).toLowerCase() === lower);
-        return acc ? acc.id : null;
+        const target = String(name).toLowerCase().trim().replace(/\s+/g, ' ');
+        if (!target) return null;
+        let acc = accounts.find(a => String(a.name || '').toLowerCase().trim().replace(/\s+/g, ' ') === target);
+        if (acc) return acc.id;
+        acc = accounts.find(a => String(a.name || '').toLowerCase().trim().startsWith(target));
+        if (acc) return acc.id;
+        acc = accounts.find(a => target.startsWith(String(a.name || '').toLowerCase().trim()));
+        if (acc) return acc.id;
+        console.warn('[BudgetApp] mapAccountName: no match para "' + name + '", usando primera cuenta');
+        return accounts[0]?.id || null;
     }
 
     // Detección robusta por nombre o ID
@@ -198,14 +205,40 @@ const BudgetApp = (function () {
         return groceries ? mapAccountName(groceries.account) : null;
     }
 
+    /**
+     * Suma de los presupuestos de todas las categorías vinculadas a una cuenta.
+     * Sirve como "saldo teórico" inicial de esa cuenta.
+     */
+    function computeTheoreticalBalance(accId) {
+        const account = getAccounts().find(a => a.id === accId);
+        if (!account) return 0;
+        const accName = String(account.name || '').toLowerCase().trim();
+        return pcCats().reduce((s, c) => {
+            if (String(c.account || '').toLowerCase().trim() !== accName) return s;
+            const b = catBudget(c.id);
+            return s + (b === null ? 0 : b);
+        }, 0);
+    }
+
+    /**
+     * Sincroniza el gasto de Groceries con el cambio de saldo de su cuenta vinculada.
+     * Solo se aplica a la cuenta de Groceries, no a otras cuentas.
+     * - diff > 0 (saldo baja) → SUMA gasto a la semana activa
+     * - diff < 0 (saldo sube) → RESTA gasto (corrige)
+     * Usa un único movimiento por semana con pcAuto='grocery-balance-sync'
+     * para evitar acumulación de ajustes.
+     */
     function syncGroceriesWithAccount(accId, newBalance) {
         const gAccId = getGroceriesAccountId();
-        if (!gAccId || accId !== gAccId) return;   // solo cuenta Groceries
+        console.log('[syncGroceries] accId=', accId, '· gAccId=', gAccId, '· newBalance=', newBalance);
+        if (!gAccId) { console.warn('[syncGroceries] ⚠️ getGroceriesAccountId() = null'); return; }
+        if (accId !== gAccId) { console.log('[syncGroceries] no es la cuenta de Groceries, skip'); return; }
         const acc = getAccounts().find(a => a.id === accId);
         if (!acc) return;
         const oldBalance = Number(acc.balance) || 0;
         const diff = oldBalance - Number(newBalance);   // >0 = gastado
-        if (Math.abs(diff) < 0.005) return;
+        console.log('[syncGroceries] oldBalance=', oldBalance, '· diff=', diff);
+        if (Math.abs(diff) < 0.005) { console.log('[syncGroceries] diff=0, skip'); return; }
 
         const today = new Date().toISOString().slice(0, 10);
         const weeks = pcWeeks();
@@ -218,23 +251,27 @@ const BudgetApp = (function () {
             const past = weeks.filter(w => String(w.end).slice(0, 10) < today);
             targetWeek = past.length ? past[past.length - 1] : weeks[0];
         }
-        if (!targetWeek) return;
+        if (!targetWeek) {
+            console.warn('[syncGroceries] ⚠️ no hay semana activa. weeks=', weeks.map(w => `${w.start}→${w.end}`));
+            return;
+        }
+        console.log('[syncGroceries] semana destino:', targetWeek.id, targetWeek.start, '→', targetWeek.end);
 
         const groceriesCat = pcCats().find(x => isGroceries(x));
-        if (!groceriesCat) return;
+        if (!groceriesCat) { console.warn('[syncGroceries] ⚠️ no existe categoría Groceries'); return; }
 
-        // Reemplazar el ajuste auto de esta semana (no acumular)
         const existing = data().expenses.find(e =>
             e.pcWeekId === targetWeek.id &&
             e.categoryId === groceriesCat.id &&
             e.pcAuto === 'grocery-balance-sync'
         );
-
         if (existing) {
             existing.amount = Number(existing.amount) + diff;
             existing.date = today;
+            console.log('[syncGroceries] actualizado existente · nuevo amount=', existing.amount);
             if (Math.abs(existing.amount) < 0.005) {
                 data().expenses = data().expenses.filter(e => e.id !== existing.id);
+                console.log('[syncGroceries] amount≈0, movimiento eliminado');
             }
         } else {
             const id = 'pc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -250,8 +287,10 @@ const BudgetApp = (function () {
                 pcWeekId: targetWeek.id,
                 pcAuto: 'grocery-balance-sync'
             });
+            console.log('[syncGroceries] creado movimiento nuevo · amount=', diff);
         }
         App.saveData();
+        console.log('[syncGroceries] ✓ hecho');
     }
 
     // @deprecated · el flujo ahora pasa por App.registerExpenseMovement
@@ -666,40 +705,93 @@ const BudgetApp = (function () {
         div.querySelector('#amVal').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
     }
 
-    function addMovement(targetId, amount, opts) {
-        opts = opts || {};
-        const id = 'pc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-        const exp = {
-            id, concept: opts.concept || 'Movimiento', amount: Number(amount) || 0,
-            date: opts.date || new Date().toISOString().slice(0, 10),
-            categoryId: targetId, person: 'conjunto', status: 'registrado',
-            aggPeriod: currentPeriod, pcAccount: opts.account || ''
-        };
-        if (opts.pcWeekId) exp.pcWeekId = opts.pcWeekId;
-
-        data().expenses.push(exp);
-
-        // Determinar cuenta destino: la de opts, o la de la categoría
-        let accountId = mapAccountName(opts.account);
-        if (!accountId) {
-            const cat = findRow(targetId);
-            if (cat) accountId = mapAccountName(cat.account);
-        }
-        if (!accountId && String(targetId).includes('groceries')) {
-            accountId = getGroceriesAccountId();
-        }
-
-        if (window.App && typeof App.registerExpenseMovement === 'function') {
-            App.registerExpenseMovement({
-                amount: Math.abs(exp.amount), concept: exp.concept, date: exp.date,
-                accountId, link: { kind: 'expense', id: exp.id }
-            });
-        }
-        
-        App.saveData();
-        App.addHistory('presupuesto-comun', `Movimiento: ${exp.concept} (${fmt(exp.amount)})`);
-        render();
+/**
+ * Añade un movimiento (gasto / ajuste) a una categoría o subcategoría del presupuesto.
+ * Mantiene el saldo de la cuenta vinculada sincronizado con el signo correcto:
+ *   · amount > 0  → gasto real → registerExpenseMovement (resta saldo)
+ *   · amount < 0  → corrección a la baja → registerIncomeMovement (suma saldo)
+ *
+ * NO llama a syncGroceriesWithAccount (esa función es exclusiva del modal de
+ * "Actualizar saldo" de la cuenta de Groceries). Si el usuario quiere sincronizar
+ * gasto ↔ saldo en esa cuenta, debe pasar por ese modal.
+ *
+ * @param {string} targetId  ID de la categoría / subcategoría (pc-* o pcs-*)
+ * @param {number} amount    Importe (positivo = gasto, negativo = corrección)
+ * @param {object} opts      Opciones: concept, date, account, pcWeekId, link
+ */
+function addMovement(targetId, amount, opts) {
+    opts = opts || {};
+    const amt = Number(amount) || 0;
+    if (Math.abs(amt) < 0.005) {
+        console.warn('[addMovement] amount≈0, skip');
+        return;
     }
+
+    /* ── 1. Construir el objeto expense ─────────────────────────────── */
+    const id = 'pc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const exp = {
+        id,
+        concept: opts.concept || 'Movimiento',
+        amount: amt,
+        date: opts.date || new Date().toISOString().slice(0, 10),
+        categoryId: targetId,
+        person: 'conjunto',
+        status: 'registrado',
+        aggPeriod: currentPeriod,
+        pcAccount: opts.account || ''
+    };
+    if (opts.pcWeekId) exp.pcWeekId = opts.pcWeekId;
+    if (opts.link) exp.link = opts.link;
+    if (opts.pcAuto) exp.pcAuto = opts.pcAuto;
+
+    data().expenses.push(exp);
+
+    /* ── 2. Determinar cuenta destino ────────────────────────────────── */
+    //   Prioridad: cuenta explícita en opts → cuenta de la categoría → cuenta de Groceries
+    let accountId = mapAccountName(opts.account);
+    if (!accountId) {
+        const cat = findRow(targetId);
+        if (cat) accountId = mapAccountName(cat.account);
+    }
+    if (!accountId && String(targetId).includes('groceries')) {
+        accountId = getGroceriesAccountId();
+    }
+
+    /* ── 3. Registrar en el módulo Dinero con el signo correcto ──────── */
+    //   · Gasto (amt > 0) → registerExpenseMovement → acc.balance -= amt
+    //   · Corrección (amt < 0) → registerIncomeMovement → acc.balance += |amt|
+    if (accountId && window.App) {
+        try {
+            if (amt > 0 && typeof App.registerExpenseMovement === 'function') {
+                App.registerExpenseMovement({
+                    amount: amt,
+                    concept: exp.concept,
+                    date: exp.date,
+                    accountId,
+                    link: { kind: 'expense', id: exp.id }
+                });
+            } else if (amt < 0 && typeof App.registerIncomeMovement === 'function') {
+                App.registerIncomeMovement({
+                    amount: Math.abs(amt),
+                    concept: exp.concept,
+                    date: exp.date,
+                    accountId,
+                    link: { kind: 'expense-adjustment', id: exp.id }
+                });
+            }
+        } catch (err) {
+            console.warn('[addMovement] fallo al registrar en Dinero:', err);
+        }
+    }
+
+    /* ── 4. Persistir + historial + re-render ────────────────────────── */
+    App.saveData();
+    if (typeof App.addHistory === 'function') {
+        App.addHistory('presupuesto-comun',
+            `Movimiento: ${exp.concept} (${fmt(exp.amount)})${accountId ? ' · ' + accountId : ''}`);
+    }
+    render();
+}
 
     function openEditAccountModal(accId) {
         const acc = getAccounts().find(a => a.id === accId);
@@ -787,8 +879,11 @@ const BudgetApp = (function () {
         const acc = data().accounts.find(a => a.id === accId);
         if (!acc) return;
         const cur = Number(acc.balance) || 0;
-        const isGroceriesAccount = (accId === getGroceriesAccountId());
+        const gAccId = getGroceriesAccountId();
+        const isGroceriesAccount = (accId === gAccId);
         const theoretical = computeTheoreticalBalance(accId);
+
+        console.log('[openUpdateBalanceModal] acc=', acc.name, '(id=' + acc.id + ') · gAccId=', gAccId, '· isGroceries=', isGroceriesAccount);
 
         closeModal();
         const div = document.createElement('div');
