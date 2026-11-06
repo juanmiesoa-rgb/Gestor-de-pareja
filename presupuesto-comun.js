@@ -985,8 +985,21 @@ const BudgetApp = (function () {
                 App.saveData();
             }
             // No llamamos render() aquí: navigateTo ya lo hace justo después.
-        }
+        },
+        render,
+        openWeekCountModal,
+        editWeekBudget: openWeekBudgetModal,
+        openWeekSpentModal,
+        openCatSpentModal,
+        openSubSpentModal,
+        equalizeWeek,
+        openEditAccountModal,
+        openNewAccountModal,
+        openUpdateBalanceModal,
+        openExpenseModal: () => {},
+        getPcSummary: () => ({ period: currentPeriod, total: totalBudgetDefined() })
     };
 })();
+
 window.BudgetApp = BudgetApp;
 if (window.App && typeof App.registerSection === 'function') App.registerSection('presupuesto-comun', BudgetApp);
