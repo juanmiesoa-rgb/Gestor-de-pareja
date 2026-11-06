@@ -508,22 +508,38 @@ const BudgetApp = (function () {
         const weeks = pcWeeks();
         const total = weeks.reduce((s, w) => s + Number(w.budget || 0), 0);
         const wkExp = pcRealExpenses().filter(e => String(e.date || '').substring(0, 7) === currentPeriod);
-        const cards = weeks.map(w => {
+        
+        const rows = weeks.map(w => {
             const spent = sum(wkExp.filter(e => e.pcWeekId === w.id));
             const st = weekState(w);
             const meta = WEEK_STATE_META[st];
-            return `<div class="pc-week-card week-${st} ${meta.cls}" data-week="${w.id}" title="Clic para ver/editar los movimientos de esta semana">
-                <div class="pc-week-head"><span class="pc-week-name">${esc(w.label)}</span><span class="pc-badge ${meta.badge}">${meta.label}</span></div>
-                <div class="pc-week-dates">${shortDate(w.start)} → ${shortDate(w.end)}</div>
-                <div class="pc-week-amt pc-num">${fmt(w.budget)}</div>
-                <div class="pc-week-spent">Gastado: <b class="pc-num ${spent > w.budget ? 'pc-neg' : ''}">${fmt(spent)}</b></div>
+            
+            return `<div class="pc-week-row" data-week="${w.id}" title="Clic para ver/editar los movimientos de esta semana">
+                <div class="pc-week-name-col">
+                    <span class="pc-week-name">${esc(w.label)}</span>
+                    <span class="pc-badge ${meta.badge}" style="font-size:9.5px;padding:1px 6px">${meta.label}</span>
+                </div>
+                <div class="pc-week-date-col">${shortDate(w.start)} → ${shortDate(w.end)}</div>
+                <div class="pc-week-budget-col pc-num">${fmt(w.budget)}</div>
+                <div class="pc-week-spent-col pc-num ${spent > w.budget ? 'pc-neg' : ''}">${fmt(spent)}</div>
             </div>`;
         }).join('');
-        return `<div class="pc-panel pc-panel--accent" style="--panel-accent:#10b981">
-            <div class="pc-panel-title"><span class="pc-dot"></span>
-                <span class="pc-gro-title" id="pcGroTitle" title="Clic para decidir cuántas semanas tiene este mes">🛒 Groceries &amp; Leisure · distribución semanal</span>
-                <span style="margin-left:auto">${badge('Total ' + fmt(total), 'pc-badge-blue')}</span></div>
-            <div class="pc-week-cards">${cards || '<div class="pc-empty">Mes sin semanas definidas · clic en el título para crearlas</div>'}</div>
+
+        return `<div class="pc-panel pc-panel--accent" style="--panel-accent:#10b981; display: flex; flex-direction: column;">
+            <div class="pc-panel-title" style="margin-bottom: 12px;">
+                <span class="pc-dot"></span>
+                <span class="pc-gro-title" id="pcGroTitle" title="Clic para decidir cuántas semanas tiene este mes">🛒 Groceries &amp; Leisure</span>
+                <span style="margin-left:auto">${badge('Total ' + fmt(total), 'pc-badge-blue')}</span>
+            </div>
+            <div class="pc-week-list">
+                <div class="pc-week-row pc-week-header">
+                    <div class="pc-week-name-col">SEMANA</div>
+                    <div class="pc-week-date-col">FECHAS</div>
+                    <div class="pc-week-budget-col">PRESUPUESTO</div>
+                    <div class="pc-week-spent-col">GASTADO</div>
+                </div>
+                ${rows || '<div class="pc-empty">Mes sin semanas definidas · clic en el título para crearlas</div>'}
+            </div>
         </div>`;
     }
 

@@ -315,127 +315,138 @@
             .pc-table-wrap { width: 100% !important; max-width: 100% !important; box-sizing: border-box; }
         }
 
-/* =============================================================
-   V6 · PRESUPUESTO COMÚN — interactividad, estados de semana,
-   barra de consumo en el título, ⓘ de cuenta y modal de semana
-   ============================================================= */
-/* Cursores "manita" en elementos pinchables */
-.pc-week-card { cursor: pointer; transition: transform .15s ease, box-shadow .18s ease, border-color .18s ease; }
-.pc-week-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-.pc-week-card:active { transform: translateY(0) scale(.98); }
-.pc-account-row { cursor: pointer; border-radius: 10px; transition: background .15s ease; }
-.pc-account-row:hover { background: var(--bg); }
-.pc-gro-title { cursor: pointer; border-radius: 8px; padding: 2px 6px; transition: background .15s ease; }
-.pc-gro-title:hover { background: var(--border-light); }
-tr[data-moves] { cursor: pointer; }
-tr[data-moves]:hover td { background: color-mix(in srgb, var(--primary) 4%, transparent); }
+                /* Estilos para las semanas en formato lista */
+        .pc-week-list { display: flex; flex-direction: column; width: 100%; }
+        .pc-week-row { display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr; gap: 10px; padding: 10px 8px; border-bottom: 1px dashed var(--border-light); align-items: center; cursor: pointer; transition: background .15s; border-radius: 8px; }
+        .pc-week-row:hover { background: var(--bg); }
+        .pc-week-row:last-child { border-bottom: none; }
+        .pc-week-header { font-size: 10.5px; font-weight: 800; color: var(--text-muted); letter-spacing: .5px; border-bottom: 1px solid var(--border); cursor: default; padding-bottom: 8px; }
+        .pc-week-header:hover { background: transparent; }
+        .pc-week-name-col { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; }
+        .pc-week-date-col { font-size: 12px; color: var(--text-secondary); text-align: right; }
+        .pc-week-budget-col { font-weight: 700; text-align: right; color: var(--text); }
+        .pc-week-spent-col { font-weight: 800; text-align: right; color: var(--success); }
+    /* =============================================================
+    V6 · PRESUPUESTO COMÚN — interactividad, estados de semana,
+    barra de consumo en el título, ⓘ de cuenta y modal de semana
+    ============================================================= */
+    /* Cursores "manita" en elementos pinchables */
+    .pc-week-card { cursor: pointer; transition: transform .15s ease, box-shadow .18s ease, border-color .18s ease; }
+    .pc-week-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+    .pc-week-card:active { transform: translateY(0) scale(.98); }
+    .pc-account-row { cursor: pointer; border-radius: 10px; transition: background .15s ease; }
+    .pc-account-row:hover { background: var(--bg); }
+    .pc-gro-title { cursor: pointer; border-radius: 8px; padding: 2px 6px; transition: background .15s ease; }
+    .pc-gro-title:hover { background: var(--border-light); }
+    tr[data-moves] { cursor: pointer; }
+    tr[data-moves]:hover td { background: color-mix(in srgb, var(--primary) 4%, transparent); }
 
-/* Estados semánticos de las tarjetas de semana (En curso / Pasada / Vacía) */
-.pc-week-card.week-en-curso { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, var(--bg-card)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent); }
-.pc-week-card.week-pasada   { border-left: 4px solid var(--success); background: color-mix(in srgb, var(--success) 5%, var(--bg-card)); opacity: .93; }
-.pc-week-card.week-vacia    { border-style: dashed; background: transparent; opacity: .62; }
-.pc-week-card.week-vacia:hover { opacity: 1; }
+    /* Estados semánticos de las tarjetas de semana (En curso / Pasada / Vacía) */
+    .pc-week-card.week-en-curso { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 7%, var(--bg-card)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 16%, transparent); }
+    .pc-week-card.week-pasada   { border-left: 4px solid var(--success); background: color-mix(in srgb, var(--success) 5%, var(--bg-card)); opacity: .93; }
+    .pc-week-card.week-vacia    { border-style: dashed; background: transparent; opacity: .62; }
+    .pc-week-card.week-vacia:hover { opacity: 1; }
 
-/* Título de fila con barra de consumo integrada + porcentaje a la derecha */
-.pc-title-bar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 150px; border-radius: 8px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--cat-accent, var(--primary)) 22%, transparent); }
-.pc-title-bar::before { content: ""; position: absolute; inset: 0; width: clamp(0%, var(--fill), 100%); background: var(--fill-col, var(--border-light)); transition: width .35s ease; pointer-events: none; }
-.pc-title-inner { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; font-weight: 700; font-size: 12.5px; min-width: 0; }
+    /* Título de fila con barra de consumo integrada + porcentaje a la derecha */
+    .pc-title-bar { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-width: 150px; border-radius: 8px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--cat-accent, var(--primary)) 22%, transparent); }
+    .pc-title-bar::before { content: ""; position: absolute; inset: 0; width: clamp(0%, var(--fill), 100%); background: var(--fill-col, var(--border-light)); transition: width .35s ease; pointer-events: none; }
+    .pc-title-inner { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; font-weight: 700; font-size: 12.5px; min-width: 0; }
 
-/* Botón-tick (✓) redondeado, alineado a la izquierda del título */
-.pc-td-cat { display: flex; align-items: center; gap: 7px; }
-.pc-tick-btn { flex: none; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; border: 1.5px solid color-mix(in srgb, var(--cat-accent, var(--primary)) 45%, var(--border)); background: var(--bg-card); color: color-mix(in srgb, var(--cat-accent, var(--primary)) 75%, var(--text-muted)); transition: all .18s cubic-bezier(.4, 0, .2, 1); opacity: .85; vertical-align: middle; }
-.pc-tick-btn svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.pc-tick-btn:hover { opacity: 1; transform: scale(1.18); border-color: var(--success); background: color-mix(in srgb, var(--success) 14%, var(--bg-card)); color: var(--success); box-shadow: 0 2px 8px color-mix(in srgb, var(--success) 30%, transparent); }
-.pc-tick-btn.done { opacity: 1; background: var(--success); border-color: var(--success); color: #fff; }
-.pc-tick-btn.done:hover { transform: scale(1.06); }
-.pc-title-pct { position: relative; z-index: 1; padding-right: 9px; font-size: 11.5px; color: var(--text-secondary); flex: none; }
-.pc-cat-name { cursor: pointer; }
-.pc-cat-name:hover { text-decoration: underline; }
+    /* Botón-tick (✓) redondeado, alineado a la izquierda del título */
+    .pc-td-cat { display: flex; align-items: center; gap: 7px; }
+    .pc-tick-btn { flex: none; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; border: 1.5px solid color-mix(in srgb, var(--cat-accent, var(--primary)) 45%, var(--border)); background: var(--bg-card); color: color-mix(in srgb, var(--cat-accent, var(--primary)) 75%, var(--text-muted)); transition: all .18s cubic-bezier(.4, 0, .2, 1); opacity: .85; vertical-align: middle; }
+    .pc-tick-btn svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+    .pc-tick-btn:hover { opacity: 1; transform: scale(1.18); border-color: var(--success); background: color-mix(in srgb, var(--success) 14%, var(--bg-card)); color: var(--success); box-shadow: 0 2px 8px color-mix(in srgb, var(--success) 30%, transparent); }
+    .pc-tick-btn.done { opacity: 1; background: var(--success); border-color: var(--success); color: #fff; }
+    .pc-tick-btn.done:hover { transform: scale(1.06); }
+    .pc-title-pct { position: relative; z-index: 1; padding-right: 9px; font-size: 11.5px; color: var(--text-secondary); flex: none; }
+    .pc-cat-name { cursor: pointer; }
+    .pc-cat-name:hover { text-decoration: underline; }
 
-/* Botón de información (ⓘ) junto al título: tooltip al hover Y al clic */
-.pc-info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); font-size: 10.5px; font-weight: 800; cursor: help; flex: none; transition: all .15s ease; vertical-align: middle; }
-.pc-info:hover, .pc-info.pinned { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
-.pc-info-tip { position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%) scale(.96); background: #0f172a; color: #f8fafc; font-size: 11.5px; font-weight: 500; line-height: 1.35; padding: 6px 10px; border-radius: 8px; white-space: nowrap; box-shadow: 0 8px 20px rgba(2,6,23,.25); opacity: 0; pointer-events: none; transition: opacity .15s ease, transform .15s ease; z-index: 60; }
-.pc-info-tip::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #0f172a; }
-.pc-info:hover .pc-info-tip, .pc-info:focus .pc-info-tip, .pc-info.pinned .pc-info-tip { opacity: 1; transform: translateX(-50%) scale(1); }
+    /* Botón de información (ⓘ) junto al título: tooltip al hover Y al clic */
+    .pc-info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted); font-size: 10.5px; font-weight: 800; cursor: help; flex: none; transition: all .15s ease; vertical-align: middle; }
+    .pc-info:hover, .pc-info.pinned { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+    .pc-info-tip { position: absolute; bottom: calc(100% + 7px); left: 50%; transform: translateX(-50%) scale(.96); background: #0f172a; color: #f8fafc; font-size: 11.5px; font-weight: 500; line-height: 1.35; padding: 6px 10px; border-radius: 8px; white-space: nowrap; box-shadow: 0 8px 20px rgba(2,6,23,.25); opacity: 0; pointer-events: none; transition: opacity .15s ease, transform .15s ease; z-index: 60; }
+    .pc-info-tip::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #0f172a; }
+    .pc-info:hover .pc-info-tip, .pc-info:focus .pc-info-tip, .pc-info.pinned .pc-info-tip { opacity: 1; transform: translateX(-50%) scale(1); }
 
-/* Modal de semana mejorado */
-.pc-week-modal { padding: 0 !important; overflow: hidden; }
-.pc-week-modal #wkBody { padding: 16px 20px 20px; }
-.pc-wk-hero { background: linear-gradient(135deg, color-mix(in srgb, var(--wk-accent, #10b981) 16%, var(--bg-card)), color-mix(in srgb, var(--wk-accent, #10b981) 6%, var(--bg-card))); border-bottom: 1px solid var(--border); padding: 14px 20px 16px; }
-.pc-wk-hero-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
-.pc-wk-kicker { font-size: 11px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--wk-accent, #10b981); }
-.pc-wk-hero h3 { margin: 2px 0 4px; font-size: 19px; }
-.pc-wk-range { margin: 0; font-size: 12.5px; color: var(--text-secondary); }
-.pc-wk-x { width: 30px; height: 30px; border-radius: 9px; padding: 0 !important; font-size: 17px; line-height: 1; }
-.pc-week-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; margin-bottom: 10px; }
-.pc-week-state-pill { padding-bottom: 9px; }
-.pc-week-summary { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 12px; }
-.pc-mov-head { display: grid; grid-template-columns: 84px 1fr 92px 64px; gap: 8px; font-size: 10.5px; font-weight: 800; letter-spacing: .5px; color: var(--text-muted); padding: 0 4px 6px; border-bottom: 1px solid var(--border); }
-.pc-mov-line { display: grid; grid-template-columns: 84px 1fr 92px 64px; gap: 8px; align-items: center; padding: 8px 4px; border-bottom: 1px dashed var(--border-light); font-size: 12.5px; }
-.pc-mov-line:last-of-type { border-bottom: none; }
-.pc-mov-line:hover { background: var(--bg); }
-.pc-mov-date { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.pc-mov-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pc-mov-amt { text-align: right; font-variant-numeric: tabular-nums; }
-.pc-mov-acts { display: flex; gap: 4px; justify-content: flex-end; }
-.pc-sum-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; font-size: 12.5px; }
+    /* Modal de semana mejorado */
+    .pc-week-modal { padding: 0 !important; overflow: hidden; }
+    .pc-week-modal #wkBody { padding: 16px 20px 20px; }
+    .pc-wk-hero { background: linear-gradient(135deg, color-mix(in srgb, var(--wk-accent, #10b981) 16%, var(--bg-card)), color-mix(in srgb, var(--wk-accent, #10b981) 6%, var(--bg-card))); border-bottom: 1px solid var(--border); padding: 14px 20px 16px; }
+    .pc-wk-hero-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+    .pc-wk-kicker { font-size: 11px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--wk-accent, #10b981); }
+    .pc-wk-hero h3 { margin: 2px 0 4px; font-size: 19px; }
+    .pc-wk-range { margin: 0; font-size: 12.5px; color: var(--text-secondary); }
+    .pc-wk-x { width: 30px; height: 30px; border-radius: 9px; padding: 0 !important; font-size: 17px; line-height: 1; }
+    .pc-week-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; margin-bottom: 10px; }
+    .pc-week-state-pill { padding-bottom: 9px; }
+    .pc-week-summary { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: 12.5px; color: var(--text-secondary); margin-bottom: 12px; }
+    .pc-mov-head { display: grid; grid-template-columns: 84px 1fr 92px 64px; gap: 8px; font-size: 10.5px; font-weight: 800; letter-spacing: .5px; color: var(--text-muted); padding: 0 4px 6px; border-bottom: 1px solid var(--border); }
+    .pc-mov-line { display: grid; grid-template-columns: 84px 1fr 92px 64px; gap: 8px; align-items: center; padding: 8px 4px; border-bottom: 1px dashed var(--border-light); font-size: 12.5px; }
+    .pc-mov-line:last-of-type { border-bottom: none; }
+    .pc-mov-line:hover { background: var(--bg); }
+    .pc-mov-date { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .pc-mov-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pc-mov-amt { text-align: right; font-variant-numeric: tabular-nums; }
+    .pc-mov-acts { display: flex; gap: 4px; justify-content: flex-end; }
+    .pc-sum-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; font-size: 12.5px; }
 
-/* Estado de cuentas: pista visual de edición (manita ya definida arriba) */
-.pc-acc-hint { opacity: 0; font-size: 11px; color: var(--text-muted); transition: opacity .15s ease; }
-.pc-account-row:hover .pc-acc-hint { opacity: 1; }
-.pc-acc-real { font-size: 15px; font-weight: 800; }
+    /* Estado de cuentas: pista visual de edición (manita ya definida arriba) */
+    .pc-acc-hint { opacity: 0; font-size: 11px; color: var(--text-muted); transition: opacity .15s ease; }
+    .pc-account-row:hover .pc-acc-hint { opacity: 1; }
+    .pc-acc-real { font-size: 15px; font-weight: 800; }
 
-@media (max-width: 640px) {
-    .pc-week-grid { grid-template-columns: 1fr 1fr; }
-    .pc-week-state-pill { grid-column: 1 / -1; padding-bottom: 0; }
-    .pc-mov-head, .pc-mov-line { grid-template-columns: 72px 1fr 84px 52px; }
-    .pc-info-tip { white-space: normal; width: max-content; max-width: 180px; }
-}
-
-/* Ajustes de modal ancho y bottom-sheet móvil para el modal de semana */
-.pc-modal-wide { width: min(560px, 94vw); }
-@media (max-width: 640px) {
-    .pc-week-modal { border-radius: 18px 18px 0 0 !important; }
-    .pc-week-modal #wkBody { padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); }
-    .pc-wk-hero { padding: 12px 16px 14px; }
-}
-
-/* =============================================================
-   MÓVIL · SCROLL TÁCTIL HORIZONTAL en la tabla del Presupuesto
-   común (regla global, fuera de media queries, para máxima
-   prioridad y compatibilidad iOS/Android). El wrapper es el
-   único que enrolla; la tabla conserva su ancho mínimo.
-   ============================================================= */
-.pc-table-wrap {
-    display: block !important;
-    width: 100%;
-    max-width: 100vw;
-    min-width: 0;
-    box-sizing: border-box;
-    overflow-x: auto !important;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    touch-action: pan-x pan-y;
-    overscroll-behavior-x: contain;
-}
-.pc-table-wrap > table.pc-table {
-    width: max-content !important;
-    min-width: 640px;
-}
-/* Pista visual de que la tabla se puede deslizar (solo móvil) */
-@media (max-width: 768px) {
-    .pc-table-wrap::after {
-        content: "← desliza para ver todas las columnas →";
-        display: block;
-        padding: 6px 12px 8px;
-        font-size: 10.5px;
-        letter-spacing: .4px;
-        text-align: center;
-        color: var(--text-muted);
-        background: linear-gradient(to top, var(--bg-card), transparent);
+    @media (max-width: 640px) {
+        .pc-week-grid { grid-template-columns: 1fr 1fr; }
+        .pc-week-state-pill { grid-column: 1 / -1; padding-bottom: 0; }
+        .pc-mov-head, .pc-mov-line { grid-template-columns: 72px 1fr 84px 52px; }
+        .pc-info-tip { white-space: normal; width: max-content; max-width: 180px; }
     }
-}
+
+    /* Ajustes de modal ancho y bottom-sheet móvil para el modal de semana */
+    .pc-modal-wide { width: min(560px, 94vw); }
+    @media (max-width: 640px) {
+        .pc-week-modal { border-radius: 18px 18px 0 0 !important; }
+        .pc-week-modal #wkBody { padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); }
+        .pc-wk-hero { padding: 12px 16px 14px; }
+    }
+
+    /* =============================================================
+    MÓVIL · SCROLL TÁCTIL HORIZONTAL en la tabla del Presupuesto
+    común (regla global, fuera de media queries, para máxima
+    prioridad y compatibilidad iOS/Android). El wrapper es el
+    único que enrolla; la tabla conserva su ancho mínimo.
+    ============================================================= */
+    .pc-table-wrap {
+        display: block !important;
+        width: 100%;
+        max-width: 100vw;
+        min-width: 0;
+        box-sizing: border-box;
+        overflow-x: auto !important;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x pan-y;
+        overscroll-behavior-x: contain;
+    }
+    .pc-table-wrap > table.pc-table {
+        width: max-content !important;
+        min-width: 640px;
+    }
+    /* Pista visual de que la tabla se puede deslizar (solo móvil) */
+    @media (max-width: 768px) {
+        .pc-table-wrap::after {
+            content: "← desliza para ver todas las columnas →";
+            display: block;
+            padding: 6px 12px 8px;
+            font-size: 10.5px;
+            letter-spacing: .4px;
+            text-align: center;
+            color: var(--text-muted);
+            background: linear-gradient(to top, var(--bg-card), transparent);
+        }
+    }
 
 /* =============================================================
    INGRESOS PERSONALES · UI Definitiva (v13)
