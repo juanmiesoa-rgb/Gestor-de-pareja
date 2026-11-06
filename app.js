@@ -416,26 +416,69 @@ const App = (function () {
         init,
 
         updateSyncBadge: (status) => {
-            const badge = document.getElementById('syncBadge');
-            const label = document.getElementById('appStatus');
-            if (!badge) return;
-            if (status.syncing) {
-                badge.style.background = 'var(--warning-light)';
-                badge.style.color = 'var(--warning)';
-                badge.textContent = '↻';
-                if (label) label.textContent = 'Sincronizando…';
-            } else if (status.connected) {
-                badge.style.background = 'var(--success-light)';
-                badge.style.color = 'var(--success)';
-                badge.textContent = '●';
-                if (label) label.textContent = 'Sincronizado';
-            } else {
-                badge.style.background = 'var(--danger-light)';
-                badge.style.color = 'var(--danger)';
-                badge.textContent = '⚠';
-                if (label) label.textContent = 'Sin conexión';
+            const box = document.getElementById('syncStatusBox');
+            const label = document.getElementById('syncLabel');
+            const detail = document.getElementById('syncDetail');
+            if (!box || !label || !detail) return;
+
+            const phase = status.phase || (status.syncing ? 'writing' : (status.connected ? 'connected' : 'disconnected'));
+            const pendingCount = (status.pendingModules || []).length;
+
+            let labelText = 'Conectado';
+            let detailText = 'Google Sheets';
+            let stateClass = 'state-connected';
+
+            switch (phase) {
+                case 'connecting':
+                    labelText = 'Conectando…';
+                    detailText = 'Iniciando conexión';
+                    stateClass = 'state-connecting';
+                    break;
+                case 'reading':
+                    labelText = 'Leyendo…';
+                    detailText = 'Descargando datos';
+                    stateClass = 'state-reading';
+                    break;
+                case 'writing':
+                    labelText = 'Escribiendo…';
+                    detailText = 'Guardando cambios';
+                    stateClass = 'state-writing';
+                    break;
+                case 'connected':
+                    if (pendingCount > 0) {
+                        labelText = 'Sincronizando…';
+                        detailText = pendingCount + ' cambio' + (pendingCount === 1 ? '' : 's') + ' pendiente' + (pendingCount === 1 ? '' : 's');
+                        stateClass = 'state-writing';
+                    } else {
+                        labelText = 'Conectado';
+                        detailText = status.lastSync ? 'Sincronizado ' + formatRelativeTime(status.lastSync) : 'Google Sheets';
+                        stateClass = 'state-connected';
+                    }
+                    break;
+                case 'error':
+                    labelText = 'Sesión expirada';
+                    detailText = 'Vuelve a iniciar sesión';
+                    stateClass = 'state-error';
+                    break;
+                case 'disconnected':
+                default: {
+                    labelText = 'Desconectado';
+                    const err = status.lastError ? String(status.lastError) : '';
+                    if (/internet/i.test(err)) detailText = 'Sin conexión a internet';
+                    else if (/sesión|unauthorized/i.test(err)) detailText = 'Vuelve a iniciar sesión';
+                    else if (err) detailText = err.substring(0, 40);
+                    else detailText = 'Trabajando en local';
+                    stateClass = 'state-disconnected';
+                }
             }
-        },
+
+            box.classList.remove('state-connecting', 'state-reading', 'state-writing',
+                                'state-connected', 'state-disconnected', 'state-error');
+            box.classList.add(stateClass);
+            label.textContent = labelText;
+            detail.textContent = detailText;
+            box.title = 'Google Sheets · ' + labelText + (detailText ? ' · ' + detailText : '') + ' (clic para reintentar)';
+        }
 
         updateAuthUI: (payload) => {
             const chip = document.getElementById('userChip');
