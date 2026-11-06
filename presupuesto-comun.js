@@ -1,118 +1,82 @@
 /* =============================================================================
-   PRESUPUESTO-COMUN.JS · v9 — Interfaz mejorada, navegación y edición total
+   PRESUPUESTO-COMUN.JS · v15 — Fondo Común, UI limpia y Lógica definitiva
    ============================================================================= */
 const BudgetApp = (function () {
     'use strict';
 
-    const CAT_META = {
-        'pc-rent':      { accent: '#6366f1', label: 'RENT' },
-        'pc-utilities': { accent: '#f59e0b', label: 'UTILITIES' },
-        'pc-groceries': { accent: '#10b981', label: 'GROCERIES & LEISURE' },
-        'pc-loans':     { accent: '#ef4444', label: 'LOANS' },
-        'pc-savings':   { accent: '#8b5cf6', label: 'SAVINGS' },
-        'pc-trips':     { accent: '#0ea5e9', label: 'TRIPS' },
-        'pc-others':    { accent: '#64748b', label: 'OTHERS' }
-    };
-
-    function rowLabel(row) {
-        if (!row) return '';
-        return String(row.label || row.name || '').toUpperCase();
-    }
-
+    const FIRST_MONTH = '2026-11'; 
     function data() { return App.data; }
     
-    // 1. Fecha dinámica
     const _now = new Date();
-    let currentPeriod = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}`;
+    let currentPeriod = '2026-11'; 
+    if (`${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}` > '2026-11') {
+        currentPeriod = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}`;
+    }
     
     let containerEl = null;
-    let popEl = null;
-    let _pcBound = false;
 
     /* =========================================================
-       ESTILOS (Inyectados para no ensuciar styles.css global)
+       HELPERS DE FECHAS
        ========================================================= */
-    function moduleCSS() { return `
-        /* Lista de semanas */
-        .pc-week-list { display: flex; flex-direction: column; width: 100%; }
-        .pc-week-row { display: grid; grid-template-columns: 1.5fr 1.5fr 1fr 1fr; gap: 10px; padding: 10px 8px; border-bottom: 1px dashed var(--border-light); align-items: center; cursor: pointer; transition: background .15s; border-radius: 8px; }
-        .pc-week-row:hover { background: var(--bg); }
-        .pc-week-row:last-child { border-bottom: none; }
-        .pc-week-header { font-size: 10.5px; font-weight: 800; color: var(--text-muted); letter-spacing: .5px; border-bottom: 1px solid var(--border); cursor: default; padding-bottom: 8px; }
-        .pc-week-header:hover { background: transparent; }
-        .pc-week-name-col { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; }
-        .pc-week-date-col { font-size: 12px; color: var(--text-secondary); text-align: right; }
-        .pc-week-budget-col { font-weight: 700; text-align: right; color: var(--text); }
-        .pc-week-spent-col { font-weight: 800; text-align: right; color: var(--success); }
-        
-        /* 4. Colores fuertes para semanas pasadas */
-        .pc-week-row.week-pasada { background: color-mix(in srgb, var(--success) 8%, var(--bg-card)); opacity: 0.85; border-left: 3px solid var(--success); }
-        .pc-week-row.week-en-curso { background: color-mix(in srgb, var(--primary) 6%, var(--bg-card)); border-left: 3px solid var(--primary); }
-        
-        /* 5. Sangría para subcategorías */
-        .pc-row-sub td:first-child { padding-left: 55px !important; }
-        
-        /* 10. Tooltips legibles */
-        .pc-info-tip { z-index: 9999; white-space: normal; max-width: 250px; text-align: center; line-height: 1.4; font-size: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
-        
-        /* 3. Estilos Cuentas */
-        .pc-account-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 10px; border-bottom: 1px dashed var(--border-light); cursor: pointer; border-radius: 8px; }
-        .pc-account-row:hover { background: var(--bg); }
-        .pc-account-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: var(--bg-card); border: 1px solid var(--border); margin-right: 10px; }
-        .pc-account-icon img { width: 18px; height: 18px; object-fit: contain; }
-        
-        /* 8. Préstamos idénticos a subcategorías */
-        .pc-td-loan { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; border-radius: 8px; border: 1px solid color-mix(in srgb, #ef4444 22%, transparent); }
-    `; }
+    function shortDate(iso) { 
+        if (!iso) return '—'; 
+        const clean = String(iso).slice(0, 10);
+        const d = new Date(clean + 'T00:00:00'); 
+        return isNaN(d) ? '—' : d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }); 
+    }
 
-    /* =========================================================
-       ACCESO UNIFICADO Y HELPERS
-       ========================================================= */
-    function getAccounts() {
-        return (window.App && typeof App.getAccounts === 'function') ? App.getAccounts() : (data().accounts || []);
-    }
-    function getAccountNames() {
-        const accs = getAccounts().map(a => a.name);
-        return accs.length ? accs : ['Trade Republic', 'MyInvestor', 'BBVA'];
-    }
-    function pcLoans() {
-        return (window.App && typeof App.getLoans === 'function') ? App.getLoans() : [];
-    }
+    function getAccounts() { return (window.App && typeof App.getAccounts === 'function') ? App.getAccounts() : (data().accounts || []); }
+    function getAccountNames() { return getAccounts().map(a => a.name); }
+    function pcLoans() { return (window.App && typeof App.getLoans === 'function') ? App.getLoans() : []; }
+    
     function mapAccountName(name) {
         if (!name) return null;
         const accounts = getAccounts();
         const lower = String(name).toLowerCase().trim();
         let acc = accounts.find(a => String(a.name).toLowerCase() === lower);
-        if (acc) return acc.id;
-        acc = accounts.find(a => lower.includes(String(a.name).toLowerCase().split(' ')[0]));
         return acc ? acc.id : null;
     }
 
     /* =========================================================
-       SEMANAS (Punto 2)
+       HISTORIAL DE PRESUPUESTOS (Herencia)
        ========================================================= */
-    function weeksFor(period) { 
-        return allWeeks().filter(w => {
-            const wp = w.period ? String(w.period) : String(w.start).substring(0, 7);
-            return wp === period;
-        }); 
-    }
-    
-    function generateMonthWeeks(period, count) {
-        const [y, m] = period.split('-').map(Number);
-        const firstDayOfMonth = new Date(y, m - 1, 1);
-        let start = new Date(firstDayOfMonth);
+    function getHistoricalBudget(item, period) {
+        if (item.createdAt && period < item.createdAt) return null;
+
+        if (item.budgetHistory && item.budgetHistory[period] !== undefined) {
+            return item.budgetHistory[period] === null ? null : Number(item.budgetHistory[period]);
+        }
         
-        // Buscar si hay semanas anteriores para enlazar
-        const prevWeeks = allWeeks().filter(w => String(w.start).substring(0, 7) < period);
-        if (prevWeeks.length > 0) {
-            const lastWeek = prevWeeks[prevWeeks.length - 1];
-            // La semana empieza el día siguiente al fin de la última semana
-            start = new Date(lastWeek.end + 'T00:00:00');
-            start.setDate(start.getDate() + 1);
+        const history = item.budgetHistory || {};
+        const pastMonths = Object.keys(history).filter(m => m < period).sort().reverse();
+        if (pastMonths.length > 0) {
+            const val = history[pastMonths[0]];
+            return val === null ? null : Number(val);
+        }
+        return (item.budget === null || item.budget === undefined) ? null : Number(item.budget);
+    }
+
+    /* =========================================================
+       SEMANAS
+       ========================================================= */
+    function allWeeks()  { return (data().pcWeeks || []).slice().sort((a, b) => String(a.start).localeCompare(String(b.start))); }
+    function weeksFor(period) { return allWeeks().filter(w => String(w.period) === period); }
+    function weekCount(period) { return weeksFor(period).length; }
+
+    function generateMonthWeeks(period, count, baseBudget) {
+        const [y, m] = period.split('-').map(Number);
+        let start = new Date(y, m - 1, 1);
+        
+        // Regla: Noviembre 2026 empieza el día 2
+        if (period === FIRST_MONTH) {
+            start = new Date(y, m - 1, 2);
         } else {
-            // Si es el primer mes (ej. Noviembre), empezamos el día 1 (o el 2 según tu ejemplo)
-            // start = new Date(y, m - 1, 2); // Descomenta si quieres empezar el día 2
+            const prevWeeks = allWeeks().filter(w => String(w.period) < period);
+            if (prevWeeks.length > 0) {
+                const lastWeek = prevWeeks[prevWeeks.length - 1];
+                start = new Date(String(lastWeek.end).slice(0, 10) + 'T00:00:00');
+                start.setDate(start.getDate() + 1);
+            }
         }
 
         const list = [];
@@ -121,16 +85,9 @@ const BudgetApp = (function () {
         for (let i = 0; i < count; i++) {
             const s = new Date(start); s.setDate(start.getDate() + (i * 7));
             const e = new Date(s);     e.setDate(s.getDate() + 6);
-            list.push({ id: `wk-${period}-${i + 1}`, label: `Semana ${i + 1}`, start: iso(s), end: iso(e), budget: 0, period: period });
+            list.push({ id: `wk-${period}-${i + 1}`, label: `Semana ${i + 1}`, start: iso(s), end: iso(e), budget: baseBudget || 0, period: period });
         }
         return list;
-    }
-
-    function allWeeks()  { return (data().pcWeeks || []).slice().sort((a, b) => String(a.start).localeCompare(String(b.start))); }
-    function weekCount(period) { return weeksFor(period).length; }
-    function defaultWeekBudget() {
-        const c = pcCats().find(x => x.id === 'pc-groceries');
-        return (c && c.budget !== null && c.budget !== undefined) ? Number(c.budget) : 0; 
     }
 
     /* =========================================================
@@ -140,19 +97,15 @@ const BudgetApp = (function () {
     function pcSubs(pid) { return (data().pcSubcategories || []).filter(s => s.parentId === pid); }
     function pcWeeks()   { return weeksFor(currentPeriod); }
 
-    function periodExpenses(period, includePlanned) {
+    function periodExpenses(period) {
         return (data().expenses || []).filter(e => {
             const p = e.aggPeriod || String(e.date || '').substring(0, 7);
-            if (p !== period) return false;
-            if (e.status === 'archivado') return false;
-            if (!includePlanned && e.status === 'previsto') return false;
-            return true;
+            return p === period && e.status !== 'archivado' && e.status !== 'previsto';
         });
     }
     function pcRealExpenses() { return periodExpenses(currentPeriod).filter(e => e.status !== 'aportacion'); }
     function sum(list) { return list.reduce((s, e) => s + Number(e.amount || 0), 0); }
     function subSpent(subId) { return sum(pcRealExpenses().filter(e => e.categoryId === subId)); }
-    
     function catSpent(catId) {
         const ids = [catId].concat(pcSubs(catId).map(s => s.id));
         return sum(pcRealExpenses().filter(e => ids.includes(e.categoryId)));
@@ -164,7 +117,7 @@ const BudgetApp = (function () {
     }
     function subBudget(subId) {
         const s = (data().pcSubcategories || []).find(x => x.id === subId);
-        return (s && s.budget !== null && s.budget !== undefined) ? Number(s.budget) : null;
+        return s ? getHistoricalBudget(s, currentPeriod) : null;
     }
 
     function catBudget(catId) {
@@ -172,22 +125,25 @@ const BudgetApp = (function () {
         if (!c) return null;
 
         if (catId === 'pc-loans') {
+            // Solo cuotas de préstamos activos
             const active = pcLoans().filter(l => (l.paidCount || 0) < (l.installments || 0));
             const total = active.reduce((s, l) => s + Number(l.installmentAmount || 0), 0);
             return total > 0 ? total : null;
         }
         if (catId === 'pc-trips') {
-            const tripComms = App.getTripCommitments ? App.getTripCommitments() : [];
-            const total = tripComms.reduce((s, x) => s + Number(x.amount || 0), 0);
+            const total = (App.getTripCommitments ? App.getTripCommitments() : []).reduce((s, x) => s + Number(x.amount || 0), 0);
             return total > 0 ? total : null;
         }
         const subs = pcSubs(catId);
         if (subs.length) {
             let total = null;
-            subs.forEach(s => { if (s.budget !== null && s.budget !== undefined) total = (total === null ? 0 : total) + Number(s.budget); });
+            subs.forEach(s => { 
+                const sb = subBudget(s.id);
+                if (sb !== null && sb !== undefined) total = (total === null ? 0 : total) + Number(sb); 
+            });
             return total;
         }
-        let total = (c.budget === null || c.budget === undefined) ? null : Number(c.budget);
+        let total = getHistoricalBudget(c, currentPeriod);
         if (catId === 'pc-groceries') {
             const w = pcWeeks().reduce((s, x) => s + Number(x.budget || 0), 0);
             if (w) total = (total === null ? 0 : total) + w;
@@ -206,87 +162,71 @@ const BudgetApp = (function () {
     function totalRealSpent() { return sum(pcRealExpenses()); }
     function combinedRealBalance() { return getAccounts().reduce((s, a) => s + Number(a.balance || 0), 0); }
 
-    function recon() {
-        if (!data().pcReconciliation) data().pcReconciliation = { initialBalance: 0, weeksClosed: {}, loansPaid: {}, realBalances: {} };
-        return data().pcReconciliation;
-    }
-
     /* =========================================================
-       UTILIDADES DE FORMATO
+       UTILIDADES Y LÓGICA DEL FONDO COMÚN (GROCERIES)
        ========================================================= */
     function fmt(n) { return App.formatCurrency(Number(n) || 0); }
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-    function shortDate(iso) { const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? '' : d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }); }
     function badge(text, cls) { return `<span class="pc-badge ${cls || 'pc-badge-gray'}">${text}</span>`; }
-    function dueBadge(dueDate) {
-        if (!dueDate) return '';
-        const today = new Date(); today.setHours(0, 0, 0, 0);
-        const d = new Date(dueDate + 'T00:00:00');
-        if (isNaN(d)) return '';
-        const dd = App.formatDate(dueDate).slice(0, 5);
-        const days = Math.round((d - today) / 864e5);
-        const cls = days < 0 ? 'over' : days <= 7 ? 'soon' : '';
-        return `<span class="pc-due ${cls}" title="Vencimiento">📅 Vence: ${esc(dd)}</span>`;
-    }
-    function muted(txt) { return `<span style="color:var(--text-muted);font-size:12px">${txt}</span>`; }
-    function availCls(v) { return v === null ? '' : v >= 0 ? 'pc-pos' : 'pc-neg'; }
-    
     function availCell(budget, spent) {
-        if (budget === null || budget === undefined) return `<td class="pc-td-num pc-avail-cell">—</td>`;
+        if (budget === null || budget === undefined) return `<td class="pc-td-num">—</td>`;
         const avail = budget - spent;
-        const cls = avail < 0 ? 'pc-neg' : (avail === 0 ? '' : 'pc-pos');
-        return `<td class="pc-td-num pc-avail-cell ${cls}">${fmt(avail)}</td>`;
+        return `<td class="pc-td-num ${avail < 0 ? 'pc-neg' : (avail === 0 ? '' : 'pc-pos')}">${fmt(avail)}</td>`;
     }
 
-    /* =========================================================
-       LÓGICA DE MOVIMIENTOS (AJUSTES)
-       ========================================================= */
-    function addMovement(targetId, amount, opts) {
-        opts = opts || {};
-        const id = 'pc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-        const exp = {
-            id, concept: opts.concept || 'Movimiento', amount: Number(amount) || 0,
-            date: opts.date || new Date().toISOString().slice(0, 10),
-            categoryId: targetId, person: opts.person || 'conjunto',
-            status: opts.status || 'registrado', type: 'individual', notes: opts.notes || '',
-            aggPeriod: currentPeriod, pcAccount: opts.account || ''
-        };
-        if (opts.link) exp.link = opts.link;
+    function getGroceriesAccountId() {
+        const groceries = pcCats().find(c => c.id === 'pc-groceries');
+        return groceries ? mapAccountName(groceries.account) : null;
+    }
 
-        data().expenses.push(exp);
-        App.saveData();
+    function syncGroceriesWithAccount(accId, newBalance) {
+        const gAccId = getGroceriesAccountId();
+        if (accId !== gAccId) return; 
 
-        if (exp.status === 'registrado' && window.App && typeof App.registerExpenseMovement === 'function') {
-            const row = findRow(targetId);
-            const accName = opts.account || (row && row.account) || '';
-            const accId = mapAccountName(accName);
-            const movLink = opts.link || { kind: 'expense', id: exp.id };
-            try {
-                App.registerExpenseMovement({
-                    amount: Math.abs(exp.amount), concept: exp.concept, date: exp.date, accountId: accId, link: movLink
-                });
-            } catch (err) { }
+        const acc = getAccounts().find(a => a.id === accId);
+        if (!acc) return;
+
+        const oldBalance = Number(acc.balance) || 0;
+        const diff = oldBalance - newBalance; // Si es positivo, se ha gastado dinero
+
+        if (diff > 0) {
+            const today = new Date().toISOString().slice(0, 10);
+            const weeks = pcWeeks();
+            let targetWeek = weeks.find(w => today >= String(w.start).slice(0,10) && today <= String(w.end).slice(0,10));
+            if (!targetWeek && weeks.length) targetWeek = weeks[0];
+
+            if (targetWeek) {
+                addMovement('pc-groceries', diff, { 
+                    concept: 'Ajuste por saldo de cuenta', 
+                    pcWeekId: targetWeek.id,
+                    date: today
+                }, true); // true = silencioso (no renderizar aún)
+            }
         }
-        App.addHistory('presupuesto-comun', `${opts.action || 'Movimiento'}: ${exp.concept} (${fmt(exp.amount)})`);
-        render();
-        return id;
+    }
+
+    function syncAccountWithGroceries(amount) {
+        const gAccId = getGroceriesAccountId();
+        if (!gAccId) return;
+        const acc = getAccounts().find(a => a.id === gAccId);
+        if (acc) {
+            acc.balance = Number(acc.balance) - Number(amount);
+            App.saveData();
+        }
     }
 
     /* =========================================================
-       RENDER: CABECERA Y KPIs (Puntos 1 y 6)
+       RENDER: CABECERA, KPIs, CUENTAS, SEMANAS
        ========================================================= */
-    const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-    
     function headerHtml() {
         const [cy, cm] = currentPeriod.split('-').map(Number);
         const dateObj = new Date(cy, cm - 1, 1);
-        const mLabel = dateObj.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-        const capLabel = mLabel.charAt(0).toUpperCase() + mLabel.slice(1);
+        const capLabel = dateObj.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase());
 
         return `<div class="pc-topbar-v5" style="margin-bottom: 20px;">
             <div class="pc-period-nav" style="display:flex; align-items:center; gap:16px; background:var(--bg-card); padding:6px 12px; border-radius:12px; border:1px solid var(--border); box-shadow:var(--shadow-sm)">
-                <button class="btn btn-ghost btn-sm" id="pcPrevMonth" style="padding:4px 8px; font-size:16px;">‹</button>
-                <span style="font-weight:800; font-size:15px; min-width:130px; text-align:center;">${capLabel}</span>
+                <button class="btn btn-ghost btn-sm" id="pcPrevMonth" style="padding:4px 8px; font-size:16px;" ${currentPeriod === FIRST_MONTH ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>‹</button>
+                <span style="font-weight:800; font-size:15px; width:150px; text-align:center;">${capLabel}</span>
                 <button class="btn btn-ghost btn-sm" id="pcNextMonth" style="padding:4px 8px; font-size:16px;">›</button>
             </div>
         </div>`;
@@ -297,10 +237,8 @@ const BudgetApp = (function () {
         const gastos = totalRealSpent();
         const disponible = presup - gastos;
         const saldos = combinedRealBalance();
-        const pctGlob = presup ? Math.min((gastos / presup) * 100, 100) : 0;
         const desv = gastos - presup;
 
-        // Punto 6: Quitamos "Aporte Común" y "Gasto Ejecutado"
         return `<div class="pc-kpis-v4" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 20px;">
             <div class="pc-kpi-card" style="--kpi-accent:var(--primary)">
                 <span class="pc-kpi-icon">🎯</span>
@@ -308,14 +246,12 @@ const BudgetApp = (function () {
                 <div class="pc-kpi-big">${fmt(presup)}</div>
                 <div class="pc-kpi-note">Asignaciones de ${esc(App.formatPeriod(currentPeriod))}</div>
             </div>
-
             <div class="pc-kpi-card" style="--kpi-accent:${disponible >= 0 ? 'var(--success)' : 'var(--danger)'}">
                 <span class="pc-kpi-icon">💶</span>
                 <div class="pc-kpi-label">Dinero Disponible</div>
-                <div class="pc-kpi-big ${availCls(disponible)}">${fmt(disponible)}</div>
+                <div class="pc-kpi-big ${disponible >= 0 ? 'pc-pos' : 'pc-neg'}">${fmt(disponible)}</div>
                 <div class="pc-kpi-note">Desviación: <b class="pc-num ${desv <= 0 ? 'pc-pos' : 'pc-neg'}">${desv > 0 ? '+' : ''}${fmt(desv)}</b></div>
             </div>
-
             <div class="pc-kpi-card" style="--kpi-accent:#8b5cf6">
                 <span class="pc-kpi-icon">🏦</span>
                 <div class="pc-kpi-label">Saldo Real Cuentas</div>
@@ -325,28 +261,6 @@ const BudgetApp = (function () {
         </div>`;
     }
 
-    /* =========================================================
-       RENDER: SEMANAS (Puntos 4 y 5)
-       ========================================================= */
-    const WEEK_STATE_META = {
-        'en-curso': { label: 'En curso', cls: 'week-en-curso', badge: 'pc-badge-blue' },
-        'pasada':   { label: 'Pasada',   cls: 'week-pasada',    badge: 'pc-badge-green' },
-        'vacia':    { label: 'Vacía',    cls: 'week-vacia',   badge: 'pc-badge-gray' }
-    };
-
-    function weekAutoState(w) {
-        const today = new Date().toISOString().slice(0, 10);
-        if (!(Number(w.budget) > 0)) return 'vacia';
-        if (today >= String(w.start) && today <= String(w.end)) return 'en-curso';
-        if (today > String(w.end)) return 'pasada';
-        return 'vacia';
-    }
-    function weekState(w) {
-        const auto = weekAutoState(w);
-        const man = (recon().weekStates || {})[w.id];
-        return (man && man !== 'vacia' && auto !== 'vacia') ? man : auto;
-    }
-
     function weeksPanelHtml() {
         const weeks = pcWeeks();
         const total = weeks.reduce((s, w) => s + Number(w.budget || 0), 0);
@@ -354,77 +268,80 @@ const BudgetApp = (function () {
         
         const rows = weeks.map(w => {
             const spent = sum(wkExp.filter(e => e.pcWeekId === w.id));
-            const st = weekState(w);
-            const meta = WEEK_STATE_META[st] || WEEK_STATE_META['vacia'];
+            const today = new Date().toISOString().slice(0, 10);
+            const startClean = String(w.start).slice(0, 10);
+            const endClean = String(w.end).slice(0, 10);
             
-            return `<div class="pc-week-row ${meta.cls}" data-week="${w.id}" title="Clic para editar">
-                <div class="pc-week-name-col">
-                    <span>${esc(w.label)}</span>
-                    <span class="pc-badge ${meta.badge}" style="font-size:9.5px;padding:1px 6px">${meta.label}</span>
-                </div>
+            let cls = '';
+            if (today >= startClean && today <= endClean) cls = 'week-en-curso';
+            else if (today > endClean) cls = 'week-pasada';
+
+            // Colores dinámicos para el gastado
+            const remaining = w.budget - spent;
+            let spentColor = 'pc-pos'; // verde
+            if (remaining < 0) spentColor = 'pc-neg'; // rojo
+            else if (remaining < w.budget * 0.2) spentColor = 'pc-warn'; // naranja
+            
+            return `<div class="pc-week-row ${cls}" data-week="${w.id}">
+                <div class="pc-week-name-col"><span>${esc(w.label)}</span></div>
                 <div class="pc-week-date-col">${shortDate(w.start)} → ${shortDate(w.end)}</div>
-                <div class="pc-week-budget-col pc-num">${fmt(w.budget)}</div>
-                <div class="pc-week-spent-col pc-num ${spent > w.budget ? 'pc-neg' : ''}">${fmt(spent)}</div>
+                <div style="display:flex; align-items:center; gap:8px; justify-content:flex-end;">
+                    <div class="pc-week-budget-col pc-num" onclick="BudgetApp.editWeekBudget('${w.id}', ${w.budget})" title="Editar presupuesto">${fmt(w.budget)}</div>
+                    <button class="pc-tick-btn" onclick="BudgetApp.equalizeWeek('${w.id}')" title="Igualar gasto"><svg viewBox="0 0 16 16"><path d="M3.8 8.6 6.4 11.2 12.2 5.4"/></svg></button>
+                </div>
+                <div class="pc-week-spent-col pc-num ${spentColor}" onclick="BudgetApp.openWeekSpentModal('${w.id}')" title="Editar/Gestionar gasto">${fmt(spent)}</div>
             </div>`;
         }).join('');
 
-        return `<div class="pc-panel pc-panel--accent" style="--panel-accent:#10b981; display: flex; flex-direction: column; height: 100%;">
+        return `<div class="pc-panel pc-panel--accent" style="--panel-accent:#10b981; display: flex; flex-direction: column;">
             <div class="pc-panel-title" style="margin-bottom: 12px;">
                 <span class="pc-dot"></span>
-                <span class="pc-gro-title" id="pcGroTitle" title="Clic para configurar las semanas">🛒 Groceries &amp; Leisure</span>
-                <span style="margin-left:auto">${badge('Total ' + fmt(total), 'pc-badge-blue')}</span>
+                <span>🛒 Groceries &amp; Leisure</span>
+                <button class="btn btn-ghost btn-sm" onclick="BudgetApp.openWeekCountModal()" style="margin-left:auto; padding:2px 6px; font-size:14px;" title="Configurar semanas">⚙️</button>
+                <span style="margin-left:8px;">${badge('Total ' + fmt(total), 'pc-badge-blue')}</span>
             </div>
             <div class="pc-week-list">
                 <div class="pc-week-row pc-week-header">
                     <div class="pc-week-name-col">SEMANA</div>
                     <div class="pc-week-date-col">FECHAS</div>
                     <div class="pc-week-budget-col">PRESUPUESTO</div>
-                    <div class="pc-week-spent-col">GASTADO</div>
+                    <div class="pc-week-spent-col" style="color:var(--text-muted); text-decoration:none;">GASTADO</div>
                 </div>
-                ${rows || '<div class="pc-empty">Clic en el título para generar semanas</div>'}
+                ${rows || '<div class="pc-empty">No hay semanas configuradas.</div>'}
             </div>
         </div>`;
     }
 
-    /* =========================================================
-       RENDER: ESTADO DE CUENTAS (Punto 3)
-       ========================================================= */
     function accountsPanelHtml() {
         const accounts = getAccounts();
-        if (!accounts.length) return '';
-
-        const html = accounts.map(a => {
+        let html = accounts.map(a => {
             const realVal = Number(a.balance) || 0;
-            // El saldo teórico se puede calcular a partir de los ingresos/gastos fijos, por ahora mostramos el real
-            const theoVal = realVal; 
-            
-            // Si el icono es una URL, lo pintamos como imagen, si no, como emoji
             const isImg = String(a.icon).startsWith('http') || String(a.icon).startsWith('data:');
             const iconHtml = isImg ? `<img src="${esc(a.icon)}" alt="">` : (a.icon || '🏦');
 
             return `<div class="pc-account-row">
-                <div style="display:flex; align-items:center;" onclick="BudgetApp.openEditAccountModal('${a.id}')" title="Editar cuenta">
+                <div style="display:flex; align-items:center; cursor:pointer;" onclick="BudgetApp.openEditAccountModal('${a.id}')" title="Editar cuenta">
                     <div class="pc-account-icon">${iconHtml}</div>
-                    <div>
-                        <b>${esc(a.name)}</b>
-                        <div class="pc-week-dates">Tipo: <b>${esc(a.type || 'conjunta')}</b></div>
-                    </div>
+                    <div><b>${esc(a.name)}</b><div class="pc-week-dates">Tipo: <b>${esc(a.type || 'conjunta')}</b></div></div>
                 </div>
-                <div style="text-align:right; cursor:pointer;" onclick="BudgetApp.openUpdateBalanceModal('${a.id}')" title="Actualizar saldo real">
-                    <div class="pc-num" style="font-size:15px;font-weight:800;color:var(--text)">${fmt(theoVal)}</div>
-                    <div style="font-size:11px;color:var(--text-muted);">Actualizar saldo</div>
+                <div style="text-align:right; cursor:pointer;" onclick="BudgetApp.openUpdateBalanceModal('${a.id}')" title="Actualizar saldo">
+                    <div class="pc-num" style="font-size:15px;font-weight:800;color:var(--text)">${fmt(realVal)}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">Actualizar</div>
                 </div>
             </div>`;
         }).join('');
 
-        return `<div class="pc-panel pc-panel--accent" style="--panel-accent:#2563eb; height: 100%;">
-            <div class="pc-panel-title"><span class="pc-dot"></span> 🏦 Estado de Cuentas</div>
-            ${html}
+        return `<div class="pc-panel pc-panel--accent" style="--panel-accent:#2563eb;">
+            <div class="pc-panel-title" style="justify-content:space-between;">
+                <div style="display:flex; align-items:center; gap:8px;"><span class="pc-dot"></span> 🏦 Estado de Cuentas</div>
+                <button class="btn btn-ghost btn-sm" onclick="BudgetApp.openNewAccountModal()" style="padding:2px 8px; font-size:11px; border:1px dashed var(--border);">＋ Añadir</button>
+            </div>
+            ${html || '<div class="pc-empty">Sin cuentas</div>'}
         </div>`;
     }
 
     /* =========================================================
-       RENDER: TABLA DE CATEGORÍAS (Puntos 5, 7, 8 y 9)
+       RENDER: TABLA (Categorías a la derecha)
        ========================================================= */
     function titleWithBar(icon, name, spent, budget, accent, opts) {
         const o = opts || {};
@@ -434,7 +351,6 @@ const BudgetApp = (function () {
         const pctLabel = bpRaw === null ? '' : `${Math.round(bpRaw)}%`;
         const nameHtml = `<span class="pc-cat-name" ${o.editAttr ? `data-${o.editAttr}="${o.editId}"` : ''}>${esc(name)}</span>`;
         
-        // Punto 9: Eliminamos el símbolo Σ de aquí
         return `<span class="pc-title-bar" style="--fill:${bp}%;--fill-col:${fillCol}; border:none;">` +
             `<span class="pc-title-inner" style="padding:4px 8px; font-size:13px;">${icon} ${nameHtml}${o.suffixHtml || ''}</span>` +
             `<b class="pc-title-pct pc-num">${pctLabel}</b></span>`;
@@ -452,8 +368,8 @@ const BudgetApp = (function () {
         
         let html = `<div class="pc-table-wrap" style="position:relative;">
             <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--border); background:var(--bg);">
-                <h3 style="margin:0; font-size:14px; font-weight:800; color:var(--text);">Categorías de Gasto</h3>
-                <button class="btn btn-primary btn-sm" id="pcBtnCat" style="padding:4px 12px; font-size:12px;">＋ Nueva categoría</button>
+                <h3 style="margin:0; font-size:14px; font-weight:800; color:var(--text);">Categorías</h3>
+                <button class="btn btn-primary btn-sm" id="pcBtnCat" style="padding:4px 12px; font-size:12px;">＋ Nueva</button>
             </div>
             <table class="pc-table pc-table-compact"><thead><tr>
                 <th>CATEGORÍA / SUBCATEGORÍA</th>
@@ -461,45 +377,43 @@ const BudgetApp = (function () {
                 <th class="pc-th-num">DISPONIBLE</th></tr></thead><tbody>`;
         
         cats.forEach(c => {
-            const accentColor = c.color || c.accent || (CAT_META[c.id] ? CAT_META[c.id].accent : '#2563eb');
+            if (c.createdAt && currentPeriod < c.createdAt) return;
+            
+            const accentColor = c.color || c.accent || '#2563eb';
             const subs = pcSubs(c.id);
             const cb = catBudget(c.id), cs = rowSpent(c.id);
-            const derived = subs.length > 0 || c.id === 'pc-loans' || c.id === 'pc-trips';
-            
-            const catSuffix = `${dueBadge(c.dueDate)}`;
             
             html += `<tr class="pc-row-cat" data-moves="${c.id}" style="--cat-accent:${accentColor}">
-                <td class="pc-td-cat">${tickBtn(c.id, cb, cs)}${titleWithBar(c.icon || '📁', rowLabel(c), cs, cb, accentColor, { editAttr: 'editcat', editId: c.id, suffixHtml: catSuffix })}</td>
-                <td class="pc-td-num">${cb === null ? muted('No definido') : fmt(cb)}</td>
-                <td class="pc-td-num"><span class="pc-cell-edit" data-real="${c.id}">✏️ ${fmt(cs)}</span></td>
+                <td class="pc-td-cat">${tickBtn(c.id, cb, cs)}${titleWithBar(c.icon || '📁', (c.label||c.name).toUpperCase(), cs, cb, accentColor, { editAttr: 'editcat', editId: c.id })}</td>
+                <td class="pc-td-num">${cb === null ? 'No definido' : fmt(cb)}</td>
+                <td class="pc-td-num"><span class="pc-cell-edit" onclick="BudgetApp.openCatSpentModal('${c.id}')">${fmt(cs)}</span></td>
                 <td class="pc-td-num">${availCell(cb, cs).replace(/^<td[^>]*>|<\/td>$/g, '')}</td></tr>`;
             
             subs.forEach(s => {
+                if (s.createdAt && currentPeriod < s.createdAt) return;
+
                 const sb = subBudget(s.id);
                 const ss = subSpent(s.id);
-                const subColor = s.color || s.accent || accentColor;
-                const subSuffix = `${dueBadge(s.dueDate)}`;
                 
-                html += `<tr class="pc-row-sub" data-moves="${s.id}" style="--cat-accent:${subColor}">
-                    <td class="pc-td-cat">${tickBtn(s.id, sb, ss)}${titleWithBar(s.icon || '·', s.name, ss, sb, subColor, { editAttr: 'editsub', editId: s.id, isSub: true, suffixHtml: subSuffix })}</td>
-                    <td class="pc-td-num">${sb === null ? muted('No definido') : fmt(sb)}</td>
-                    <td class="pc-td-num"><span class="pc-cell-edit" data-real="${s.id}">✏️ ${fmt(ss)}</span></td>
+                html += `<tr class="pc-row-sub" data-moves="${s.id}" style="--cat-accent:${accentColor}">
+                    <td class="pc-td-cat">${tickBtn(s.id, sb, ss)}${titleWithBar(s.icon || '·', s.name, ss, sb, accentColor, { editAttr: 'editsub', editId: s.id, isSub: true })}</td>
+                    <td class="pc-td-num">${sb === null ? 'No definido' : fmt(sb)}</td>
+                    <td class="pc-td-num"><span class="pc-cell-edit" onclick="BudgetApp.openSubSpentModal('${s.id}')">${fmt(ss)}</span></td>
                     <td class="pc-td-num">${availCell(sb, ss).replace(/^<td[^>]*>|<\/td>$/g, '')}</td></tr>`;
             });
 
-            // Punto 8: Préstamos con UI idéntica a las subcategorías
             if (c.id === 'pc-loans') {
                 pcLoans().forEach(l => {
-                    const paid = (l.paidCount || 0) >= (l.installments || 0);
+                    // Si ya ha acabado, no se muestra
+                    if ((l.paidCount || 0) >= (l.installments || 0)) return;
+                    
                     const loanSpent = (l.paidCount || 0) * l.installmentAmount;
                     const loanBudget = l.installments * l.installmentAmount;
-                    const loanAvailable = loanBudget - loanSpent;
-                    
                     html += `<tr class="pc-row-sub" style="--cat-accent:${accentColor}">
                         <td class="pc-td-cat">
                             ${tickBtn(l.id, loanBudget, loanSpent)}
-                            <div class="pc-td-loan" style="width:100%;">
-                                <span style="font-size:13px;font-weight:600;">${l.emoji || '🏦'} ${esc(l.name)}</span>
+                            <div style="display:flex; align-items:center; gap:8px; font-weight:600; font-size:13px;">
+                                <span>${l.emoji || '🏦'} ${esc(l.name)}</span>
                                 <span style="font-size:11px;color:var(--text-muted);">(${l.paidCount || 0}/${l.installments || 0} cuotas)</span>
                             </div>
                         </td>
@@ -515,11 +429,215 @@ const BudgetApp = (function () {
     }
 
     /* =========================================================
-       MODALES Y LÓGICA DE EDICIÓN
+       ACCIONES Y MODALES
        ========================================================= */
     function closeModal() { const b = document.getElementById('pcBackdrop'); if (b) b.remove(); }
 
-    // Punto 3: Editar cuenta (nombre, icono, tipo)
+    function equalizeWeek(weekId) {
+        const w = allWeeks().find(x => x.id === weekId);
+        if (!w) return;
+        const movs = pcRealExpenses().filter(e => e.pcWeekId === weekId);
+        const spent = sum(movs);
+        const diff = w.budget - spent;
+        if (Math.abs(diff) < 0.005) return;
+
+        addMovement('pc-groceries', diff, { 
+            concept: `Ajuste semana: ${w.label}`, 
+            pcWeekId: w.id,
+            date: new Date().toISOString().slice(0, 10)
+        });
+    }
+
+    function openWeekCountModal() {
+        closeModal();
+        const cur = weekCount(currentPeriod);
+        const firstWeekBudget = pcWeeks().length ? pcWeeks()[0].budget : 0;
+        const div = document.createElement('div');
+        div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
+        div.innerHTML = `<div class="pc-modal"><h3>⚙️ Configurar Semanas</h3>
+            <div class="pc-field"><label>Número de semanas</label>
+                <select id="wcN">
+                    <option value="4" ${cur===4?'selected':''}>4 semanas</option>
+                    <option value="5" ${cur===5?'selected':''}>5 semanas</option>
+                </select>
+            </div>
+            <div class="pc-field"><label>Presupuesto por semana (€)</label>
+                <input id="wcB" type="number" step="0.01" value="${firstWeekBudget}">
+            </div>
+            <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="wcCancel">Cancelar</button>
+            <button class="pc-btn pc-btn-primary" id="wcSave">Aplicar</button></div></div>`;
+        document.body.appendChild(div);
+        div.querySelector('#wcCancel').onclick = closeModal;
+        div.querySelector('#wcSave').onclick = () => {
+            const n = Number(div.querySelector('#wcN').value);
+            const b = Number(div.querySelector('#wcB').value);
+            const gen = generateMonthWeeks(currentPeriod, n, b);
+            data().pcWeeks = allWeeks().filter(w => String(w.period) !== currentPeriod).concat(gen);
+            App.saveData(); closeModal(); render();
+        };
+    }
+
+    function openWeekSpentModal(weekId) {
+        const w = allWeeks().find(x => x.id === weekId);
+        if (!w) return;
+        const movs = pcRealExpenses().filter(e => e.pcWeekId === weekId);
+        const spent = sum(movs);
+        
+        closeModal();
+        const div = document.createElement('div');
+        div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
+        div.innerHTML = `<div class="pc-modal"><h3>Gasto · ${w.label}</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <span style="font-weight:800; font-size:24px; color:var(--text)">${fmt(spent)}</span>
+            </div>
+            
+            <div class="pc-field"><label>Ajuste manual de gasto (€)</label><input id="wsVal" type="number" step="0.01" value="${spent.toFixed(2)}"></div>
+            
+            <div style="display:flex; gap:8px; margin-top:16px;">
+                <button class="pc-btn pc-btn-ghost" id="wsList" style="flex:1;">Ver Movimientos</button>
+                <button class="pc-btn pc-btn-primary" id="wsAdd" style="flex:1;">＋ Añadir Movimiento</button>
+            </div>
+            
+            <div class="pc-modal-actions" style="margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">
+                <button class="pc-btn pc-btn-ghost" id="wsCancel">Cerrar</button>
+                <button class="pc-btn pc-btn-primary" id="wsSave">Guardar Ajuste</button>
+            </div></div>`;
+        document.body.appendChild(div);
+        
+        div.querySelector('#wsCancel').onclick = closeModal;
+        div.querySelector('#wsList').onclick = () => openMovementsListModal('pc-groceries', weekId);
+        div.querySelector('#wsAdd').onclick = () => openAddMovementModal('pc-groceries', weekId);
+        div.querySelector('#wsSave').onclick = () => {
+            const newVal = Number(div.querySelector('#wsVal').value);
+            const diff = newVal - spent;
+            if (Math.abs(diff) > 0.005) {
+                addMovement('pc-groceries', diff, { concept: 'Ajuste manual semana', pcWeekId: weekId });
+            }
+            closeModal(); render();
+        };
+    }
+
+    function openCatSpentModal(catId) { openGenericSpentModal(catId, null); }
+    function openSubSpentModal(subId) { openGenericSpentModal(subId, null); }
+
+    function openGenericSpentModal(rowId, weekId) {
+        const row = findRow(rowId);
+        if (!row) return;
+        const spent = weekId ? sum(pcRealExpenses().filter(e => e.pcWeekId === weekId)) : rowSpent(rowId);
+        
+        closeModal();
+        const div = document.createElement('div');
+        div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
+        div.innerHTML = `<div class="pc-modal"><h3>Gasto · ${esc(row.name)}</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <span style="font-weight:800; font-size:24px; color:var(--text)">${fmt(spent)}</span>
+            </div>
+            
+            <div class="pc-field"><label>Ajuste manual de gasto (€)</label><input id="gsVal" type="number" step="0.01" value="${spent.toFixed(2)}"></div>
+            
+            <div style="display:flex; gap:8px; margin-top:16px;">
+                <button class="pc-btn pc-btn-ghost" id="gsList" style="flex:1;">Ver Movimientos</button>
+                <button class="pc-btn pc-btn-primary" id="gsAdd" style="flex:1;">＋ Añadir Movimiento</button>
+            </div>
+            
+            <div class="pc-modal-actions" style="margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">
+                <button class="pc-btn pc-btn-ghost" id="gsCancel">Cerrar</button>
+                <button class="pc-btn pc-btn-primary" id="gsSave">Guardar Ajuste</button>
+            </div></div>`;
+        document.body.appendChild(div);
+        
+        div.querySelector('#gsCancel').onclick = closeModal;
+        div.querySelector('#gsList').onclick = () => openMovementsListModal(rowId);
+        div.querySelector('#gsAdd').onclick = () => openAddMovementModal(rowId);
+        div.querySelector('#gsSave').onclick = () => {
+            const newVal = Number(div.querySelector('#gsVal').value);
+            const diff = newVal - spent;
+            if (Math.abs(diff) > 0.005) {
+                addMovement(rowId, diff, { concept: 'Ajuste manual' });
+            }
+            closeModal(); render();
+        };
+    }
+
+    function openMovementsListModal(rowId, weekId) {
+        const movs = pcRealExpenses().filter(e => {
+            if (weekId) return e.pcWeekId === weekId;
+            return e.categoryId === rowId;
+        });
+        const row = weekId ? allWeeks().find(x => x.id === weekId) : findRow(rowId);
+        
+        closeModal();
+        const div = document.createElement('div');
+        div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
+        div.innerHTML = `<div class="pc-modal"><h3>Movimientos · ${esc(row ? row.name || row.label : '')}</h3>
+            <div style="max-height:300px; overflow-y:auto; margin-top:16px;">
+                ${movs.map(m => `<div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed var(--border-light); font-size:13px;">
+                    <div>
+                        <div style="font-weight:600;">${esc(m.concept)}</div>
+                        <div style="font-size:11px; color:var(--text-muted);">${App.formatDate(m.date)}</div>
+                    </div>
+                    <b>${fmt(m.amount)}</b>
+                </div>`).join('') || '<div style="color:var(--text-muted); text-align:center; padding:20px;">No hay movimientos</div>'}
+            </div>
+            <div class="pc-modal-actions" style="margin-top:20px;">
+                <button class="pc-btn pc-btn-ghost" id="mlClose">Cerrar</button>
+            </div></div>`;
+        document.body.appendChild(div);
+        div.querySelector('#mlClose').onclick = closeModal;
+    }
+
+    function openAddMovementModal(rowId, weekId) {
+        closeModal();
+        const div = document.createElement('div');
+        div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
+        div.innerHTML = `<div class="pc-modal"><h3>Nuevo Movimiento</h3>
+            <div class="pc-field"><label>Descripción</label><input id="amDesc" placeholder="Ej. Compra supermercado"></div>
+            <div class="pc-field"><label>Cantidad (€)</label><input id="amVal" type="number" step="0.01" value=""></div>
+            <div class="pc-modal-actions">
+                <button class="pc-btn pc-btn-ghost" id="amCancel">Cancelar</button>
+                <button class="pc-btn pc-btn-primary" id="amSave">Añadir</button>
+            </div></div>`;
+        document.body.appendChild(div);
+        
+        div.querySelector('#amCancel').onclick = closeModal;
+        div.querySelector('#amSave').onclick = () => {
+            const desc = div.querySelector('#amDesc').value.trim() || 'Gasto';
+            const val = Number(div.querySelector('#amVal').value);
+            if (!val) return;
+            addMovement(rowId, val, { concept: desc, pcWeekId: weekId });
+            closeModal();
+        };
+    }
+
+    function addMovement(targetId, amount, opts, silent = false) {
+        opts = opts || {};
+        const id = 'pc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const exp = {
+            id, concept: opts.concept || 'Movimiento', amount: Number(amount) || 0,
+            date: opts.date || new Date().toISOString().slice(0, 10),
+            categoryId: targetId, person: 'conjunto', status: 'registrado',
+            aggPeriod: currentPeriod, pcAccount: opts.account || ''
+        };
+        if (opts.pcWeekId) exp.pcWeekId = opts.pcWeekId;
+
+        data().expenses.push(exp);
+        
+        // Sincronización con la cuenta si es Groceries
+        if (targetId === 'pc-groceries' || targetId.startsWith('pcs-gl')) {
+            syncAccountWithGroceries(amount);
+        }
+
+        if (window.App && typeof App.registerExpenseMovement === 'function') {
+            App.registerExpenseMovement({
+                amount: Math.abs(exp.amount), concept: exp.concept, date: exp.date, 
+                accountId: mapAccountName(opts.account), link: { kind: 'expense', id: exp.id }
+            });
+        }
+        App.saveData();
+        App.addHistory('presupuesto-comun', `Movimiento: ${exp.concept} (${fmt(exp.amount)})`);
+        if (!silent) render();
+    }
+
     function openEditAccountModal(accId) {
         const acc = getAccounts().find(a => a.id === accId);
         if (!acc) return;
@@ -528,7 +646,7 @@ const BudgetApp = (function () {
         div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
         div.innerHTML = `<div class="pc-modal"><h3>Editar Cuenta</h3>
             <div class="pc-field"><label>Nombre</label><input id="eaName" value="${esc(acc.name)}"></div>
-            <div class="pc-field"><label>Icono (Emoji o URL de SVG)</label><input id="eaIcon" value="${esc(acc.icon || '')}" placeholder="🏦 o https://..."></div>
+            <div class="pc-field"><label>Icono (Emoji o URL SVG)</label><input id="eaIcon" value="${esc(acc.icon || '')}"></div>
             <div class="pc-field"><label>Tipo</label>
                 <select id="eaType">
                     <option value="conjunta" ${acc.type==='conjunta'?'selected':''}>Conjunta</option>
@@ -543,17 +661,14 @@ const BudgetApp = (function () {
                 <button class="pc-btn pc-btn-primary" id="eaSave">Guardar</button>
             </div></div>`;
         document.body.appendChild(div);
-        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         div.querySelector('#eaCancel').onclick = closeModal;
-        
         div.querySelector('#eaSave').onclick = () => {
             acc.name = div.querySelector('#eaName').value.trim() || acc.name;
             acc.icon = div.querySelector('#eaIcon').value.trim() || acc.icon;
             acc.type = div.querySelector('#eaType').value;
             App.saveData(); App.notifyModuleChange('presupuesto-comun', { reason: 'account-updated' });
-            closeModal(); render(); App.showToast('Cuenta actualizada', 'success');
+            closeModal(); render();
         };
-        
         div.querySelector('#eaDel').onclick = () => {
             App.showConfirm(`¿Eliminar la cuenta ${acc.name}?`, () => {
                 data().accounts = data().accounts.filter(a => a.id !== acc.id);
@@ -562,64 +677,104 @@ const BudgetApp = (function () {
         };
     }
 
-    // Punto 3: Actualizar saldo (Crea movimiento de ajuste)
+    function openNewAccountModal() {
+        closeModal();
+        const div = document.createElement('div');
+        div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
+        div.innerHTML = `<div class="pc-modal"><h3>Nueva Cuenta</h3>
+            <div class="pc-field"><label>Nombre</label><input id="naName" value=""></div>
+            <div class="pc-field"><label>Icono (Emoji o URL SVG)</label><input id="naIcon" value="🏦"></div>
+            <div class="pc-field"><label>Tipo</label>
+                <select id="naType">
+                    <option value="conjunta">Conjunta</option>
+                    <option value="inversion">Inversión</option>
+                    <option value="banco">Banco</option>
+                    <option value="efectivo">Efectivo</option>
+                </select>
+            </div>
+            <div class="pc-modal-actions">
+                <button class="pc-btn pc-btn-ghost" id="naCancel">Cancelar</button>
+                <button class="pc-btn pc-btn-primary" id="naSave">Crear</button>
+            </div></div>`;
+        document.body.appendChild(div);
+        
+        div.querySelector('#naCancel').onclick = closeModal;
+        div.querySelector('#naSave').onclick = () => {
+            const name = div.querySelector('#naName').value.trim();
+            if (!name) return;
+            data().accounts.push({
+                id: 'acc-' + Date.now().toString(36),
+                name: name,
+                icon: div.querySelector('#naIcon').value.trim() || '🏦',
+                type: div.querySelector('#naType').value,
+                balance: 0,
+                owners: ['ana', 'carlos'],
+                color: '#2563eb'
+            });
+            App.saveData(); closeModal(); render();
+        };
+    }
+
     function openUpdateBalanceModal(accId) {
         const acc = getAccounts().find(a => a.id === accId);
         if (!acc) return;
         const cur = Number(acc.balance) || 0;
-        
-        App.goTo('presupuesto-comun', 'openBalanceModal', [accId, cur]);
-    }
-
-    function openBalanceModalDirect(accId, cur) {
         closeModal();
         const div = document.createElement('div');
         div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
-        div.innerHTML = `<div class="pc-modal"><h3>Actualizar Saldo Real · ${esc(accId)}</h3>
+        div.innerHTML = `<div class="pc-modal"><h3>Actualizar Saldo · ${esc(acc.name)}</h3>
             <div class="pc-field"><label>Nuevo saldo en banco (€)</label><input id="eaVal" type="number" step="0.01" value="${cur.toFixed(2)}"></div>
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="eaCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="eaSave">Ajustar</button></div></div>`;
         document.body.appendChild(div);
-        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         div.querySelector('#eaCancel').onclick = closeModal;
-        
         div.querySelector('#eaSave').onclick = () => {
             const newVal = Number(div.querySelector('#eaVal').value);
-            const acc = getAccounts().find(a => a.id === accId);
-            const diff = newVal - (Number(acc.balance) || 0);
+            const diff = newVal - cur;
             
-            if (diff !== 0) {
-                acc.balance = newVal;
-                // Registramos ajuste
+            // Lógica del Fondo Común
+            syncGroceriesWithAccount(acc.id, newVal);
+            
+            acc.balance = newVal;
+            if (diff !== 0 && window.App && typeof App.registerExpenseMovement === 'function') {
                 App.registerExpenseMovement({
-                    amount: Math.abs(diff),
-                    concept: `Ajuste cuenta: ${acc.name}`,
-                    date: new Date().toISOString().slice(0, 10),
-                    accountId: acc.id,
-                    link: { kind: 'adjustment', id: 'adj-' + Date.now() },
-                    isIncome: diff > 0 // Si diff es positivo, es un ingreso (faltaba dinero)
+                    amount: Math.abs(diff), concept: `Ajuste cuenta: ${acc.name}`, date: new Date().toISOString().slice(0, 10),
+                    accountId: acc.id, link: { kind: 'adjustment', id: 'adj-' + Date.now() }, isIncome: diff > 0
                 });
-                App.addHistory('presupuesto-comun', `Ajuste cuenta ${acc.name}: ${fmt(diff)}`);
             }
-            
-            App.saveData();
-            closeModal(); render(); App.showToast('Saldo ajustado correctamente', 'success');
+            App.saveData(); closeModal(); render();
         };
     }
 
-    // Categorías
+    function openWeekBudgetModal(weekId, currentBudget) {
+        const w = allWeeks().find(x => x.id === weekId);
+        if (!w) return;
+        closeModal();
+        const div = document.createElement('div');
+        div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
+        div.innerHTML = `<div class="pc-modal"><h3>Presupuesto · ${w.label}</h3>
+            <div class="pc-field"><label>Presupuesto semanal (€)</label><input id="wbVal" type="number" step="0.01" value="${currentBudget}"></div>
+            <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="wbCancel">Cancelar</button>
+            <button class="pc-btn pc-btn-primary" id="wbSave">Guardar</button></div></div>`;
+        document.body.appendChild(div);
+        div.querySelector('#wbCancel').onclick = closeModal;
+        div.querySelector('#wbSave').onclick = () => {
+            w.budget = Number(div.querySelector('#wbVal').value) || 0;
+            App.saveData(); closeModal(); render();
+        };
+    }
+
     function openCatModal(id, isSub) {
         const item = isSub ? (data().pcSubcategories || []).find(s => s.id === id) : pcCats().find(c => c.id === id);
         if (!item) return;
         if (id === 'pc-loans' || id === 'pc-trips') { App.showToast('Esta categoría se gestiona automáticamente', 'info'); return; }
         
-        const accOpts = getAccountNames().map(a => `<option ${item.account === a ? 'selected' : ''}>${a}</option>`).join('');
         const subs = !isSub ? pcSubs(id) : [];
         closeModal();
         
-        const derivedNote = (!isSub && subs.length) ? `<div class="pc-derived-note" style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">📐 Los importes se calculan como suma de las ${subs.length} subcategorías.</div>` : '';
-        const budgetField = derivedNote ? '' : `<div class="pc-field"><label>Presupuesto (€) · vacío = no definido</label><input id="mBudget" type="number" step="0.01" value="${item.budget === null || item.budget === undefined ? '' : item.budget}"></div>`;
-        const spentField = derivedNote ? '' : `<div class="pc-field"><label>Gasto real (€) · ajuste directo</label><input id="mSpent" type="number" step="0.01" value="${Number(rowSpent(item.id)).toFixed(2)}"></div>`;
+        const derivedNote = (!isSub && subs.length) ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">📐 Calculado sumando las ${subs.length} subcategorías.</div>` : '';
+        const currentBudget = getHistoricalBudget(item, currentPeriod);
+        const budgetField = derivedNote ? '' : `<div class="pc-field"><label>Presupuesto desde ${currentPeriod} (€)</label><input id="mBudget" type="number" step="0.01" value="${currentBudget === null ? '' : currentBudget}"></div>`;
         
         const div = document.createElement('div');
         div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
@@ -627,34 +782,34 @@ const BudgetApp = (function () {
             ${derivedNote}
             <div class="pc-field"><label>Nombre</label><input id="mName" value="${esc(item.name)}"></div>
             <div class="pc-field"><label>Icono</label><input id="mIcon" value="${esc(item.icon || '')}" maxlength="4"></div>
-            ${budgetField}${spentField}
-            <div class="pc-field"><label>Cuenta vinculada</label><select id="mAcc">${accOpts}</select></div>
-            <div class="pc-modal-actions">
+            ${budgetField}
+            <div style="display:flex; gap:8px; margin-top:16px;">
+                <button class="pc-btn pc-btn-ghost" id="mList" style="flex:1;">Ver Movimientos</button>
+                <button class="pc-btn pc-btn-primary" id="mAdd" style="flex:1;">＋ Añadir Movimiento</button>
+            </div>
+            <div class="pc-modal-actions" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
                 <button class="pc-btn pc-btn-danger" id="mDelete">🗑 Eliminar</button>
                 <button class="pc-btn pc-btn-ghost" id="mCancel">Cancelar</button>
                 <button class="pc-btn pc-btn-primary" id="mSave">Guardar</button></div></div>`;
         document.body.appendChild(div);
         
         div.querySelector('#mCancel').onclick = closeModal;
+        div.querySelector('#mList').onclick = () => openMovementsListModal(item.id);
+        div.querySelector('#mAdd').onclick = () => openAddMovementModal(item.id);
+        
         div.querySelector('#mSave').onclick = () => {
             item.name = div.querySelector('#mName').value.trim() || item.name;
             item.icon = div.querySelector('#mIcon').value.trim() || item.icon;
-            if (!derivedNote) item.budget = div.querySelector('#mBudget').value === '' ? null : Number(div.querySelector('#mBudget').value);
-            item.account = div.querySelector('#mAcc').value;
-            App.saveData();
-            
-            const sp = div.querySelector('#mSpent');
-            closeModal();
-            if (sp) {
-                const nv = Number(sp.value);
-                if (!isNaN(nv) && Math.abs(nv - rowSpent(item.id)) >= 0.005) {
-                    const diff = nv - rowSpent(item.id);
-                    addMovement(item.id, diff, { concept: 'Ajuste manual', account: item.account });
-                    return;
-                }
+            if (!derivedNote) {
+                const bv = div.querySelector('#mBudget').value;
+                const newBudget = bv === '' ? null : Number(bv);
+                if (!item.budgetHistory) item.budgetHistory = {};
+                item.budgetHistory[currentPeriod] = newBudget;
+                item.budget = newBudget;
             }
-            render(); App.showToast('Guardado', 'success');
+            App.saveData(); closeModal(); render();
         };
+        
         div.querySelector('#mDelete').onclick = () => {
             App.showConfirm(`¿Eliminar «${item.name}»?`, () => {
                 if (isSub) data().pcSubcategories = data().pcSubcategories.filter(s => s.id !== item.id);
@@ -688,11 +843,16 @@ const BudgetApp = (function () {
             const name = div.querySelector('#cName').value.trim();
             if (!name) return;
             const isSub = div.querySelector('#cType').value === 'sub';
+            const bv = div.querySelector('#cBudget').value;
+            const initialBudget = bv ? Number(bv) : null;
+            
             const obj = {
                 id: (isSub ? 'pcs-' : 'pc-') + Date.now().toString(36),
                 name, icon: div.querySelector('#cIcon').value.trim() || '📦',
-                budget: div.querySelector('#cBudget').value ? Number(div.querySelector('#cBudget').value) : null,
-                account: ''
+                budget: initialBudget,
+                account: '',
+                createdAt: currentPeriod,
+                budgetHistory: initialBudget !== null ? { [currentPeriod]: initialBudget } : {}
             };
             if (isSub) { obj.parentId = div.querySelector('#cParent').value; data().pcSubcategories.push(obj); }
             else { obj.order = (pcCats().length + 1) * 10; data().pcCategories.push(obj); }
@@ -701,29 +861,38 @@ const BudgetApp = (function () {
     }
 
     /* =========================================================
-       INIT / API PÚBLICA
+       INIT / RENDER
        ========================================================= */
     function render() {
         if (!containerEl) return;
-        App.injectStylesheet('pc-custom-styles', moduleCSS());
         
-        // Punto 1 y 5: Layout en dos columnas equilibradas
         containerEl.innerHTML = headerHtml() + kpisHtml() +
-            `<div class="pc-cols2" style="grid-template-columns: 1fr 1fr; margin-bottom:20px;">${weeksPanelHtml()}${accountsPanelHtml()}</div>` +
-            tableHtml();
+            `<div class="pc-layout-grid">
+                <div class="pc-col-left">
+                    ${accountsPanelHtml()}
+                    ${weeksPanelHtml()}
+                </div>
+                <div class="pc-col-right">
+                    ${tableHtml()}
+                </div>
+            </div>`;
         bind();
     }
 
     function bind() {
         const $ = sel => containerEl.querySelector(sel);
         
-        // Navegación de meses
-        $('#pcPrevMonth').onclick = () => {
-            let [y, m] = currentPeriod.split('-').map(Number);
-            m--; if (m < 1) { m = 12; y--; }
-            currentPeriod = `${y}-${String(m).padStart(2,'0')}`;
-            render();
-        };
+        const btnPrev = $('#pcPrevMonth');
+        if (btnPrev) {
+            btnPrev.onclick = () => {
+                if (currentPeriod <= FIRST_MONTH) return;
+                let [y, m] = currentPeriod.split('-').map(Number);
+                m--; if (m < 1) { m = 12; y--; }
+                currentPeriod = `${y}-${String(m).padStart(2,'0')}`;
+                render();
+            };
+        }
+        
         $('#pcNextMonth').onclick = () => {
             let [y, m] = currentPeriod.split('-').map(Number);
             m++; if (m > 12) { m = 1; y++; }
@@ -731,92 +900,47 @@ const BudgetApp = (function () {
             render();
         };
 
-        if ($('#pcNewMov')) $('#pcNewMov').style.display = 'none'; // Ocultar según Punto 7
-        
-        const btnCat = $('#pcBtnCat');
-        if (btnCat) btnCat.onclick = openNewCatModal;
-
-        containerEl.querySelectorAll('[data-week]').forEach(card => card.onclick = () => openWeekModal(card.getAttribute('data-week')));
-        
-        containerEl.querySelectorAll('[data-moves]').forEach(tr => tr.onclick = e => {
-            if (e.target.closest('[data-editcat]') || e.target.closest('[data-editsub]') || e.target.closest('[data-real]') || e.target.closest('[data-tick]') || e.target.closest('.pc-info')) return;
-            openMovesModal(tr.getAttribute('data-moves'));
-        });
+        if ($('#pcBtnCat')) $('#pcBtnCat').onclick = openNewCatModal;
 
         containerEl.querySelectorAll('[data-tick]').forEach(btn => btn.onclick = e => {
             e.stopPropagation();
             const id = btn.getAttribute('data-tick');
-            // Si es un préstamo, pagar cuota. Si no, igualar.
-            if (id.startsWith('loan-')) {
-                App.payLoanInstallment(id);
-            } else {
-                equalizeRow(id);
+            if (id.startsWith('loan-')) App.payLoanInstallment(id);
+            else {
+                const row = findRow(id);
+                if (!row) return;
+                const budget = String(id).startsWith('pcs-') ? subBudget(id) : catBudget(id);
+                const diff = budget - rowSpent(id);
+                if (Math.abs(diff) > 0.005) addMovement(id, diff, { concept: 'Ajuste hasta presupuesto' });
             }
         });
         
         containerEl.querySelectorAll('[data-editcat]').forEach(el => el.onclick = e => { e.stopPropagation(); openCatModal(el.getAttribute('data-editcat'), false); });
         containerEl.querySelectorAll('[data-editsub]').forEach(el => el.onclick = e => { e.stopPropagation(); openCatModal(el.getAttribute('data-editsub'), true); });
-        containerEl.querySelectorAll('[data-real]').forEach(el => el.onclick = e => {
-            e.stopPropagation();
-            openQuickPop(el, el.getAttribute('data-real'), rowSpent(el.getAttribute('data-real')));
-        });
-        
-        // Arreglo Tooltips
-        document.addEventListener('click', () => containerEl && containerEl.querySelectorAll('.pc-info.pinned').forEach(o => o.classList.remove('pinned')));
     }
-
-    function equalizeRow(rowId) {
-        const row = findRow(rowId);
-        if (!row) return;
-        const budget = String(rowId).startsWith('pcs-') ? subBudget(rowId) : catBudget(rowId);
-        const spent = rowSpent(rowId);
-        if (budget === null) return;
-        const diff = budget - spent;
-        if (Math.abs(diff) < 0.005) return;
-        addMovement(rowId, diff, { concept: `Ajuste hasta presupuesto · ${row.name}` });
-    }
-
-    // Las funciones openMovesModal, openWeekModal, etc., se mantienen del código anterior...
-    // [Se han omitido para no hacer el bloque infinito, pero debes conservarlas tal cual estaban]
 
     return {
         init: (container) => {
             containerEl = container;
             if (!weekCount(currentPeriod)) {
-                // Inicializar semanas si no hay
-                data().pcWeeks = allWeeks().concat(generateMonthWeeks(currentPeriod, 4));
+                data().pcWeeks = allWeeks().concat(generateMonthWeeks(currentPeriod, 4, 0));
             }
             render();
         },
-        render, 
-        openEditAccountModal: (id) => openEditAccountModal(id),
-        openUpdateBalanceModal: (id) => openBalanceModalDirect(id, getAccounts().find(a=>a.id===id).balance),
-        openMovementModal: () => {},
-        openExpenseModal: (expenseId) => {
-            const exp = (data().expenses || []).find(e => e.id === expenseId);
-            if (exp) openCatModal(exp.categoryId, String(exp.categoryId || '').startsWith('pcs-'));
-        },
-        setExpenseStatus: (id, st) => {
-            const exp = (data().expenses || []).find(e => e.id === id);
-            if (exp) { exp.status = st; App.saveData(); render(); }
-        },
-        getPcSummary: () => {
-            const FIXED_IDS = ['pc-rent', 'pc-utilities', 'pc-loans'];
-            let fixed = 0, variable = 0;
-            pcCats().forEach(c => {
-                const b = catBudget(c.id);
-                if (b === null) return;
-                if (FIXED_IDS.includes(c.id)) fixed += b; else variable += b;
-            });
-            return { period: currentPeriod, fixed, variable, total: fixed + variable, budgetTotal: totalBudgetDefined() };
-        }
+        render,
+        openWeekCountModal,
+        editWeekBudget: openWeekBudgetModal,
+        openWeekSpentModal,
+        openCatSpentModal,
+        openSubSpentModal,
+        equalizeWeek,
+        openEditAccountModal,
+        openNewAccountModal,
+        openUpdateBalanceModal,
+        openExpenseModal: () => {},
+        getPcSummary: () => ({ period: currentPeriod, total: totalBudgetDefined() })
     };
 })();
 
 window.BudgetApp = BudgetApp;
-
-(function ensureRegistered() {
-    if (window.App && typeof App.registerSection === 'function') {
-        App.registerSection('presupuesto-comun', BudgetApp);
-    }
-})();
+if (window.App && typeof App.registerSection === 'function') App.registerSection('presupuesto-comun', BudgetApp);
