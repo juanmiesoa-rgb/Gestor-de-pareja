@@ -9,6 +9,12 @@ const AuthService = (function () {
         clientId: '183798659982-8ul1bm5sq2lohn4cac9j4udtp7jv65uc.apps.googleusercontent.com' 
     };
 
+   // ⚠️ AÑADE AQUÍ LOS EMAILS PERMITIDOS (en minúsculas)
+    const ALLOWED_EMAILS = [
+        'juanmi.sexto.a@gmail.com',
+        'amcarranza216@gmail.com'
+    ];
+
     const STORAGE_USER_KEY = 'finanzas_auth_user';
     const STORAGE_TOKEN_KEY = 'finanzas_auth_id_token';
 
@@ -17,6 +23,11 @@ const AuthService = (function () {
     let tokenExpiresAt = 0;
     let initialized = false;
     const listeners = [];
+
+   function isEmailAllowed(email) {
+        if (!email) return false;
+        return ALLOWED_EMAILS.includes(String(email).toLowerCase().trim());
+    }
 
     function loadScript() {
         return new Promise((resolve, reject) => {
@@ -54,7 +65,19 @@ const AuthService = (function () {
             showError('Token de Google inválido.');
             return;
         }
-        
+
+        // 🔒 VALIDACIÓN DE EMAIL PERMITIDO
+        if (!isEmailAllowed(claims.email)) {
+            console.warn('[AuthService] Email no autorizado:', claims.email);
+            currentUser = null;
+            currentIdToken = null;
+            tokenExpiresAt = 0;
+            try { localStorage.removeItem(STORAGE_USER_KEY); localStorage.removeItem(STORAGE_TOKEN_KEY); } catch (e) {}
+            showError('La cuenta ' + claims.email + ' no está autorizada. Contacta con el administrador.');
+            showLogin();
+            return;
+        }
+
         currentIdToken = response.credential;
         tokenExpiresAt = (Number(claims.exp) || 0) * 1000;
         currentUser = {
@@ -67,6 +90,7 @@ const AuthService = (function () {
         try { localStorage.setItem(STORAGE_TOKEN_KEY, JSON.stringify({ credential: currentIdToken, expiresAt: tokenExpiresAt })); } catch (e) {}
         
         hideLogin();
+        showError(''); // Limpiar errores previos
         emit();
     }
 
@@ -75,15 +99,22 @@ const AuthService = (function () {
         await loadScript();
         initialized = true;
 
-        // Restaurar sesión si existe
+        // Restaurar sesión si existe (validando email)
         try {
             const raw = localStorage.getItem(STORAGE_TOKEN_KEY);
             if (raw) {
                 const p = JSON.parse(raw);
                 if (p.credential && p.expiresAt > Date.now()) {
-                    currentIdToken = p.credential;
-                    tokenExpiresAt = p.expiresAt;
-                    currentUser = JSON.parse(localStorage.getItem(STORAGE_USER_KEY));
+                    const claims = parseJwt(p.credential);
+                    if (claims && claims.email && isEmailAllowed(claims.email)) {
+                        currentIdToken = p.credential;
+                        tokenExpiresAt = p.expiresAt;
+                        currentUser = JSON.parse(localStorage.getItem(STORAGE_USER_KEY));
+                    } else {
+                        // Token guardado pero email no permitido o inválido
+                        localStorage.removeItem(STORAGE_USER_KEY);
+                        localStorage.removeItem(STORAGE_TOKEN_KEY);
+                    }
                 }
             }
         } catch (e) {}
@@ -91,7 +122,7 @@ const AuthService = (function () {
         google.accounts.id.initialize({
             client_id: CONFIG.clientId,
             callback: handleCredentialResponse,
-            ux_mode: 'popup', // Forzar ventana emergente clásica
+            ux_mode: 'popup',
             auto_select: false,
             cancel_on_tap_outside: true
         });
@@ -160,7 +191,7 @@ const AuthService = (function () {
     function hideLogin() { const el = document.getElementById('authOverlay'); if (el) el.classList.remove('active'); }
     function showError(msg) { const el = document.getElementById('authError'); if (el) el.textContent = msg || ''; }
 
-    return { init, signIn, signOut, requestReauth, getIdToken, getUser, isSignedIn, onChange, showLogin, hideLogin, showError, config: CONFIG };
+    return { init, signIn, signOut, requestReauth, getIdToken, getUser, isSignedIn, onChange, showLogin, hideLogin, showError, isEmailAllowed, config: CONFIG };
 })();
 
 window.AuthService = AuthService;
