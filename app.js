@@ -792,34 +792,18 @@ async function bootstrapApp() {
 
     if (window.AuthService) AuthService.hideLogin();
 
-    if (!App.data.profiles || App.data.profiles.length === 0) {
-        App.data.profiles = [
-            { id: 'ana', name: 'Nena', initial: 'N', color: '#ec4899' },
-            { id: 'carlos', name: 'Bombón', initial: 'B', color: '#2563eb' }
-        ];
-    }
-
-    if (window.AuthService) {
-        const user = AuthService.getUser();
-        if (user && user.email) {
-            const emailNena = 'amcarranza216@gmail.com';
-            const emailBombon = 'juanmi.sexto.a@gmail.com';
-            if (user.email.toLowerCase() === emailBombon) App.data.activeProfile = 'carlos';
-            else if (user.email.toLowerCase() === emailNena) App.data.activeProfile = 'ana';
-        }
-    }
-
     // 🔒 1. LEER EL SHEET Y ESPERAR
     if (window.DataService) {
         const success = await DataService.init();
-
-        
-        if (!success) {
-            App.showToast('⚠️ No se pudo leer Google Sheets. Modo solo lectura.', 'error');
+        if (success) {
+            // 🔥 CRÍTICO: recargar TODOS los módulos en memoria ANTES de renderizar
+            if (typeof App.reloadFromStorage === 'function') App.reloadFromStorage();
+            if (window.DineroApp && typeof DineroApp.reloadFromStorage === 'function') DineroApp.reloadFromStorage();
+            if (window.IngresosModulo && typeof IngresosModulo.reloadFromStorage === 'function') IngresosModulo.reloadFromStorage();
+            
+            console.log('[app.js] Datos recargados en memoria.');
         } else {
-            App.reloadData(); 
-            console.log('[app.js] Datos recargados desde el Sheet:', App.data.accounts, App.data.pcCategories);
-
+            App.showToast('⚠️ No se pudo leer Google Sheets. La app está en modo solo lectura para proteger tus datos.', 'error');
         }
     }
 
@@ -827,15 +811,12 @@ async function bootstrapApp() {
     initTripManager();
     App.init();
 
-    // 3. Refrescos futuros → recargar datos + re-render
+    // 3. Refrescos futuros
     document.addEventListener('app:data-refreshed', () => {
         if (typeof App.reloadFromStorage === 'function') App.reloadFromStorage();
         if (window.DineroApp && typeof DineroApp.reloadFromStorage === 'function') DineroApp.reloadFromStorage();
         if (window.IngresosModulo && typeof IngresosModulo.reloadFromStorage === 'function') IngresosModulo.reloadFromStorage();
 
-        // Volvemos a recargar si hay cambios en segundo plano
-        App.reloadData();
-        
         const tm = window.getTripManager && window.getTripManager();
         if (tm && tm.mounted) {
             try {

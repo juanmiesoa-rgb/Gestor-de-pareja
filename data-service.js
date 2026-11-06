@@ -221,13 +221,13 @@ const DataService = (function () {
     }
 
     function saveStored(key, value) {
-        try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
-
-        // 🔒 EL CANDADO: Si la lectura inicial falló, NO se envía nada al Sheet
+        // 🔒 EL CANDADO: Si la lectura inicial falló o aún no ha terminado, NO se guarda en local ni en remoto.
         if (!isFirstReadComplete) {
             console.warn('[DataService] 🛑 Guardado bloqueado: la app no ha leído el Sheet correctamente.');
             return;
         }
+
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
 
         const module = MODULE_BY_KEY[key];
         if (!module) return;
