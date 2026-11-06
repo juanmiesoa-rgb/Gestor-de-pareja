@@ -1116,6 +1116,16 @@ const DineroApp = (function () {
             ${f('fw1', 'Icono', emojiPicker('dv2WEmoji', w ? w.emoji : '👛'))}
             ${f('fw2', 'Nombre', inp('dv2WName', { value: w ? w.name : '', placeholder: 'Ej. Comida' }))}
             ${f('fwAcc', 'Cuenta principal', sel('dv2WAcc', [{v:'', l:'— Ninguna —'}].concat(accOpts), w ? w.accountId : ''))}
+            <div class="dv2-field" style="flex-direction:column; align-items:flex-start; display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:10px; border-radius:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" id="dv2WInclBudget" ${w && w.includeInBudget ? 'checked' : ''} style="width:16px;height:16px">
+                    <label style="margin:0; text-transform:none; font-size:12px; font-weight:600">Añadir al Presupuesto Común</label>
+                </div>
+                <div style="width:100%;">
+                    <label style="font-size:11px; margin-top:4px;">Importe presupuestado (€)</label>
+                    <input type="number" class="dv2-input" id="dv2WBudgetAmt" value="${w && w.budgetAmount ? w.budgetAmount : ''}" style="width:100%">
+                </div>
+            </div>
             ${w ? `
             <div style="font-size:12px;color:var(--text-secondary)">Cantidad actual: <strong>${fmtMoney(walletBalance(w))}</strong> · sin límites ni porcentajes.</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
@@ -1137,9 +1147,11 @@ const DineroApp = (function () {
             if (!name) { toast('El monedero necesita un nombre', 'error'); return; }
             const emoji = pickedEmoji(body);
             const accId = body.querySelector('#dv2WAcc').value;
+            const incl = body.querySelector('#dv2WInclBudget').checked;
+            const bAmt = round2(parseFloat(body.querySelector('#dv2WBudgetAmt').value) || 0);
             
-            if (w) { w.name = name; w.emoji = emoji; w.accountId = accId; toast('Monedero actualizado'); }
-            else { data.wallets.push({ id: uid('w'), emoji, name, color: '#f59e0b', accountId: accId, movements: [] }); toast('Monedero creado'); }
+            if (w) { w.name = name; w.emoji = emoji; w.accountId = accId; w.includeInBudget = incl; w.budgetAmount = bAmt; toast('Monedero actualizado'); }
+            else { data.wallets.push({ id: uid('w'), emoji, name, color: '#f59e0b', accountId: accId, includeInBudget: incl, budgetAmount: bAmt, movements: [] }); toast('Monedero creado'); }
             saveData(); closeModal(); renderAll();
         };
         
@@ -1457,9 +1469,15 @@ const DineroApp = (function () {
                 ${f('fd4', 'Fecha estimada (opcional)', inp('dv2DDue', { type: 'date', value: d ? d.dueDate || '' : '' }))}
             </div>
             ${f('fdAcc', 'Cuenta asociada', sel('dv2DAcc', [{v:'', l:'— Sin cuenta —'}].concat(accOpts), d ? d.accountId : ''))}
-            <div class="dv2-field" style="flex-direction:row; align-items:center; display:flex; gap:8px; margin-top:8px;">
-                <input type="checkbox" id="dv2DInclBudget" ${!d || d.includeInBudget !== false ? 'checked' : ''} style="width:16px;height:16px">
-                <label style="margin:0; text-transform:none; font-size:12px; font-weight:600">Incluir en el presupuesto (Compromisos futuros)</label>
+            <div class="dv2-field" style="flex-direction:column; align-items:flex-start; display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:10px; border-radius:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" id="dv2DInclBudget" ${!d || d.includeInBudget ? 'checked' : ''} style="width:16px;height:16px">
+                    <label style="margin:0; text-transform:none; font-size:12px; font-weight:600">Añadir al Presupuesto Común</label>
+                </div>
+                <div id="dv2DBudgetWrap" style="display:${!d || d.includeInBudget ? 'block' : 'none'}; width:100%;">
+                    <label style="font-size:11px; margin-top:4px;">Importe presupuestado (€)</label>
+                    <input type="number" class="dv2-input" id="dv2DBudgetAmt" value="${d && d.budgetAmount ? d.budgetAmount : (d ? (d.total - d.returned) : '')}" style="width:100%">
+                </div>
             </div>
             ${f('fd5', 'Contraparte (opcional)', inp('dv2DCounterparty', { value: d ? d.counterparty || '' : '', placeholder: 'Ej. Hermano, Marta…' }))}
             ${f('fd7', 'Nota', inp('dv2DNote', { value: d ? d.note || '' : '' }))}`,
@@ -1481,6 +1499,8 @@ const DineroApp = (function () {
             const total = round2(parseFloat(body.querySelector('#dv2DAmt').value));
             if (!name || isNaN(total) || total <= 0) { toast('Nombre e importe válidos requeridos', 'error'); return; }
             const obj = {
+                includeInBudget: body.querySelector('#dv2DInclBudget').checked,
+                budgetAmount: round2(parseFloat(body.querySelector('#dv2DBudgetAmt').value) || 0),
                 id: d ? d.id : uid('d'), kind, emoji: pickedEmoji(body), name, total,
                 returned: d ? d.returned : 0,
                 dueDate: body.querySelector('#dv2DDue').value || '',
@@ -1567,7 +1587,17 @@ const DineroApp = (function () {
                 ${f('fl5', 'Cuotas ya pagadas', inp('dv2LPaid', { type: 'number', min: '0', value: l ? l.paidCount : 0 }))}
             </div>
             ${f('fl6', 'Próximo recibo', inp('dv2LNext', { type: 'date', value: l ? l.nextDate || '' : todayISO() }))}
-            ${f('fl7', 'Cuenta asociada', sel('dv2LAcc', accNames, l ? l.accountName : (accNames[0] || {}).v))}`,
+            ${f('fl7', 'Cuenta asociada', sel('dv2LAcc', accNames, l ? l.accountName : (accNames[0] || {}).v))}
+            <div class="dv2-field" style="flex-direction:column; align-items:flex-start; display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:10px; border-radius:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" id="dv2LInclBudget" ${l && l.includeInBudget ? 'checked' : ''} style="width:16px;height:16px">
+                    <label style="margin:0; text-transform:none; font-size:12px; font-weight:600">Añadir al Presupuesto Común</label>
+                </div>
+                <div style="width:100%;">
+                    <label style="font-size:11px; margin-top:4px;">Importe presupuestado (€)</label>
+                    <input type="number" class="dv2-input" id="dv2LBudgetAmt" value="${l && l.budgetAmount ? l.budgetAmount : (l ? l.installmentAmount : '')}" style="width:100%">
+                </div>
+            </div>`,
             `${l ? '<button class="dv2-danger-link" id="dv2LDel">Eliminar</button>' : ''}<button class="btn btn-secondary" id="dv2LCancel">Cancelar</button><button class="btn btn-primary" id="dv2LSave"><i class="fas fa-save"></i> Guardar</button>`
         );
         bindEmojiPicker(body);
@@ -1592,6 +1622,8 @@ const DineroApp = (function () {
                 installmentAmount, paidCount: Math.min(paidCount, installments),
                 nextDate: body.querySelector('#dv2LNext').value || null,
                 accountName: body.querySelector('#dv2LAcc').value,
+                includeInBudget: body.querySelector('#dv2LInclBudget').checked,
+                budgetAmount: round2(parseFloat(body.querySelector('#dv2LBudgetAmt').value) || 0),
                 payments: l ? l.payments : []
             };
             if (l) Object.assign(l, obj); else data.loans.push(obj);
@@ -1620,7 +1652,17 @@ const DineroApp = (function () {
                 ${f('fg4', 'Frecuencia de aportación', sel('dv2GFreq', freqs, g ? g.frequency : 'monthly'))}
                 ${f('fg5', 'Importe por aportación (€)', inp('dv2GContrib', { type: 'number', step: '0.01', min: '0', value: g ? g.contribution : '' }))}
             </div>
-            ${f('fg6', 'Próxima aportación programada', inp('dv2GNext', { type: 'date', value: g ? g.nextDate || '' : todayISO() }))}`,
+            ${f('fg6', 'Próxima aportación programada', inp('dv2GNext', { type: 'date', value: g ? g.nextDate || '' : todayISO() }))}
+            <div class="dv2-field" style="flex-direction:column; align-items:flex-start; display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:10px; border-radius:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" id="dv2GInclBudget" ${g && g.includeInBudget ? 'checked' : ''} style="width:16px;height:16px">
+                    <label style="margin:0; text-transform:none; font-size:12px; font-weight:600">Añadir al Presupuesto Común</label>
+                </div>
+                <div style="width:100%;">
+                    <label style="font-size:11px; margin-top:4px;">Importe presupuestado (€)</label>
+                    <input type="number" class="dv2-input" id="dv2GBudgetAmt" value="${g && g.budgetAmount ? g.budgetAmount : (g ? g.contribution : '')}" style="width:100%">
+                </div>
+            </div>`,
             `${g && g.id !== 'g-trip-fund' ? '<button class="dv2-danger-link" id="dv2GDel">Eliminar</button>' : ''}<button class="btn btn-secondary" id="dv2GCancel">Cancelar</button><button class="btn btn-primary" id="dv2GSave"><i class="fas fa-save"></i> Guardar</button>`
         );
         bindEmojiPicker(body);
@@ -1636,6 +1678,8 @@ const DineroApp = (function () {
                 frequency: body.querySelector('#dv2GFreq').value,
                 contribution: round2(parseFloat(body.querySelector('#dv2GContrib').value) || 0),
                 nextDate: body.querySelector('#dv2GNext').value || '',
+                includeInBudget: body.querySelector('#dv2GInclBudget').checked,
+                budgetAmount: round2(parseFloat(body.querySelector('#dv2GBudgetAmt').value) || 0),
                 contributions: g ? g.contributions : []
             };
             if (g) Object.assign(g, obj); else data.goals.push(obj);
@@ -2054,6 +2098,64 @@ const DineroApp = (function () {
 
         /* Fase 2 */
         getState: () => JSON.parse(JSON.stringify(data)),
+                /* Fase 5: Integración con Presupuesto Común */
+        getBudgetItems: () => {
+            const items = [];
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            
+            // Deudas
+            data.debts.filter(d => d.includeInBudget && d.returned < d.total).forEach(d => {
+                const paidThisMonth = (d.history || []).filter(h => h.date.startsWith(currentMonth)).reduce((s,h) => s+h.amount, 0);
+                items.push({ id: d.id, type: 'debt', name: d.emoji + ' ' + d.name, budgetAmount: d.budgetAmount || 0, spentAmount: paidThisMonth });
+            });
+
+            // Préstamos
+            data.loans.filter(l => l.includeInBudget && l.paidCount < l.installments).forEach(l => {
+                const paidThisMonth = (l.payments || []).filter(p => p.date.startsWith(currentMonth)).reduce((s,p) => s+p.amount, 0);
+                items.push({ id: l.id, type: 'loan', name: l.emoji + ' ' + l.name, budgetAmount: l.budgetAmount || l.installmentAmount || 0, spentAmount: paidThisMonth });
+            });
+
+            // Monederos
+            data.wallets.filter(w => w.includeInBudget).forEach(w => {
+                const paidThisMonth = (w.movements || []).filter(m => m.type === 'in' && m.date.startsWith(currentMonth)).reduce((s,m) => s+m.amount, 0);
+                items.push({ id: w.id, type: 'wallet', name: w.emoji + ' ' + w.name, budgetAmount: w.budgetAmount || 0, spentAmount: paidThisMonth });
+            });
+
+            // Objetivos
+            data.goals.filter(g => g.includeInBudget && (g.target == null || g.saved < g.target)).forEach(g => {
+                const paidThisMonth = (g.contributions || []).filter(c => c.date.startsWith(currentMonth)).reduce((s,c) => s+c.amount, 0);
+                items.push({ id: g.id, type: 'goal', name: g.emoji + ' ' + g.name, budgetAmount: g.budgetAmount || 0, spentAmount: paidThisMonth });
+            });
+
+            return items;
+        },
+
+        updateBudgetItemAmount: (id, type, newAmount) => {
+            if (type === 'debt') { const i = data.debts.find(x => x.id === id); if (i) i.budgetAmount = newAmount; }
+            if (type === 'loan') { const i = data.loans.find(x => x.id === id); if (i) i.budgetAmount = newAmount; }
+            if (type === 'wallet') { const i = data.wallets.find(x => x.id === id); if (i) i.budgetAmount = newAmount; }
+            if (type === 'goal') { const i = data.goals.find(x => x.id === id); if (i) i.budgetAmount = newAmount; }
+            saveData();
+        },
+
+        payBudgetItem: (id, type, amount) => {
+            if (type === 'debt') {
+                const d = data.debts.find(x => x.id === id);
+                if (d) { d.returned = round2(d.returned + amount); d.history = d.history || []; d.history.push({ id: uid('dh'), date: todayISO(), amount, note: 'Pago desde Presupuesto' });
+                    if(d.accountId) registerMovement({ date: todayISO(), concept: `Deuda: ${d.name}`, amount: d.kind === 'pay' ? -amount : amount, type: d.kind === 'pay' ? 'out' : 'in', accountId: d.accountId, link: { kind: 'debt', id: d.id } }); }
+            } else if (type === 'loan') {
+                payLoanInstallment(id); return; // Ya baja el saldo y registra el pago
+            } else if (type === 'wallet') {
+                const w = data.wallets.find(x => x.id === id);
+                if (w) { w.movements.push({ id: uid('wm'), date: todayISO(), concept: 'Aportación desde Presupuesto', amount, type: 'in' });
+                    if(w.accountId) registerMovement({ date: todayISO(), concept: `Monedero: ${w.name}`, amount: -amount, type: 'out', accountId: w.accountId, link: { kind: 'wallet', id: w.id } }); }
+            } else if (type === 'goal') {
+                const g = data.goals.find(x => x.id === id);
+                if (g) { g.saved = round2(g.saved + amount); g.contributions = g.contributions || []; g.contributions.push({ id: uid('gc'), date: todayISO(), amount });
+                    if(g.accountId) registerMovement({ date: todayISO(), concept: `Objetivo: ${g.name}`, amount: -amount, type: 'out', accountId: g.accountId, link: { kind: 'goal', id: g.id } }); }
+            }
+            App.saveData(); saveData(); renderAll();
+        },
         registerExternalIncome,
         registerExternalExpense,
         getTripCommitments: () => data.commitments.filter(c => c.tripId && !c.executed),
@@ -2086,5 +2188,10 @@ const DineroApp = (function () {
 if (window.App) {
     App.registerSection('mi-dinero', DineroApp);
     App.registerModule('mi-dinero', DineroApp);
+    
+    // 🔥 Puente para que Presupuesto pueda leer y pagar las deudas/monederos
+    App.getBudgetItems = () => window.DineroApp.getBudgetItems();
+    App.updateBudgetItemAmount = (id, type, amt) => window.DineroApp.updateBudgetItemAmount(id, type, amt);
+    App.payBudgetItem = (id, type, amt) => window.DineroApp.payBudgetItem(id, type, amt);
 }
 window.DineroApp = DineroApp;

@@ -108,7 +108,24 @@ const BudgetApp = (function () {
     /* =========================================================
        CATEGORÍAS Y GASTOS
        ========================================================= */
-    function pcCats()    { return (data().pcCategories || []).slice().sort((a, b) => (a.order || 99) - (b.order || 99)); }
+    function pcCats() {
+        const cats = (data().pcCategories || []).slice();
+        // Inyectar categoría virtual si hay items en dinero con includeInBudget
+        const dineroItems = (window.App && typeof App.getBudgetItems === 'function') ? App.getBudgetItems() : [];
+        if (dineroItems.length > 0) {
+            cats.push({ id: 'pc-dinero-virtual', name: 'Aportaciones y Deudas', label: 'APORTACIONES Y DEUDAS', icon: '🏦', isVirtual: true, order: 999 });
+        }
+        return cats.sort((a, b) => (a.order || 99) - (b.order || 99));
+    }
+
+    function pcSubs(pid) {
+        if (pid === 'pc-dinero-virtual') {
+            const items = (window.App && typeof App.getBudgetItems === 'function') ? App.getBudgetItems() : [];
+            return items.map(i => ({ id: 'din-' + i.id + '-' + i.type, name: i.name, icon: '', isVirtual: true, rawId: i.id, type: i.type }));
+        }
+        return (data().pcSubcategories || []).filter(s => s.parentId === pid);
+    }
+
     function pcSubs(pid) { return (data().pcSubcategories || []).filter(s => s.parentId === pid); }
     function pcWeeks()   { return weeksFor(currentPeriod); }
 
@@ -120,7 +137,17 @@ const BudgetApp = (function () {
     }
     function pcRealExpenses() { return periodExpenses(currentPeriod).filter(e => e.status !== 'aportacion'); }
     function sum(list) { return list.reduce((s, e) => s + Number(e.amount || 0), 0); }
-    function subSpent(subId) { return sum(pcRealExpenses().filter(e => e.categoryId === subId)); }
+    function subSpent(subId) {
+        if (String(subId).startsWith('din-')) {
+            const parts = subId.split('-');
+            const type = parts.pop();
+            const id = parts.slice(1).join('-');
+            const items = App.getBudgetItems();
+            const item = items.find(i => i.id === id && i.type === type);
+            return item ? item.spentAmount : 0;
+        }
+        return sum(pcRealExpenses().filter(e => e.categoryId === subId));
+    }
     function catSpent(catId) {
         const ids = [catId].concat(pcSubs(catId).map(s => s.id));
         return sum(pcRealExpenses().filter(e => ids.includes(e.categoryId)));
@@ -131,11 +158,22 @@ const BudgetApp = (function () {
         return pcCats().find(c => c.id === id) || null;
     }
     function subBudget(subId) {
+        if (String(subId).startsWith('din-')) {
+            const parts = subId.split('-');
+            const type = parts.pop();
+            const id = parts.slice(1).join('-');
+            const items = App.getBudgetItems();
+            const item = items.find(i => i.id === id && i.type === type);
+            return item ? item.budgetAmount : 0;
+        }
         const s = (data().pcSubcategories || []).find(x => x.id === subId);
         return s ? getHistoricalBudget(s, currentPeriod) : null;
     }
 
     function catBudget(catId) {
+        if (catId === 'pc-dinero-virtual') {
+            return pcSubs(catId).reduce((s, sub) => s + subBudget(sub.id), 0);
+        }
         const c = pcCats().find(x => x.id === catId);
         if (!c) return null;
 
@@ -1144,8 +1182,20 @@ function addMovement(targetId, amount, opts) {
         containerEl.querySelectorAll('[data-tick]').forEach(btn => btn.onclick = e => {
             e.stopPropagation();
             const id = btn.getAttribute('data-tick');
-            const isLoan = pcLoans().some(l => l.id === id);   // 🔥 lookup por ID, no por prefijo
-            if (isLoan) {
+            const isLoan = pcLoans().some(l => l.id === id);
+            
+            if (String(id).startsWith('din-')) {
+                const parts = id.split('-');
+                const type = parts.pop();
+                const rawId = parts.slice(1).join('-');
+                const spent = subSpent(id);
+                const budget = subBudget(id);
+                const diff = budget - spent;
+                if (diff > 0.005) {
+                    App.payBudgetItem(rawId, type, diff);
+                    render();
+                }
+            } else if (isLoan) {
                 App.payLoanInstallment(id);
                 render();
             } else {
@@ -1158,7 +1208,24 @@ function addMovement(targetId, amount, opts) {
         });
         
         containerEl.querySelectorAll('[data-editcat]').forEach(el => el.onclick = e => { e.stopPropagation(); openCatModal(el.getAttribute('data-editcat'), false); });
-        containerEl.querySelectorAll('[data-editsub]').forEach(el => el.onclick = e => { e.stopPropagation(); openCatModal(el.getAttribute('data-editsub'), true); });
+        containerEl.querySelectorAll('[data-editsub]').forEach(el => el.onclick = e => {
+            e.stopPropagation();
+            const id = el.getAttribute('data-editsub');
+            if (id.startsWith('din-')) {
+                const parts = id.split('-');
+                const type = parts.pop();
+                const rawId = parts.slice(1).join('-');
+                const currentBudget = subBudget(id);
+                // Modal rápido para editar
+                const val = prompt("Nuevo presupuesto para esta aportación:", currentBudget);
+                if (val !== null) {
+                    App.updateBudgetItemAmount(rawId, type, parseFloat(val) || 0);
+                    render();
+                }
+            } else {
+                openCatModal(id, true);
+            }
+        });
     }
 
     return {
