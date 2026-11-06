@@ -182,6 +182,17 @@ const BudgetApp = (function () {
         return `<td class="pc-td-num ${avail < 0 ? 'pc-neg' : (avail === 0 ? '' : 'pc-pos')}">${fmt(avail)}</td>`;
     }
 
+    function computeTheoreticalBalance(accId) {
+        const account = getAccounts().find(a => a.id === accId);
+        if (!account) return 0;
+        const accName = String(account.name || '').toLowerCase().trim();
+        return pcCats().reduce((s, c) => {
+            if (String(c.account || '').toLowerCase().trim() !== accName) return s;
+            const b = catBudget(c.id);
+            return s + (b === null ? 0 : b);
+        }, 0);
+    }
+
     function getGroceriesAccountId() {
         const groceries = pcCats().find(c => isGroceries(c));
         return groceries ? mapAccountName(groceries.account) : null;
@@ -189,31 +200,62 @@ const BudgetApp = (function () {
 
     function syncGroceriesWithAccount(accId, newBalance) {
         const gAccId = getGroceriesAccountId();
-        if (accId !== gAccId) return; 
+        if (!gAccId || accId !== gAccId) return;   // solo cuenta Groceries
         const acc = getAccounts().find(a => a.id === accId);
         if (!acc) return;
         const oldBalance = Number(acc.balance) || 0;
-        const diff = oldBalance - newBalance; 
-        if (diff > 0) {
-            const today = new Date().toISOString().slice(0, 10);
-            const weeks = pcWeeks();
-            let targetWeek = weeks.find(w => today >= String(w.start).slice(0,10) && today <= String(w.end).slice(0,10));
-            if (!targetWeek && weeks.length) targetWeek = weeks[0];
-            if (targetWeek) {
-                const c = pcCats().find(x => isGroceries(x));
-                const id = 'pc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                data().expenses.push({ id, concept: 'Ajuste por saldo de cuenta', amount: diff, date: today, categoryId: c.id, person: 'conjunto', status: 'registrado', aggPeriod: currentPeriod, pcWeekId: targetWeek.id });
-                App.saveData();
-            }
+        const diff = oldBalance - Number(newBalance);   // >0 = gastado
+        if (Math.abs(diff) < 0.005) return;
+
+        const today = new Date().toISOString().slice(0, 10);
+        const weeks = pcWeeks();
+        let targetWeek = weeks.find(w => {
+            const s = String(w.start).slice(0, 10);
+            const e = String(w.end).slice(0, 10);
+            return today >= s && today <= e;
+        });
+        if (!targetWeek && weeks.length) {
+            const past = weeks.filter(w => String(w.end).slice(0, 10) < today);
+            targetWeek = past.length ? past[past.length - 1] : weeks[0];
         }
+        if (!targetWeek) return;
+
+        const groceriesCat = pcCats().find(x => isGroceries(x));
+        if (!groceriesCat) return;
+
+        // Reemplazar el ajuste auto de esta semana (no acumular)
+        const existing = data().expenses.find(e =>
+            e.pcWeekId === targetWeek.id &&
+            e.categoryId === groceriesCat.id &&
+            e.pcAuto === 'grocery-balance-sync'
+        );
+
+        if (existing) {
+            existing.amount = Number(existing.amount) + diff;
+            existing.date = today;
+            if (Math.abs(existing.amount) < 0.005) {
+                data().expenses = data().expenses.filter(e => e.id !== existing.id);
+            }
+        } else {
+            const id = 'pc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+            data().expenses.push({
+                id,
+                concept: 'Ajuste Groceries por saldo de cuenta',
+                amount: diff,
+                date: today,
+                categoryId: groceriesCat.id,
+                person: 'conjunto',
+                status: 'registrado',
+                aggPeriod: currentPeriod,
+                pcWeekId: targetWeek.id,
+                pcAuto: 'grocery-balance-sync'
+            });
+        }
+        App.saveData();
     }
 
-    function syncAccountWithGroceries(amount) {
-        const gAccId = getGroceriesAccountId();
-        if (!gAccId) return;
-        const acc = data().accounts.find(a => a.id === gAccId);
-        if (acc) { acc.balance = Number(acc.balance) - Number(amount); App.saveData(); }
-    }
+    // @deprecated · el flujo ahora pasa por App.registerExpenseMovement
+    function syncAccountWithGroceries(amount) { /* no-op */ }
 
     /* =========================================================
        RENDER
@@ -637,7 +679,12 @@ const BudgetApp = (function () {
 
         data().expenses.push(exp);
 
+        // Determinar cuenta destino: la de opts, o la de la categoría
         let accountId = mapAccountName(opts.account);
+        if (!accountId) {
+            const cat = findRow(targetId);
+            if (cat) accountId = mapAccountName(cat.account);
+        }
         if (!accountId && String(targetId).includes('groceries')) {
             accountId = getGroceriesAccountId();
         }
@@ -740,27 +787,50 @@ const BudgetApp = (function () {
         const acc = data().accounts.find(a => a.id === accId);
         if (!acc) return;
         const cur = Number(acc.balance) || 0;
+        const isGroceriesAccount = (accId === getGroceriesAccountId());
+        const theoretical = computeTheoreticalBalance(accId);
+
         closeModal();
         const div = document.createElement('div');
         div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
         div.innerHTML = `<div class="pc-modal"><h3>Actualizar Saldo · ${esc(acc.name)}</h3>
-            <div class="pc-field"><label>Nuevo saldo en banco (€)</label><input id="eaVal" type="number" step="0.01" value="${cur.toFixed(2)}"></div>
+            <div class="pc-field"><label>Nuevo saldo en banco (€)</label>
+                <input id="eaVal" type="number" step="0.01" value="${cur.toFixed(2)}"></div>
+            ${isGroceriesAccount
+                ? `<div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;">
+                       💡 Esta es la cuenta de Groceries. Al cambiar el saldo, la diferencia se suma al <strong>gastado de Groceries de la semana activa</strong>.
+                   </div>
+                   <div class="pc-field">
+                       <button type="button" class="pc-btn pc-btn-ghost" id="eaTheoretical" style="width:100%;font-size:11.5px">
+                           📐 Usar saldo teórico (suma de presupuestos): ${fmt(theoretical)}
+                       </button>
+                   </div>`
+                : `<div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;">
+                       💡 El cambio solo ajusta el saldo real. Los gastos por categoría se registran aparte.
+                   </div>`}
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="eaCancel">Cancelar</button>
-            <button class="pc-btn pc-btn-primary" id="eaSave">Ajustar</button></div></div>`;
+                <button class="pc-btn pc-btn-primary" id="eaSave">Ajustar</button></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         const inp = div.querySelector('#eaVal'); focusInput(inp);
-        
+
+        const theoBtn = div.querySelector('#eaTheoretical');
+        if (theoBtn) theoBtn.onclick = () => { inp.value = theoretical.toFixed(2); inp.focus(); inp.select(); };
+
         div.querySelector('#eaCancel').onclick = closeModal;
         const save = () => {
-            const accToUpdate = data().accounts.find(a => a.id === acc.id);
-            if (!accToUpdate) { closeModal(); return; }
             const newVal = Number(inp.value) || 0;
-            accToUpdate.balance = newVal;
+
+            // 1) Si es la cuenta de Groceries → ajustar el gasto semanal ANTES de cambiar el saldo
             syncGroceriesWithAccount(acc.id, newVal);
+
+            // 2) Fijar el saldo (sin registerExpenseMovement para evitar doble ajuste)
+            const accToUpdate = data().accounts.find(a => a.id === acc.id);
+            if (accToUpdate) accToUpdate.balance = newVal;
+
             App.saveData();
             if (window.App && typeof App.notifyModuleChange === 'function') {
-                App.notifyModuleChange('presupuesto-comun', { reason: 'account-balance-updated' });
+                App.notifyModuleChange('presupuesto-comun', { reason: 'account-balance-updated', accountId: acc.id });
             }
             closeModal();
             render();
