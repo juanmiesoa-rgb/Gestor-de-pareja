@@ -957,7 +957,7 @@ const BudgetApp = (function () {
         containerEl.querySelectorAll('[data-tick]').forEach(btn => btn.onclick = e => {
             e.stopPropagation();
             const id = btn.getAttribute('data-tick');
-            const isLoan = pcLoans().some(l => l.id === id);
+            const isLoan = pcLoans().some(l => l.id === id);   // 🔥 lookup por ID, no por prefijo
             if (isLoan) {
                 App.payLoanInstallment(id);
                 render();

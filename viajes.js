@@ -376,11 +376,32 @@
             const days = [];
             const cur = new Date(startDate + 'T00:00:00');
             const end = new Date(endDate + 'T00:00:00');
+            if (isNaN(cur.getTime()) || isNaN(end.getTime())) return days;
             while (cur <= end) {
                 days.push({ date: TripManager.iso(cur), items: [] });
                 cur.setDate(cur.getDate() + 1);
             }
             return days;
+        }
+
+        _ensureDays(trip) {
+            if (!trip || !trip.startDate || !trip.endDate) return;
+            if (Array.isArray(trip.days) && trip.days.length > 0) return;
+
+            // Regenerar días faltantes para viajes antiguos o mal creados
+            trip.days = this._generateDaysForTrip(trip.startDate, trip.endDate);
+
+            // Si ya hay actividades con day asignado, intentar re-vincularlas
+            const validDates = new Set(trip.days.map(d => d.date));
+            (trip.activities || []).forEach(a => {
+                if (a.day && !validDates.has(a.day)) {
+                    // Ajustar a la fecha más cercana dentro del rango del viaje
+                    if (a.day < trip.startDate) a.day = trip.startDate;
+                    else if (a.day > trip.endDate) a.day = trip.endDate;
+                }
+            });
+
+            this._schedulePersist();
         }
 
         get today() { return TripManager.iso(new Date()); }
@@ -628,47 +649,48 @@
         }
 
         _render_resumen() {
-    const view = this.mount.querySelector('#tm-view-resumen');
-    const trips = this.filteredTrips();
-    const cards = trips.map(t => this._tripCardHTML(t)).join('');
-    const pieTrip = trips.slice().sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+            const view = this.mount.querySelector('#tm-view-resumen');
+            const trips = this.filteredTrips();
+            trips.forEach(t => this._ensureDays(t));
+            const cards = trips.map(t => this._tripCardHTML(t)).join('');
+            const pieTrip = trips.slice().sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
 
-    view.innerHTML = `
-        ${this._filtersBarHTML()}
-        <div class="tm-trips-grid">${cards || this._emptyTripsState()}</div>
-        ${pieTrip ? `
-        <div class="tm-dash-row">
-            <div class="tm-panel">
-                <h3>🥧 Distribución del gasto por categoría</h3>
-                <div class="tm-chart-wrap">
-                    <canvas id="tm-pie-canvas" width="220" height="220" aria-label="Gráfica de rosco por categoría"></canvas>
-                    <div class="tm-chart-legend" id="tm-pie-legend"></div>
+            view.innerHTML = `
+                ${this._filtersBarHTML()}
+                <div class="tm-trips-grid">${cards || this._emptyTripsState()}</div>
+                ${pieTrip ? `
+                <div class="tm-dash-row">
+                    <div class="tm-panel">
+                        <h3>🥧 Distribución del gasto por categoría</h3>
+                        <div class="tm-chart-wrap">
+                            <canvas id="tm-pie-canvas" width="220" height="220" aria-label="Gráfica de rosco por categoría"></canvas>
+                            <div class="tm-chart-legend" id="tm-pie-legend"></div>
+                        </div>
+                        <p style="font-size:12px;color:var(--tm-text-muted);margin:12px 0 0;">
+                            Datos del viaje: <strong>${TripManager.esc(pieTrip.name)}</strong>
+                        </p>
+                    </div>
+                    <div class="tm-panel">
+                        <h3>🔔 Alertas inteligentes</h3>
+                        <div class="tm-alerts" style="margin-top:0;">${this._alertsHTML()}</div>
+                    </div>
+                </div>` : ''}`;
+
+            if (pieTrip) this._drawPie(pieTrip);
+        }
+
+        /* FASE NUEVA · Empty state enriquecido */
+        _emptyTripsState() {
+            return `
+            <div class="tm-empty" style="padding:48px 24px;text-align:center;grid-column:1/-1">
+                <div style="font-size:56px;margin-bottom:16px;line-height:1">✈️</div>
+                <div style="font-size:17px;font-weight:700;margin-bottom:8px;color:var(--tm-text)">No hay viajes todavía</div>
+                <div style="margin-bottom:20px;color:var(--tm-text-muted);max-width:360px;margin-left:auto;margin-right:auto">
+                    Crea tu primer viaje para empezar a planificar: presupuesto, pagos parciales, actividades y ahorro compartido.
                 </div>
-                <p style="font-size:12px;color:var(--tm-text-muted);margin:12px 0 0;">
-                    Datos del viaje: <strong>${TripManager.esc(pieTrip.name)}</strong>
-                </p>
-            </div>
-            <div class="tm-panel">
-                <h3>🔔 Alertas inteligentes</h3>
-                <div class="tm-alerts" style="margin-top:0;">${this._alertsHTML()}</div>
-            </div>
-        </div>` : ''}`;
-
-    if (pieTrip) this._drawPie(pieTrip);
-}
-
-/* FASE NUEVA · Empty state enriquecido */
-_emptyTripsState() {
-    return `
-    <div class="tm-empty" style="padding:48px 24px;text-align:center;grid-column:1/-1">
-        <div style="font-size:56px;margin-bottom:16px;line-height:1">✈️</div>
-        <div style="font-size:17px;font-weight:700;margin-bottom:8px;color:var(--tm-text)">No hay viajes todavía</div>
-        <div style="margin-bottom:20px;color:var(--tm-text-muted);max-width:360px;margin-left:auto;margin-right:auto">
-            Crea tu primer viaje para empezar a planificar: presupuesto, pagos parciales, actividades y ahorro compartido.
-        </div>
-        <button type="button" class="tm-btn tm-btn-primary" data-action="new-trip">✈️ Crear mi primer viaje</button>
-    </div>`;
-}
+                <button type="button" class="tm-btn tm-btn-primary" data-action="new-trip">✈️ Crear mi primer viaje</button>
+            </div>`;
+        }
 
         _tripCardHTML(trip) {
             const st = this.statusOf(trip);
@@ -882,6 +904,7 @@ _emptyTripsState() {
             const view = this.mount.querySelector('#tm-view-detail');
             const trip = this.selectedTrip;
             if (!trip) { this.closeTripDetail(); return; }
+            this._ensureDays(trip);
             const st = this.statusOf(trip);
             const days = this.daysUntil(trip);
             const totalDays = TripManager.daysBetween(trip.startDate, trip.endDate) + 1;
