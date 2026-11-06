@@ -169,8 +169,40 @@ const DineroApp = (function () {
         return getAccounts().reduce((s, a) => s + (Number(a.balance) || 0), 0);
     }
     function pendingCommitments() {
-        return data.commitments.filter(c => !c.executed);
+        const list = [];
+        const today = new Date().toISOString().slice(0, 10);
+        
+        // 1. Compromisos manuales
+        data.commitments.filter(c => !c.executed).forEach(c => list.push({ ...c, source: 'commitment' }));
+        
+        // 2. Deudas (si quieren aparecer en presupuesto)
+        data.debts.filter(d => d.returned < d.total && d.includeInBudget !== false).forEach(d => 
+            list.push({ id: d.id, name: d.name, amount: d.total - d.returned, dueDate: d.dueDate || '2099-12-31', source: 'debt' })
+        );
+        
+        // 3. Préstamos
+        data.loans.filter(l => l.paidCount < l.installments).forEach(l => 
+            list.push({ id: l.id, name: 'Cuota ' + l.name, amount: l.installmentAmount, dueDate: l.nextDate || '2099-12-31', source: 'loan' })
+        );
+        
+        // 4. Pagos Recurrentes
+        data.recurring.filter(r => r.active).forEach(r => 
+            list.push({ id: r.id, name: r.name, amount: r.amount, dueDate: r.nextDate || '2099-12-31', source: 'recurring' })
+        );
+        
+        // 5. Objetivos de ahorro
+        data.goals.filter(g => g.nextDate && g.frequency !== 'none').forEach(g => 
+            list.push({ id: g.id, name: 'Ahorro ' + g.name, amount: g.contribution, dueDate: g.nextDate, source: 'goal' })
+        );
+        
+        // 6. Gastos previstos del Presupuesto
+        (App.data.expenses || []).filter(e => (e.status === 'previsto' || e.status === 'pendiente') && e.date >= today).forEach(e => 
+            list.push({ id: e.id, name: e.concept, amount: e.amount, dueDate: e.date, source: 'budget' })
+        );
+        
+        return list;
     }
+    
     function commitmentsWithin(days) {
         return pendingCommitments().filter(c => {
             const d = daysFromToday(c.dueDate);
@@ -430,6 +462,9 @@ const DineroApp = (function () {
 
         const accOptions = getAccounts().map(a => `<option value="${a.id}">${escapeHtml(a.name)} · ${fmtMoney(a.balance)}</option>`).join('');
         const horizonOptions = HORIZON_OPTIONS.map(o => `<option value="${o.v}" ${Number(o.v) === Number(h) ? 'selected' : ''}>${o.l}</option>`).join('');
+        
+        // Desglose por cuentas
+        const accBreakdown = getAccounts().map(a => `${escapeHtml(a.name)}: ${fmtMoney(a.balance)}`).join(' · ');
 
         return `
         <section class="dv2-section dv2-summary-section" style="--dv2-accent:${SECTION_COLORS.summary}">
@@ -445,7 +480,7 @@ const DineroApp = (function () {
                     <div class="dv2-kpi3" style="--dv2-accent:#2563eb">
                         <div class="dv2-kpi3-label"><span class="dv2-kpi-dot" style="background:#2563eb"></span> Saldo Real en Cuentas</div>
                         <div class="dv2-kpi3-value">${fmtMoney(real)}</div>
-                        <div class="dv2-kpi-meta">${getAccounts().length} cuentas físicas · dinero bancario real</div>
+                        <div class="dv2-kpi-meta" style="font-size:11px">${accBreakdown}</div>
                         <div class="dv2-kpi-control">
                             <select class="dv2-select" id="dv2AccSelect" style="flex:1"><option value="">Consultar cuenta…</option>${accOptions}</select>
                             <button class="dv2-mini-btn" id="dv2EditAccountsBtn"><i class="fas fa-pen"></i> Editar saldos</button>
@@ -454,7 +489,7 @@ const DineroApp = (function () {
                     <div class="dv2-kpi3" style="--dv2-accent:#f59e0b">
                         <div class="dv2-kpi3-label"><span class="dv2-kpi-dot" style="background:#f59e0b"></span> Disponible Ahora</div>
                         <div class="dv2-kpi3-value ${now < 0 ? 'negative' : ''}">${fmtMoney(now)}</div>
-                        <div class="dv2-kpi-meta">${fmtMoney(within.reduce((s,c)=>s+c.amount,0))} comprometidos en ${horizonLabel(h)} (${within.length})</div>
+                        <div class="dv2-kpi-meta" style="font-size:11px">${fmtMoney(within.reduce((s,c)=>s+c.amount,0))} comprometidos en ${horizonLabel(h)}</div>
                         <div class="dv2-kpi-control">
                             <span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)">Horizonte:</span>
                             <select class="dv2-pill-select" id="dv2Horizon" style="--dv2-accent:#f59e0b" title="Ventana temporal de compromisos">${horizonOptions}</select>
@@ -463,7 +498,7 @@ const DineroApp = (function () {
                     <div class="dv2-kpi3" style="--dv2-accent:#8b5cf6">
                         <div class="dv2-kpi3-label"><span class="dv2-kpi-dot" style="background:#8b5cf6"></span> Disponible Global</div>
                         <div class="dv2-kpi3-value ${glob < 0 ? 'negative' : ''}">${fmtMoney(glob)}</div>
-                        <div class="dv2-kpi-meta">Tras restar todos los compromisos futuros (${fmtMoney(totalPend)})</div>
+                        <div class="dv2-kpi-meta" style="font-size:11px">Tras restar futuros (${fmtMoney(totalPend)})</div>
                         <div class="dv2-kpi-control">
                             <button class="dv2-mini-btn" id="dv2ShowCommitments"><i class="fas fa-list-check"></i> Ver compromisos (${pendingCommitments().length})</button>
                         </div>
@@ -474,17 +509,22 @@ const DineroApp = (function () {
     }
 
     function renderWallets() {
-        const cards = data.wallets.map(w => `
+        const cards = data.wallets.map(w => {
+            const acc = getAccounts().find(a => a.id === w.accountId);
+            const accName = acc ? escapeHtml(acc.name) : 'Sin cuenta';
+            return `
             <div class="dv2-card dv2-wallet" style="--dv2-accent:${w.color};cursor:pointer" data-wallet="${w.id}" title="Clic para ver movimientos y editar">
                 <div class="dv2-wallet-top">
                     <span class="dv2-emoji">${w.emoji}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(w.name)}</div>
+                        <div style="font-size:10px;color:var(--text-muted)"><i class="fas fa-link"></i> ${accName}</div>
                     </div>
                     <span style="width:14px;height:14px;border-radius:5px;background:${w.color};box-shadow:0 0 0 3px color-mix(in srgb, ${w.color} 22%, transparent);flex-shrink:0" title="Color de la subcategoría"></span>
                 </div>
                 <div class="dv2-wallet-amt">${fmtMoney(walletBalance(w))}</div>
-            </div>`).join('');
+            </div>`;
+        }).join('');
 
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.wallets}">
@@ -501,19 +541,23 @@ const DineroApp = (function () {
     }
     function renderDebts() {
         const groups = [
-            { kind: 'pay', label: 'Dinero a devolver', hint: 'gastado hoy, se repone' },
-            { kind: 'receive', label: 'Dinero a cobrar / recuperar', hint: 'préstamos o ingresos temporales' }
+            { kind: 'pay', label: 'Dinero a devolver a la cuenta', hint: '(gastado hoy, se repone)' },
+            { kind: 'receive', label: 'Dinero a recuperar de la cuenta', hint: '(préstamos o ingresos temporales)' }
         ];
         const card = (d) => {
             const s = debtStatus(d);
             const pct = d.total ? Math.min(100, Math.round(d.returned / d.total * 100)) : 0;
             const col = d.kind === 'pay' ? '#ef4444' : '#0ea5e9';
+            const acc = getAccounts().find(a => a.id === d.accountId);
+            const accName = acc ? escapeHtml(acc.name) : 'Sin cuenta';
+            
             return `
             <div class="dv2-card" style="--dv2-accent:${col};cursor:pointer" data-debt="${d.id}" title="Clic para ver movimientos y editar">
                 <div class="dv2-wallet-top">
                     <span class="dv2-emoji">${d.emoji}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(d.name)}</div>
+                        <div style="font-size:10px;color:var(--text-muted)"><i class="fas fa-link"></i> ${accName}</div>
                     </div>
                     <span style="width:14px;height:14px;border-radius:5px;background:${col};box-shadow:0 0 0 3px color-mix(in srgb, ${col} 22%, transparent);flex-shrink:0" title="Color"></span>
                 </div>
@@ -531,7 +575,7 @@ const DineroApp = (function () {
             return `
             <div style="margin-bottom:14px">
                 <div style="font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:${g.kind === 'pay' ? '#ef4444' : '#0ea5e9'};margin-bottom:8px">
-                    <i class="fas ${g.kind === 'pay' ? 'fa-arrow-up' : 'fa-arrow-down'}"></i> ${g.label} <span style="color:var(--text-muted);font-weight:500;text-transform:none">(${g.hint})</span>
+                    <i class="fas ${g.kind === 'pay' ? 'fa-arrow-up' : 'fa-arrow-down'}"></i> ${g.label} <span style="color:var(--text-muted);font-weight:500;text-transform:none">${g.hint}</span>
                 </div>
                 <div class="dv2-grid">${list.map(card).join('') || '<div class="dv2-empty">Nada registrado con este filtro</div>'}</div>
             </div>`;
@@ -693,7 +737,7 @@ const DineroApp = (function () {
                         const iconColor = isTransfer ? 'var(--text-muted)' : isIn ? 'var(--success)' : 'var(--danger)';
                         const icon = isTransfer ? 'fa-right-left' : isIn ? 'fa-arrow-down' : 'fa-arrow-up';
                         return `
-                        <div class="dv2-hist-row">
+                        <div class="dv2-hist-row" data-action="edit-movement" data-id="${m.id}" style="cursor:pointer; transition: background .15s" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
                             <span class="dv2-hist-icon" style="background:${iconBg};color:${iconColor}"><i class="fas ${icon}"></i></span>
                             <div class="dv2-hist-main">
                                 <div class="dv2-hist-concept">${escapeHtml(m.concept)}</div>
@@ -800,6 +844,12 @@ const DineroApp = (function () {
 
     function bindRight(right) {
         right.querySelector('#dv2AddMovement')?.addEventListener('click', () => openMovementModal());
+        
+        // NUEVO: Escuchar clics en cualquier fila del historial
+        right.querySelectorAll('[data-action="edit-movement"]').forEach(el => {
+            el.addEventListener('click', () => openMovementModal(el.dataset.id));
+        });
+        
         right.querySelector('#dv2HFAccount')?.addEventListener('change', (e) => { histFilter.account = e.target.value; renderRight(); });
         right.querySelector('#dv2HFType')?.addEventListener('change', (e) => { histFilter.type = e.target.value; renderRight(); });
         right.querySelector('#dv2HFFrom')?.addEventListener('change', (e) => { histFilter.from = e.target.value; renderRight(); });
@@ -1048,12 +1098,15 @@ const DineroApp = (function () {
     function openWalletModal(editId) {
         const w = editId ? data.wallets.find(x => x.id === editId) : null;
         const otherWallets = data.wallets.filter(x => !w || x.id !== w.id).map(x => ({ v: x.id, l: `${x.emoji} ${x.name}` }));
+        const accOpts = getAccounts().map(a => ({ v: a.id, l: `${a.icon || '🏦'} ${a.name}` }));
+
         const body = openModal(
             `<span class="dv2-badge" style="background:#f59e0b">${w ? w.emoji : '👛'}</span> ${w ? 'Monedero: ' + escapeHtml(w.name) : 'Nuevo monedero'}`,
             '#f59e0b',
             `
             ${f('fw1', 'Icono', emojiPicker('dv2WEmoji', w ? w.emoji : '👛'))}
             ${f('fw2', 'Nombre', inp('dv2WName', { value: w ? w.name : '', placeholder: 'Ej. Comida' }))}
+            ${f('fwAcc', 'Cuenta principal', sel('dv2WAcc', [{v:'', l:'— Ninguna —'}].concat(accOpts), w ? w.accountId : ''))}
             ${w ? `
             <div style="font-size:12px;color:var(--text-secondary)">Cantidad actual: <strong>${fmtMoney(walletBalance(w))}</strong> · sin límites ni porcentajes.</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
@@ -1074,10 +1127,13 @@ const DineroApp = (function () {
             const name = body.querySelector('#dv2WName').value.trim();
             if (!name) { toast('El monedero necesita un nombre', 'error'); return; }
             const emoji = pickedEmoji(body);
-            if (w) { w.name = name; w.emoji = emoji; toast('Monedero actualizado'); }
-            else { data.wallets.push({ id: uid('w'), emoji, name, color: '#f59e0b', movements: [] }); toast('Monedero creado'); }
+            const accId = body.querySelector('#dv2WAcc').value;
+            
+            if (w) { w.name = name; w.emoji = emoji; w.accountId = accId; toast('Monedero actualizado'); }
+            else { data.wallets.push({ id: uid('w'), emoji, name, color: '#f59e0b', accountId: accId, movements: [] }); toast('Monedero creado'); }
             saveData(); closeModal(); renderAll();
         };
+        
         if (w) {
             body.parentElement.querySelector('#dv2WDel').onclick = () => confirmDelete(`¿Eliminar el monedero «${w.name}»? Su contenido vuelve al saldo común.`, () => {
                 data.wallets = data.wallets.filter(x => x.id !== w.id);
@@ -1373,6 +1429,8 @@ const DineroApp = (function () {
     function openDebtModal(editId) {
         const d = editId ? data.debts.find(x => x.id === editId) : null;
         let kind = d ? d.kind : 'pay';
+        const accOpts = getAccounts().map(a => ({ v: a.id, l: `${a.icon || '🏦'} ${a.name}` }));
+
         const body = openModal(
             `<span class="dv2-badge" style="background:${kind === 'pay' ? '#ef4444' : '#0ea5e9'}">${d ? d.emoji : '🔄'}</span> ${d ? 'Editar deuda' : 'Nueva deuda / devolución'}`,
             '#ef4444',
@@ -1389,11 +1447,17 @@ const DineroApp = (function () {
                 ${f('fd3', 'Importe total (€)', inp('dv2DAmt', { type: 'number', step: '0.01', min: '0', value: d ? d.total : '' }))}
                 ${f('fd4', 'Fecha estimada (opcional)', inp('dv2DDue', { type: 'date', value: d ? d.dueDate || '' : '' }))}
             </div>
-            ${f('fd5', 'Contraparte (opcional)', inp('fv6', { value: d ? d.counterparty || '' : '', placeholder: 'Ej. Hermano, Marta…' }))}
+            ${f('fdAcc', 'Cuenta asociada', sel('dv2DAcc', [{v:'', l:'— Sin cuenta —'}].concat(accOpts), d ? d.accountId : ''))}
+            <div class="dv2-field" style="flex-direction:row; align-items:center; display:flex; gap:8px; margin-top:8px;">
+                <input type="checkbox" id="dv2DInclBudget" ${!d || d.includeInBudget !== false ? 'checked' : ''} style="width:16px;height:16px">
+                <label style="margin:0; text-transform:none; font-size:12px; font-weight:600">Incluir en el presupuesto (Compromisos futuros)</label>
+            </div>
+            ${f('fd5', 'Contraparte (opcional)', inp('dv2DCounterparty', { value: d ? d.counterparty || '' : '', placeholder: 'Ej. Hermano, Marta…' }))}
             ${f('fd7', 'Nota', inp('dv2DNote', { value: d ? d.note || '' : '' }))}`,
             `${d ? '<button class="dv2-danger-link" id="dv2DDel">Eliminar</button>' : ''}<button class="btn btn-secondary" id="dv2DCancel">Cancelar</button><button class="btn btn-primary" id="dv2DSave"><i class="fas fa-save"></i> Guardar</button>`
         );
         bindEmojiPicker(body);
+        
         const seg = body.querySelector('#dv2DKind');
         seg.addEventListener('click', (e) => {
             const b = e.target.closest('[data-kind]');
@@ -1401,6 +1465,7 @@ const DineroApp = (function () {
             kind = b.dataset.kind;
             seg.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b));
         });
+        
         body.parentElement.querySelector('#dv2DCancel').onclick = closeModal;
         body.parentElement.querySelector('#dv2DSave').onclick = () => {
             const name = body.querySelector('#dv2DName').value.trim();
@@ -1410,13 +1475,16 @@ const DineroApp = (function () {
                 id: d ? d.id : uid('d'), kind, emoji: pickedEmoji(body), name, total,
                 returned: d ? d.returned : 0,
                 dueDate: body.querySelector('#dv2DDue').value || '',
-                counterparty: body.querySelector('#fv6').value.trim(),
+                accountId: body.querySelector('#dv2DAcc').value || null,
+                includeInBudget: body.querySelector('#dv2DInclBudget').checked,
+                counterparty: body.querySelector('#dv2DCounterparty').value.trim(),
                 note: body.querySelector('#dv2DNote').value.trim(),
                 history: d ? d.history : []
             };
             if (d) Object.assign(d, obj); else data.debts.push(obj);
             saveData(); closeModal(); renderAll(); toast(d ? 'Deuda actualizada' : 'Deuda registrada');
         };
+        
         if (d) body.parentElement.querySelector('#dv2DDel').onclick = () => confirmDelete(`¿Eliminar «${d.name}»?`, () => {
             data.debts = data.debts.filter(x => x.id !== d.id);
             saveData(); closeModal(); renderAll();
@@ -1431,14 +1499,14 @@ const DineroApp = (function () {
             `<span class="dv2-badge" style="background:#ef4444">${d.emoji}</span> Devolver «${escapeHtml(d.name)}»`,
             '#ef4444',
             `
-            <div style="font-size:12.5px;color:var(--text-secondary)">Total: <strong>${fmtMoney(d.total)}</strong> · Ya cubierto: <strong>${fmtMoney(d.returned)}</strong> · <span style="color:var(--danger)">Restante: <strong>${fmtMoney(remaining)}</strong></span></div>
+            <div style="font-size:12.5px;color:var(--text-secondary)">Total: <strong>${fmtMoney(d.total)}</strong> · Restante: <strong>${fmtMoney(remaining)}</strong></div>
             <div class="dv2-seg" id="dv2DPMode" style="--dv2-accent:#ef4444;width:max-content">
                 <button type="button" data-mode="partial" class="sel">Parcial</button>
                 <button type="button" data-mode="full">Total (${fmtMoney(remaining)})</button>
             </div>
             ${f('fp1', 'Importe a registrar (€)', inp('dv2DPAmt', { type: 'number', step: '0.01', min: '0', value: remaining }))}
-            ${f('fp2', 'Fecha', inp('dv2DPDate', { type: 'date', value: todayISO() }))}
-            ${f('fp3', 'Nota', inp('dv2DPNote', { placeholder: 'Ej. Ingreso en MyInvestor' }))}`,
+            ${f('fp2', 'Fecha', inp('dv2DPDate', { type: 'date', value: TODAY_ISO }))}
+            ${f('fp3', 'Nota', inp('dv2DPNote', { placeholder: 'Ej. Ingreso en banco' }))}`,
             `<button class="btn btn-secondary" id="dv2DPCancel">Cancelar</button><button class="btn btn-primary" id="dv2DPSave"><i class="fas fa-check"></i> Confirmar devolución</button>`
         );
         let mode = 'partial';
@@ -1449,13 +1517,24 @@ const DineroApp = (function () {
             body.querySelectorAll('#dv2DPMode button').forEach(x => x.classList.toggle('sel', x === b));
             amtInput.value = mode === 'full' ? remaining : '';
         });
-        body.parentElement.querySelector('#dv2DPCancel').onclick = closeModal;
         body.parentElement.querySelector('#dv2DPSave').onclick = () => {
             const amt = round2(parseFloat(amtInput.value));
             if (isNaN(amt) || amt <= 0) { toast('Importe no válido', 'error'); return; }
             const capped = Math.min(amt, remaining);
             d.returned = round2(d.returned + capped);
-            d.history.push({ id: uid('dh'), date: body.querySelector('#dv2DPDate').value || todayISO(), amount: capped, note: body.querySelector('#dv2DPNote').value.trim() });
+            d.history.push({ id: uid('dh'), date: body.querySelector('#dv2DPDate').value || TODAY_ISO, amount: capped, note: body.querySelector('#dv2DPNote').value.trim() });
+            
+            // Registrar el movimiento en la cuenta si tiene una asociada
+            if (d.accountId) {
+                registerMovement({
+                    date: body.querySelector('#dv2DPDate').value || TODAY_ISO,
+                    concept: `Deuda: ${d.name} (${d.kind === 'pay' ? 'Devuelto' : 'Cobrado'})`,
+                    amount: d.kind === 'pay' ? -capped : capped,
+                    type: d.kind === 'pay' ? 'out' : 'in',
+                    accountId: d.accountId,
+                    link: { kind: 'debt', id: d.id }
+                });
+            }
             saveData(); closeModal(); renderAll();
             toast(d.returned >= d.total ? `«${d.name}» completada ✅` : `Devolución parcial registrada`);
         };
@@ -1652,68 +1731,83 @@ const DineroApp = (function () {
         });
     }
 
-    function openMovementModal() {
+    function openMovementModal(editId) {
+        const mv = editId ? data.movements.find(x => x.id === editId) : null;
         const types = [['out', 'Salida (gasto)'], ['in', 'Entrada (ingreso)'], ['transfer-out', 'Transferencia interna (salida)'], ['transfer-in', 'Transferencia interna (entrada)']].map(([v, l]) => ({ v, l }));
-        const linkOpts = [
-            { v: '', l: '— Sin vinculación —' },
-            { v: '__w', l: '▸ Monederos' },
-            ...data.wallets.map(w => ({ v: 'wallet:' + w.id, l: `   ${w.emoji} ${w.name}` })),
-            { v: '__g', l: '▸ Objetivos' },
-            ...data.goals.map(g => ({ v: 'goal:' + g.id, l: `   ${g.emoji} ${g.name}` })),
-            { v: '__l', l: '▸ Préstamos' },
-            ...data.loans.map(l => ({ v: 'loan:' + l.id, l: `   ${l.emoji} ${l.name}` })),
-            { v: '__d', l: '▸ Deudas' },
-            ...data.debts.filter(d => debtStatus(d) !== 'done').map(d => ({ v: 'debt:' + d.id, l: `   ${d.emoji} ${d.name}` }))
-        ];
         const accOpts = getAccounts().map(a => ({ v: a.id, l: `${a.icon || '🏦'} ${a.name}` }));
-        const fxNote = () => `<div id="dv2Mfx" style="font-size:11.5px;color:var(--text-muted);margin-top:-6px">💱 1 USD ≈ ${eurUsdRate.toFixed(4)} EUR${fxUpdatedAt ? ' · actualizado ' + fmtDate(fxUpdatedAt) : ' (valor de referencia)'}</div>`;
+        
         const body = openModal(
-            '<span class="dv2-badge" style="background:#64748b">↕️</span> Nuevo movimiento',
+            `<span class="dv2-badge" style="background:#64748b">${mv ? '✏️' : '↕️'}</span> ${mv ? 'Editar movimiento' : 'Nuevo movimiento'}`,
             '#64748b',
             `
-            ${f('fm1', 'Concepto', inp('dv2MConcept', { placeholder: 'Ej. Compra semanal' }))}
+            ${f('fm1', 'Concepto', inp('dv2MConcept', { value: mv ? mv.concept : '', placeholder: 'Ej. Compra semanal' }))}
             <div class="dv2-row2">
-                ${f('fm2', 'Importe', inp('dv2MAmt', { type: 'number', step: '0.01', min: '0' }))}
-                ${f('fm2b', 'Divisa', sel('dv2MCur', [{ v: 'EUR', l: '€ Euro' }, { v: 'USD', l: '$ Dólar (EE. UU.)' }], 'EUR'))}
+                ${f('fm2', 'Importe', inp('dv2MAmt', { type: 'number', step: '0.01', min: '0', value: mv ? Math.abs(mv.amount) : '' }))}
+                ${f('fm2b', 'Divisa', sel('dv2MCur', [{ v: 'EUR', l: '€ Euro' }, { v: 'USD', l: '$ Dólar' }], mv && mv.currency ? mv.currency : 'EUR'))}
             </div>
-            ${fxNote()}
             <div class="dv2-row2">
-                ${f('fm3', 'Fecha', inp('dv2MDate', { type: 'date', value: todayISO() }))}
-                ${f('fm4', 'Tipo', sel('dv2MType', types, 'out'))}
+                ${f('fm3', 'Fecha', inp('dv2MDate', { type: 'date', value: mv ? mv.date : TODAY_ISO }))}
+                ${f('fm4', 'Tipo', sel('dv2MType', types, mv ? mv.type : 'out'))}
             </div>
-            ${f('fm5', 'Cuenta', sel('dv2MAcc', accOpts, (accOpts[0] || {}).v))}
-            ${f('fm6', 'Vincular a (opcional)', sel('dv2MLink', linkOpts, ''))}`,
-            `<button class="btn btn-secondary" id="dv2MCancel">Cancelar</button><button class="btn btn-primary" id="dv2MSave"><i class="fas fa-plus"></i> Registrar</button>`
+            ${f('fm5', 'Cuenta', sel('dv2MAcc', accOpts, mv ? mv.accountId : (accOpts[0] || {}).v))}`,
+            `${mv ? '<button class="dv2-danger-link" id="dv2MDelete">Eliminar movimiento</button>' : ''}
+             <button class="btn btn-secondary" id="dv2MCancel">Cancelar</button>
+             <button class="btn btn-primary" id="dv2MSave"><i class="fas fa-save"></i> Guardar</button>`
         );
-        body.querySelector('#dv2MCur').addEventListener('change', () => updateFxHint(body));
-        body.querySelector('#dv2MAmt').addEventListener('input', () => updateFxHint(body));
+        
         body.parentElement.querySelector('#dv2MCancel').onclick = closeModal;
+        
+        if (mv) {
+            body.parentElement.querySelector('#dv2MDelete').onclick = () => {
+                confirmDelete('¿Eliminar este movimiento? El saldo de la cuenta se recalculará.', () => {
+                    // Revertir saldo
+                    const acc = getAccounts().find(a => a.id === mv.accountId);
+                    if (acc) acc.balance = round2(acc.balance - mv.amount);
+                    // Borrar
+                    data.movements = data.movements.filter(x => x.id !== mv.id);
+                    App.saveData(); saveData(); closeModal(); renderAll(); toast('Movimiento eliminado');
+                });
+            };
+        }
+
         body.parentElement.querySelector('#dv2MSave').onclick = () => {
             const concept = body.querySelector('#dv2MConcept').value.trim();
             const rawAmount = round2(parseFloat(body.querySelector('#dv2MAmt').value));
             const type = body.querySelector('#dv2MType').value;
-            const currency = body.querySelector('#dv2MCur').value;
-            if (!concept || isNaN(rawAmount) || rawAmount <= 0) { toast('Concepto e importe válidos requeridos', 'error'); return; }
-            const amount = currency === 'USD' ? round2(rawAmount / eurUsdRate) : rawAmount;
-            const signed = type === 'in' || type === 'transfer-in' ? amount : -amount;
-            const linkVal = body.querySelector('#dv2MLink').value;
-            let link = null;
-            if (linkVal && linkVal.includes(':')) {
-                const [kind, id] = linkVal.split(':');
-                link = { kind, id };
-                if (kind === 'wallet') {
-                    const w = data.wallets.find(x => x.id === id);
-                    if (w) w.movements.push({ id: uid('wm'), date: body.querySelector('#dv2MDate').value, concept, amount, type: type === 'in' || type === 'transfer-in' ? 'in' : 'out' });
-                } else if (kind === 'goal') {
-                    const g = data.goals.find(x => x.id === id);
-                    if (g && signed < 0) { g.saved = round2(g.saved + amount); g.contributions = g.contributions || []; g.contributions.push({ id: uid('gc'), date: body.querySelector('#dv2MDate').value, amount }); }
-                }
+            const accountId = body.querySelector('#dv2MAcc').value;
+            if (!concept || isNaN(rawAmount) || rawAmount <= 0) { toast('Datos incompletos', 'error'); return; }
+            
+            const amount = type === 'in' || type === 'transfer-in' ? rawAmount : -rawAmount;
+            
+            // Si estamos editando, primero revertimos el saldo anterior
+            if (mv) {
+                const oldAcc = getAccounts().find(a => a.id === mv.accountId);
+                if (oldAcc) oldAcc.balance = round2(oldAcc.balance - mv.amount);
+                // Actualizamos los datos del movimiento
+                Object.assign(mv, {
+                    concept, amount, date: body.querySelector('#dv2MDate').value,
+                    type, accountId, currency: body.querySelector('#dv2MCur').value
+                });
+            } else {
+                // Si es nuevo, creamos el objeto
+                const newMv = {
+                    id: uid('mv'), concept, amount, type,
+                    date: body.querySelector('#dv2MDate').value,
+                    accountId, currency: body.querySelector('#dv2MCur').value
+                };
+                data.movements.unshift(newMv);
             }
-            registerMovement({ date: body.querySelector('#dv2MDate').value, concept, amount: signed, type, accountId: body.querySelector('#dv2MAcc').value, link, currency });
-            closeModal();
-            toast(currency === 'USD' ? `Movimiento registrado (${fmtAmount(rawAmount, 'USD')} → ${fmtMoney(amount)})` : 'Movimiento registrado');
+            
+            // Aplicar el nuevo saldo a la cuenta
+            const newAcc = getAccounts().find(a => a.id === accountId);
+            if (newAcc && ['in', 'out', 'transfer-in', 'transfer-out'].includes(type)) {
+                newAcc.balance = round2(newAcc.balance + amount);
+            }
+            
+            App.saveData(); saveData(); closeModal(); renderAll(); toast('Movimiento guardado');
         };
     }
+
     function updateFxHint(body) {
         const hint = body.querySelector('#dv2Mfx');
         const cur = body.querySelector('#dv2MCur').value;
