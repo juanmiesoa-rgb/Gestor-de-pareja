@@ -1,5 +1,5 @@
 /* =============================================================================
-   PRESUPUESTO-COMUN.JS · v23 — Sin defaults, focus perfecto y lectura limpia
+   PRESUPUESTO-COMUN.JS · v24 — Lógica de reparto y lectura robusta
    ============================================================================= */
 const BudgetApp = (function () {
     'use strict';
@@ -15,16 +15,9 @@ const BudgetApp = (function () {
     
     let containerEl = null;
 
-    /* =========================================================
-       HELPERS
-       ========================================================= */
     function focusInput(inp) {
         if (!inp) return;
-        // requestAnimationFrame asegura que el DOM esté pintado antes de hacer focus
-        requestAnimationFrame(() => {
-            inp.focus();
-            inp.select();
-        });
+        requestAnimationFrame(() => { inp.focus(); inp.select(); });
     }
 
     function shortDate(iso) { 
@@ -46,8 +39,17 @@ const BudgetApp = (function () {
         return acc ? acc.id : null;
     }
 
-    function isGroceries(c) { if (!c) return false; const str = (String(c.id) + ' ' + String(c.name)).toLowerCase(); return str.includes('groceries') || str.includes('leisure'); }
-    function isLoans(c) { if (!c) return false; const str = (String(c.id) + ' ' + String(c.name)).toLowerCase(); return str.includes('préstamo') || str.includes('prestamo') || str.includes('loan'); }
+    // Detección robusta por nombre o ID
+    function isGroceries(c) { 
+        if (!c) return false; 
+        const str = (String(c.id) + ' ' + String(c.name) + ' ' + String(c.label)).toLowerCase(); 
+        return str.includes('groceries') || str.includes('leisure'); 
+    }
+    function isLoans(c) { 
+        if (!c) return false; 
+        const str = (String(c.id) + ' ' + String(c.name) + ' ' + String(c.label)).toLowerCase(); 
+        return str.includes('préstamo') || str.includes('prestamo') || str.includes('loan'); 
+    }
 
     function getHistoricalBudget(item, period) {
         if (item.createdAt && period < item.createdAt) return null;
@@ -137,7 +139,9 @@ const BudgetApp = (function () {
         }
         if (isGroceries(c)) {
             const w = pcWeeks().reduce((s, x) => s + Number(x.budget || 0), 0);
-            return w > 0 ? w : null;
+            // Si las semanas están a 0 pero la categoría tiene un presupuesto base (como 400€), lo usamos
+            if (w === 0) return getHistoricalBudget(c, currentPeriod);
+            return w;
         }
         if (String(c.id).includes('trip') || String(c.name).toLowerCase().includes('viaje')) {
             const total = (App.getTripCommitments ? App.getTripCommitments() : []).reduce((s, x) => s + Number(x.amount || 0), 0);
@@ -169,9 +173,6 @@ const BudgetApp = (function () {
     function totalRealSpent() { return sum(pcRealExpenses()); }
     function combinedRealBalance() { return getAccounts().reduce((s, a) => s + Number(a.balance || 0), 0); }
 
-    /* =========================================================
-       UTILIDADES
-       ========================================================= */
     function fmt(n) { return App.formatCurrency(Number(n) || 0); }
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
     function badge(text, cls) { return `<span class="pc-badge ${cls || 'pc-badge-gray'}">${text}</span>`; }
@@ -265,6 +266,13 @@ const BudgetApp = (function () {
         const total = weeks.reduce((s, w) => s + Number(w.budget || 0), 0);
         const wkExp = pcRealExpenses().filter(e => String(e.date || '').substring(0, 7) === currentPeriod);
         
+        // Si las semanas están a 0, intentamos coger el presupuesto de la categoría y repartirlo
+        const gCat = pcCats().find(c => isGroceries(c));
+        if (total === 0 && gCat && gCat.budget > 0) {
+            const perWeek = gCat.budget / weeks.length;
+            weeks.forEach(w => { w.budget = perWeek; });
+        }
+
         const rows = weeks.map(w => {
             const spent = sum(wkExp.filter(e => e.pcWeekId === w.id));
             const today = new Date().toISOString().slice(0, 10);
@@ -296,7 +304,7 @@ const BudgetApp = (function () {
                 <span class="pc-dot"></span>
                 <span>🛒 Groceries &amp; Leisure</span>
                 <button class="btn btn-ghost btn-sm" onclick="BudgetApp.openWeekCountModal()" style="margin-left:auto; padding:2px 6px; font-size:14px;" title="Configurar semanas">⚙️</button>
-                <span style="margin-left:8px;">${badge('Total ' + fmt(total), 'pc-badge-blue')}</span>
+                <span style="margin-left:8px;">${badge('Total ' + fmt(weeks.reduce((s, w) => s + Number(w.budget || 0), 0)), 'pc-badge-blue')}</span>
             </div>
             <div class="pc-week-list">
                 <div class="pc-week-row pc-week-header">
@@ -428,7 +436,7 @@ const BudgetApp = (function () {
     }
 
     /* =========================================================
-       MODALES
+       MODALES (Con lógica de focus y cierre exterior)
        ========================================================= */
     function closeModal() { const b = document.getElementById('pcBackdrop'); if (b) b.remove(); }
 
@@ -746,7 +754,6 @@ const BudgetApp = (function () {
             
             syncGroceriesWithAccount(acc.id, newVal);
             
-            // Forzamos la actualización en el array para evitar referencias perdidas
             const accToUpdate = data().accounts.find(a => a.id === acc.id);
             if (accToUpdate) accToUpdate.balance = newVal;
             
