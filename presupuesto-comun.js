@@ -220,65 +220,88 @@ const BudgetApp = (function () {
         }, 0);
     }
 
+    /** Suma los gastos reales de todas las categorías de la cuenta EXCEPTO Groceries */
+    function sumOtherExpenses(accId) {
+        const account = getAccounts().find(a => a.id === accId);
+        if (!account) return 0;
+        const accName = String(account.name || '').toLowerCase().trim();
+        
+        const otherCatIds = pcCats()
+            .filter(c => String(c.account || '').toLowerCase().trim() === accName && !isGroceries(c))
+            .map(c => c.id);
+            
+        return (data().expenses || [])
+            .filter(e => otherCatIds.includes(e.categoryId) && e.status !== 'archivado')
+            .reduce((s, e) => s + Number(e.amount || 0), 0);
+    }
+
+    /** Suma el gasto real de la categoría Groceries para esta cuenta */
+    function sumGroceriesExpenses(accId) {
+        const account = getAccounts().find(a => a.id === accId);
+        if (!account) return 0;
+        const accName = String(account.name || '').toLowerCase().trim();
+        
+        const groceriesCat = pcCats().find(c => isGroceries(c) && String(c.account || '').toLowerCase().trim() === accName);
+        if (!groceriesCat) return 0;
+        
+        return (data().expenses || [])
+            .filter(e => e.categoryId === groceriesCat.id && e.status !== 'archivado')
+            .reduce((s, e) => s + Number(e.amount || 0), 0);
+    }
+
     /**
-     * Sincroniza el gasto de Groceries con el cambio de saldo de su cuenta vinculada.
-     * Solo se aplica a la cuenta de Groceries, no a otras cuentas.
-     * - diff > 0 (saldo baja) → SUMA gasto a la semana activa
-     * - diff < 0 (saldo sube) → RESTA gasto (corrige)
-     * Usa un único movimiento por semana con pcAuto='grocery-balance-sync'
-     * para evitar acumulación de ajustes.
+     * Sincroniza el gasto de Groceries basándose en la diferencia real de la cuenta.
+     * Fórmula: Groceries = Teórico - Gastos Otros - Saldo Nuevo
      */
     function syncGroceriesWithAccount(accId, newBalance) {
         const gAccId = getGroceriesAccountId();
-        console.log('[syncGroceries] accId=', accId, '· gAccId=', gAccId, '· newBalance=', newBalance);
-        if (!gAccId) { console.warn('[syncGroceries] ⚠️ getGroceriesAccountId() = null'); return; }
-        if (accId !== gAccId) { console.log('[syncGroceries] no es la cuenta de Groceries, skip'); return; }
+        if (!gAccId || accId !== gAccId) return; 
         const acc = getAccounts().find(a => a.id === accId);
         if (!acc) return;
-        const oldBalance = Number(acc.balance) || 0;
-        const diff = oldBalance - Number(newBalance);   // >0 = gastado
-        console.log('[syncGroceries] oldBalance=', oldBalance, '· diff=', diff);
-        if (Math.abs(diff) < 0.005) { console.log('[syncGroceries] diff=0, skip'); return; }
+
+        const theoretical = computeTheoreticalBalance(accId);
+        const otherExp = sumOtherExpenses(accId);
+        const targetGroceries = theoretical - otherExp - Number(newBalance);
+        const currentGroceries = sumGroceriesExpenses(accId);
+        
+        const delta = targetGroceries - currentGroceries;
+        
+        if (Math.abs(delta) < 0.005) {
+            console.log('[syncGroceries] delta ≈ 0, no hay cambios necesarios');
+            return;
+        }
 
         const today = new Date().toISOString().slice(0, 10);
         const weeks = pcWeeks();
-        let targetWeek = weeks.find(w => {
-            const s = String(w.start).slice(0, 10);
-            const e = String(w.end).slice(0, 10);
-            return today >= s && today <= e;
-        });
+        let targetWeek = weeks.find(w => today >= String(w.start).slice(0,10) && today <= String(w.end).slice(0,10));
         if (!targetWeek && weeks.length) {
-            const past = weeks.filter(w => String(w.end).slice(0, 10) < today);
+            const past = weeks.filter(w => String(w.end).slice(0,10) < today);
             targetWeek = past.length ? past[past.length - 1] : weeks[0];
         }
-        if (!targetWeek) {
-            console.warn('[syncGroceries] ⚠️ no hay semana activa. weeks=', weeks.map(w => `${w.start}→${w.end}`));
-            return;
-        }
-        console.log('[syncGroceries] semana destino:', targetWeek.id, targetWeek.start, '→', targetWeek.end);
+        if (!targetWeek) return;
 
         const groceriesCat = pcCats().find(x => isGroceries(x));
-        if (!groceriesCat) { console.warn('[syncGroceries] ⚠️ no existe categoría Groceries'); return; }
+        if (!groceriesCat) return;
 
-        const existing = data().expenses.find(e =>
-            e.pcWeekId === targetWeek.id &&
-            e.categoryId === groceriesCat.id &&
+        const existing = data().expenses.find(e => 
+            e.pcWeekId === targetWeek.id && 
+            e.categoryId === groceriesCat.id && 
             e.pcAuto === 'grocery-balance-sync'
         );
+
         if (existing) {
-            existing.amount = Number(existing.amount) + diff;
+            existing.amount = Number(existing.amount) + delta;
             existing.date = today;
-            console.log('[syncGroceries] actualizado existente · nuevo amount=', existing.amount);
             if (Math.abs(existing.amount) < 0.005) {
                 data().expenses = data().expenses.filter(e => e.id !== existing.id);
-                console.log('[syncGroceries] amount≈0, movimiento eliminado');
             }
+            console.log('[syncGroceries] actualizado existente · nuevo amount=', existing.amount);
         } else {
             const id = 'pc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
             data().expenses.push({
                 id,
-                concept: 'Ajuste Groceries por saldo de cuenta',
-                amount: diff,
+                concept: 'Ajuste Groceries por saldo',
+                amount: delta,
                 date: today,
                 categoryId: groceriesCat.id,
                 person: 'conjunto',
@@ -287,10 +310,9 @@ const BudgetApp = (function () {
                 pcWeekId: targetWeek.id,
                 pcAuto: 'grocery-balance-sync'
             });
-            console.log('[syncGroceries] creado movimiento nuevo · amount=', diff);
+            console.log('[syncGroceries] creado movimiento nuevo · amount=', delta);
         }
         App.saveData();
-        console.log('[syncGroceries] ✓ hecho');
     }
 
     // @deprecated · el flujo ahora pasa por App.registerExpenseMovement
@@ -1151,8 +1173,8 @@ function addMovement(targetId, amount, opts) {
             }
         },
         render,
-        addMovement,
-        getState: () => ({
+        addMovement,        // ← AÑADE ESTO
+        getState: () => ({  // ← Y ESTO
             categories: data().pcCategories || [],
             subcategories: data().pcSubcategories || [],
             weeks: data().pcWeeks || [],
