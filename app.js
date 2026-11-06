@@ -905,8 +905,8 @@ async function bootstrapApp() {
         if (!success) {
             App.showToast('⚠️ No se pudo leer Google Sheets. Modo solo lectura.', 'error');
         } else {
-            App.reloadData(); // 👈 LLAMAMOS AL MÉTODO INTERNO
-            console.log('[app.js] Datos recargados:', App.data.accounts); 
+            App.reloadData(); 
+            console.log('[app.js] Datos recargados desde el Sheet:', App.data.accounts, App.data.pcCategories);
         }
     }
 
