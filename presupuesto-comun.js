@@ -1149,9 +1149,16 @@ function addMovement(targetId, amount, opts) {
                     .concat(generateMonthWeeks(currentPeriod, 4, 0));
                 App.saveData();
             }
-            // No llamamos render() aquí: navigateTo ya lo hace justo después.
         },
         render,
+        addMovement,
+        getState: () => ({
+            categories: data().pcCategories || [],
+            subcategories: data().pcSubcategories || [],
+            weeks: data().pcWeeks || [],
+            expenses: data().expenses || [],
+            currentPeriod
+        }),
         openWeekCountModal,
         editWeekBudget: openWeekBudgetModal,
         openWeekSpentModal,
