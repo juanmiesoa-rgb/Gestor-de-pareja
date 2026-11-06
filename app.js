@@ -800,9 +800,21 @@ async function bootstrapApp() {
     if (appStarted) return;
     appStarted = true;
 
+    // 🔒 COMPROBACIÓN DE SEGURIDAD: Solo usuarios autorizados
+    if (window.AuthService) {
+        const user = AuthService.getUser();
+        if (!user || !user.email || !AuthService.isEmailAllowed(user.email)) {
+            console.warn('[App] Intento de acceso no autorizado o sin sesión válida.');
+            AuthService.showLogin();
+            AuthService.showError('Debes iniciar sesión con una cuenta autorizada.');
+            appStarted = false; // Permitir reintentar
+            return;
+        }
+    }
+
     if (window.AuthService) AuthService.hideLogin();
 
-    // 1. Asegurar que los perfiles existen (por si Google Sheets los ha borrado)
+    // 1. Asegurar que los perfiles existen
     if (!App.data.profiles || App.data.profiles.length === 0) {
         App.data.profiles = [
             { id: 'ana', name: 'Nena', initial: 'N', color: '#ec4899' },
@@ -814,12 +826,13 @@ async function bootstrapApp() {
     if (window.AuthService) {
         const user = AuthService.getUser();
         if (user && user.email) {
-            const emailNena = 'CORREO_DE_TU_PAREJA@gmail.com'; // <--- CAMBIA ESTO
-            const emailBombon = 'juanmi.sexto.a@gmail.com'; 
+            // ⚠️ EMAILS REALES
+            const emailNena = 'amcarranza216@gmail.com';   // Nena
+            const emailBombon = 'juanmi.sexto.a@gmail.com'; // Bombón
 
-            if (user.email === emailBombon) {
+            if (user.email.toLowerCase() === emailBombon) {
                 App.data.activeProfile = 'carlos'; // Bombón
-            } else if (user.email === emailNena) {
+            } else if (user.email.toLowerCase() === emailNena) {
                 App.data.activeProfile = 'ana';    // Nena
             }
         }
