@@ -93,17 +93,26 @@ const DineroApp = (function () {
     const clone = o => JSON.parse(JSON.stringify(o));
 
     function loadData() {
-        const parsed = App.loadStored('finanzas_dinero_v2', DEFAULT_MOCK);
+        const parsed = App.loadStored('finanzas_dinero_v2', DEFAULT_MOCK) || {};
+        
+        // Blindaje: Asegurar que todas las propiedades existen
+        if (!parsed.version) parsed.version = 2;
+        if (!parsed.settings) parsed.settings = { horizonDays: 7 };
+        ['commitments','wallets','debts','loans','goals','recurring','movements'].forEach(k => {
+            if (!Array.isArray(parsed[k])) parsed[k] = [];
+        });
+
         // Asegurar g-trip-fund (upgrade)
-        if (parsed && Array.isArray(parsed.goals) && !parsed.goals.find(g => g.id === 'g-trip-fund')) {
+        if (!parsed.goals.find(g => g.id === 'g-trip-fund')) {
             const src = DEFAULT_MOCK.goals.find(g => g.id === 'g-trip-fund');
             if (src) parsed.goals.unshift(clone(src));
         }
-        if (parsed && 'accounts' in parsed) {
+        
+        if ('accounts' in parsed) {
             delete parsed.accounts;
             try { localStorage.setItem('finanzas_dinero_v2', JSON.stringify(parsed)); } catch (e) {}
         }
-        return parsed && parsed.version === 2 ? parsed : clone(DEFAULT_MOCK);
+        return parsed;
     }
     function saveData() { App.saveStored('finanzas_dinero_v2', data); }
 
@@ -1505,7 +1514,7 @@ const DineroApp = (function () {
                 <button type="button" data-mode="full">Total (${fmtMoney(remaining)})</button>
             </div>
             ${f('fp1', 'Importe a registrar (€)', inp('dv2DPAmt', { type: 'number', step: '0.01', min: '0', value: remaining }))}
-            ${f('fp2', 'Fecha', inp('dv2DPDate', { type: 'date', value: TODAY_ISO }))}
+            ${f('fp2', 'Fecha', inp('dv2DPDate', { type: 'date', value: todayISO() }))}
             ${f('fp3', 'Nota', inp('dv2DPNote', { placeholder: 'Ej. Ingreso en banco' }))}`,
             `<button class="btn btn-secondary" id="dv2DPCancel">Cancelar</button><button class="btn btn-primary" id="dv2DPSave"><i class="fas fa-check"></i> Confirmar devolución</button>`
         );
@@ -1522,12 +1531,12 @@ const DineroApp = (function () {
             if (isNaN(amt) || amt <= 0) { toast('Importe no válido', 'error'); return; }
             const capped = Math.min(amt, remaining);
             d.returned = round2(d.returned + capped);
-            d.history.push({ id: uid('dh'), date: body.querySelector('#dv2DPDate').value || TODAY_ISO, amount: capped, note: body.querySelector('#dv2DPNote').value.trim() });
+            d.history.push({ id: uid('dh'), date: body.querySelector('#dv2DPDate').value || todayISO(), amount: capped, note: body.querySelector('#dv2DPNote').value.trim() });
             
             // Registrar el movimiento en la cuenta si tiene una asociada
             if (d.accountId) {
                 registerMovement({
-                    date: body.querySelector('#dv2DPDate').value || TODAY_ISO,
+                    date: body.querySelector('#dv2DPDate').value || todayISO(),
                     concept: `Deuda: ${d.name} (${d.kind === 'pay' ? 'Devuelto' : 'Cobrado'})`,
                     amount: d.kind === 'pay' ? -capped : capped,
                     type: d.kind === 'pay' ? 'out' : 'in',
@@ -1746,7 +1755,7 @@ const DineroApp = (function () {
                 ${f('fm2b', 'Divisa', sel('dv2MCur', [{ v: 'EUR', l: '€ Euro' }, { v: 'USD', l: '$ Dólar' }], mv && mv.currency ? mv.currency : 'EUR'))}
             </div>
             <div class="dv2-row2">
-                ${f('fm3', 'Fecha', inp('dv2MDate', { type: 'date', value: mv ? mv.date : TODAY_ISO }))}
+                ${f('fm3', 'Fecha', inp('dv2MDate', { type: 'date', value: mv ? mv.date : todayISO() }))}
                 ${f('fm4', 'Tipo', sel('dv2MType', types, mv ? mv.type : 'out'))}
             </div>
             ${f('fm5', 'Cuenta', sel('dv2MAcc', accOpts, mv ? mv.accountId : (accOpts[0] || {}).v))}`,
