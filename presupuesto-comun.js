@@ -1,5 +1,5 @@
 /* =============================================================================
-   PRESUPUESTO-COMUN.JS · v16 — Corrección de errores y Lógica final
+   PRESUPUESTO-COMUN.JS · v18 — Definitivo (Modales fuera, Préstamos y Fondo)
    ============================================================================= */
 const BudgetApp = (function () {
     'use strict';
@@ -67,7 +67,7 @@ const BudgetApp = (function () {
         const [y, m] = period.split('-').map(Number);
         let start = new Date(y, m - 1, 1);
         
-        // Regla: SOLO Noviembre 2026 empieza el día 2
+        // Noviembre 2026 empieza el día 2
         if (period === FIRST_MONTH) {
             start = new Date(y, m - 1, 2);
         } else {
@@ -133,8 +133,6 @@ const BudgetApp = (function () {
             const total = (App.getTripCommitments ? App.getTripCommitments() : []).reduce((s, x) => s + Number(x.amount || 0), 0);
             return total > 0 ? total : null;
         }
-        
-        // Groceries se calcula SOLO con las semanas
         if (catId === 'pc-groceries') {
             const w = pcWeeks().reduce((s, x) => s + Number(x.budget || 0), 0);
             return w > 0 ? w : null;
@@ -164,7 +162,7 @@ const BudgetApp = (function () {
     function combinedRealBalance() { return getAccounts().reduce((s, a) => s + Number(a.balance || 0), 0); }
 
     /* =========================================================
-       UTILIDADES Y FONDO COMÚN
+       UTILIDADES Y LÓGICA DEL FONDO COMÚN
        ========================================================= */
     function fmt(n) { return App.formatCurrency(Number(n) || 0); }
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -183,26 +181,18 @@ const BudgetApp = (function () {
     function syncGroceriesWithAccount(accId, newBalance) {
         const gAccId = getGroceriesAccountId();
         if (accId !== gAccId) return; 
-
         const acc = getAccounts().find(a => a.id === accId);
         if (!acc) return;
-
         const oldBalance = Number(acc.balance) || 0;
-        const diff = oldBalance - newBalance; // Positivo = se ha gastado
-
+        const diff = oldBalance - newBalance; 
         if (diff > 0) {
             const today = new Date().toISOString().slice(0, 10);
             const weeks = pcWeeks();
             let targetWeek = weeks.find(w => today >= String(w.start).slice(0,10) && today <= String(w.end).slice(0,10));
             if (!targetWeek && weeks.length) targetWeek = weeks[0];
-
             if (targetWeek) {
                 const id = 'pc-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                data().expenses.push({
-                    id, concept: 'Ajuste por saldo de cuenta', amount: diff,
-                    date: today, categoryId: 'pc-groceries', person: 'conjunto',
-                    status: 'registrado', aggPeriod: currentPeriod, pcWeekId: targetWeek.id
-                });
+                data().expenses.push({ id, concept: 'Ajuste por saldo de cuenta', amount: diff, date: today, categoryId: 'pc-groceries', person: 'conjunto', status: 'registrado', aggPeriod: currentPeriod, pcWeekId: targetWeek.id });
                 App.saveData();
             }
         }
@@ -212,14 +202,11 @@ const BudgetApp = (function () {
         const gAccId = getGroceriesAccountId();
         if (!gAccId) return;
         const acc = getAccounts().find(a => a.id === gAccId);
-        if (acc) {
-            acc.balance = Number(acc.balance) - Number(amount);
-            App.saveData();
-        }
+        if (acc) { acc.balance = Number(acc.balance) - Number(amount); App.saveData(); }
     }
 
     /* =========================================================
-       RENDER: CABECERA, KPIs, CUENTAS, SEMANAS
+       RENDER
        ========================================================= */
     function headerHtml() {
         const [cy, cm] = currentPeriod.split('-').map(Number);
@@ -342,9 +329,6 @@ const BudgetApp = (function () {
         </div>`;
     }
 
-    /* =========================================================
-       RENDER: TABLA
-       ========================================================= */
     function titleWithBar(icon, name, spent, budget, accent, opts) {
         const o = opts || {};
         const bpRaw = (budget === null || budget === undefined) ? null : (budget <= 0 ? 100 : (spent / budget) * 100);
@@ -367,7 +351,10 @@ const BudgetApp = (function () {
 
     function tableHtml() {
         const cats = pcCats();
-        
+        if (!cats.find(c => c.id === 'pc-loans') && pcLoans().length > 0) {
+            cats.push({ id: 'pc-loans', name: 'Préstamos', icon: '🏦', order: 999, color: '#ef4444' });
+        }
+
         let html = `<div class="pc-table-wrap" style="position:relative;">
             <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--border); background:var(--bg);">
                 <h3 style="margin:0; font-size:14px; font-weight:800; color:var(--text);">Categorías</h3>
@@ -432,7 +419,7 @@ const BudgetApp = (function () {
     }
 
     /* =========================================================
-       ACCIONES Y MODALES
+       MODALES (Con cierre al hacer clic fuera)
        ========================================================= */
     function closeModal() { const b = document.getElementById('pcBackdrop'); if (b) b.remove(); }
 
@@ -445,9 +432,7 @@ const BudgetApp = (function () {
         if (Math.abs(diff) < 0.005) return;
 
         addMovement('pc-groceries', diff, { 
-            concept: `Ajuste semana: ${w.label}`, 
-            pcWeekId: w.id,
-            date: new Date().toISOString().slice(0, 10)
+            concept: `Ajuste semana: ${w.label}`, pcWeekId: w.id, date: new Date().toISOString().slice(0, 10)
         });
     }
 
@@ -470,6 +455,7 @@ const BudgetApp = (function () {
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="wcCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="wcSave">Aplicar</button></div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         div.querySelector('#wcCancel').onclick = closeModal;
         div.querySelector('#wcSave').onclick = () => {
             const n = Number(div.querySelector('#wcN').value);
@@ -506,6 +492,7 @@ const BudgetApp = (function () {
                 <button class="pc-btn pc-btn-primary" id="wsSave">Guardar Ajuste</button>
             </div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         
         div.querySelector('#wsCancel').onclick = closeModal;
         div.querySelector('#wsList').onclick = () => { closeModal(); openMovementsListModal('pc-groceries', weekId); };
@@ -551,6 +538,7 @@ const BudgetApp = (function () {
                 <button class="pc-btn pc-btn-primary" id="gsSave">Guardar Ajuste</button>
             </div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         
         div.querySelector('#gsCancel').onclick = closeModal;
         div.querySelector('#gsList').onclick = () => { closeModal(); openMovementsListModal(rowId); };
@@ -592,6 +580,7 @@ const BudgetApp = (function () {
                 <button class="pc-btn pc-btn-ghost" id="mlClose">Cerrar</button>
             </div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         div.querySelector('#mlClose').onclick = closeModal;
     }
 
@@ -607,6 +596,7 @@ const BudgetApp = (function () {
                 <button class="pc-btn pc-btn-primary" id="amSave">Añadir</button>
             </div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         
         div.querySelector('#amCancel').onclick = closeModal;
         const save = () => {
@@ -633,9 +623,7 @@ const BudgetApp = (function () {
 
         data().expenses.push(exp);
         
-        if (targetId === 'pc-groceries') {
-            syncAccountWithGroceries(amount);
-        }
+        if (targetId === 'pc-groceries') syncAccountWithGroceries(amount);
 
         if (window.App && typeof App.registerExpenseMovement === 'function') {
             App.registerExpenseMovement({
@@ -671,6 +659,7 @@ const BudgetApp = (function () {
                 <button class="pc-btn pc-btn-primary" id="eaSave">Guardar</button>
             </div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         div.querySelector('#eaCancel').onclick = closeModal;
         div.querySelector('#eaSave').onclick = () => {
             acc.name = div.querySelector('#eaName').value.trim() || acc.name;
@@ -707,6 +696,7 @@ const BudgetApp = (function () {
                 <button class="pc-btn pc-btn-primary" id="naSave">Crear</button>
             </div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         
         div.querySelector('#naCancel').onclick = closeModal;
         div.querySelector('#naSave').onclick = () => {
@@ -737,6 +727,7 @@ const BudgetApp = (function () {
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="eaCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="eaSave">Ajustar</button></div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         div.querySelector('#eaCancel').onclick = closeModal;
         const save = () => {
             const newVal = Number(div.querySelector('#eaVal').value);
@@ -768,6 +759,7 @@ const BudgetApp = (function () {
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="wbCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="wbSave">Guardar</button></div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         div.querySelector('#wbCancel').onclick = closeModal;
         const save = () => {
             w.budget = Number(div.querySelector('#wbVal').value) || 0;
@@ -805,6 +797,7 @@ const BudgetApp = (function () {
                 <button class="pc-btn pc-btn-ghost" id="mCancel">Cancelar</button>
                 <button class="pc-btn pc-btn-primary" id="mSave">Guardar</button></div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         
         div.querySelector('#mCancel').onclick = closeModal;
         div.querySelector('#mList').onclick = () => { closeModal(); openMovementsListModal(item.id); };
@@ -849,6 +842,7 @@ const BudgetApp = (function () {
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="cCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="cSave">Crear</button></div></div>`;
         document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
         
         div.querySelector('#cCancel').onclick = closeModal;
         div.querySelector('#cType').onchange = e => { div.querySelector('#cParentWrap').style.display = e.target.value === 'sub' ? '' : 'none'; };
@@ -873,9 +867,6 @@ const BudgetApp = (function () {
         };
     }
 
-    /* =========================================================
-       INIT / RENDER
-       ========================================================= */
     function render() {
         if (!containerEl) return;
         
@@ -942,17 +933,9 @@ const BudgetApp = (function () {
             }
             render();
         },
-        render,
-        openWeekCountModal,
-        editWeekBudget: openWeekBudgetModal,
-        openWeekSpentModal,
-        openCatSpentModal,
-        openSubSpentModal,
-        equalizeWeek,
-        openEditAccountModal,
-        openNewAccountModal,
-        openUpdateBalanceModal,
-        openExpenseModal: () => {},
+        render, openWeekCountModal, editWeekBudget: openWeekBudgetModal, openWeekSpentModal,
+        openCatSpentModal, openSubSpentModal, equalizeWeek, openEditAccountModal,
+        openNewAccountModal, openUpdateBalanceModal, openExpenseModal: () => {},
         getPcSummary: () => ({ period: currentPeriod, total: totalBudgetDefined() })
     };
 })();
