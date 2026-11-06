@@ -384,6 +384,71 @@
             return days;
         }
 
+        _getOrCreateDefaultCategories(trip) {
+            if (!Array.isArray(trip.categories)) trip.categories = [];
+            if (trip.categories.length === 0) {
+                trip.categories = [
+                    { id: 'cat-transporte',   name: 'Transporte',   icon: '✈️', items: [] },
+                    { id: 'cat-alojamiento',  name: 'Alojamiento',  icon: '🏨', items: [] },
+                    { id: 'cat-comida',       name: 'Comida',       icon: '🍽️', items: [] },
+                    { id: 'cat-actividades',  name: 'Actividades',  icon: '🎟️', items: [] },
+                    { id: 'cat-otros',        name: 'Otros',        icon: '📦', items: [] }
+                ];
+                this._schedulePersist();
+            }
+            return trip.categories;
+        }
+
+        _openAddLineModal(trip, dayIdx) {
+            const cats = this._splitCategories(trip);
+            const opts = cats.map(c =>
+                `<option value="${TripManager.esc(c.name)}">${c.icon} ${TripManager.esc(c.name)}</option>`
+            ).join('');
+            this.openModal(
+                '➕ Añadir línea presupuestaria',
+                `${TripManager.cap(TripManager.longDate(trip.days[dayIdx].date))}`,
+                `<form id="tm-add-line-form">
+                    <div class="tm-form-grid">
+                        <div class="tm-field"><label>Categoría</label>
+                            <select class="tm-input" id="al-cat">${opts}<option value="__custom__">+ Otra…</option></select>
+                        </div>
+                        <div class="tm-field"><label>Presupuesto (€)</label>
+                            <input class="tm-input" id="al-budgeted" type="number" min="0" step="1" value="0">
+                        </div>
+                        <div class="tm-field"><label>Gasto real (€)</label>
+                            <input class="tm-input" id="al-real" type="number" min="0" step="1" value="0">
+                        </div>
+                        <div class="tm-field" id="al-custom-wrap" style="display:none">
+                            <label>Nueva categoría</label>
+                            <input class="tm-input" id="al-custom" placeholder="Ej. Souvenirs">
+                        </div>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;">
+                        <button type="button" class="tm-btn tm-btn-ghost" data-action="close-modal">Cancelar</button>
+                        <button type="submit" class="tm-btn tm-btn-primary">✔ Añadir</button>
+                    </div>
+                </form>`
+            );
+            const form = this.mount.querySelector('#tm-add-line-form');
+            const catSel = form.querySelector('#al-cat');
+            const customWrap = form.querySelector('#al-custom-wrap');
+            catSel.addEventListener('change', () => {
+                customWrap.style.display = catSel.value === '__custom__' ? '' : 'none';
+            });
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                let cat = catSel.value;
+                if (cat === '__custom__') cat = form.querySelector('#al-custom').value.trim();
+                if (!cat) { this._toast('Indica una categoría', 'error'); return; }
+                const budgeted = Math.max(parseFloat(form.querySelector('#al-budgeted').value) || 0, 0);
+                const real = Math.max(parseFloat(form.querySelector('#al-real').value) || 0, 0);
+                trip.days[dayIdx].items.push({ category: cat, budgeted, real });
+                this.closeModal();
+                this._render_detail();
+                this._toast('Línea añadida: ' + cat);
+            });
+        }
+
         _ensureDays(trip) {
             if (!trip || !trip.startDate || !trip.endDate) return;
             if (Array.isArray(trip.days) && trip.days.length > 0) return;
@@ -905,6 +970,7 @@
             const trip = this.selectedTrip;
             if (!trip) { this.closeTripDetail(); return; }
             this._ensureDays(trip);
+            this._getOrCreateDefaultCategories(trip);
             const st = this.statusOf(trip);
             const days = this.daysUntil(trip);
             const totalDays = TripManager.daysBetween(trip.startDate, trip.endDate) + 1;
@@ -1670,13 +1736,9 @@
                 case 'add-expense': {
                     const trip = this.selectedTrip;
                     const dayIdx = +el.dataset.day;
-                    if (trip && trip.days[dayIdx]) {
-                        trip.days[dayIdx].items.push({ category: 'Otros', budgeted: 0, real: 0 });
-                        this._render_detail();
-                        const inputs = this.mount.querySelectorAll(`#tm-view-detail [data-day="${el.dataset.day}"][data-action="day-budgeted"]`);
-                        const last = inputs[inputs.length - 1];
-                        if (last) { last.focus(); last.select(); }
-                    }
+                    if (!trip || !trip.days[dayIdx]) break;
+                    this._getOrCreateDefaultCategories(trip);
+                    this._openAddLineModal(trip, dayIdx);
                     break;
                 }
                 case 'del-expense': {
