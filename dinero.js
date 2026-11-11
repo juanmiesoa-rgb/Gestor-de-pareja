@@ -395,6 +395,19 @@ const DineroApp = (function () {
         .dv2-empty { text-align: center; color: var(--text-muted); font-size: 12.5px; padding: 18px 8px; border: 1.5px dashed var(--border); border-radius: 12px; }
         .dv2-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--text-secondary); background: var(--bg); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
         .dv2-note-flag { font-size: 10px; color: var(--warning); font-style: italic; }
+        
+        /* --- Interruptor "Añadir al Presupuesto" (nuevo) --- */
+        .dv2-budget-block { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; }
+        .dv2-budget-switch-row { display: flex; align-items: center; gap: 10px; cursor: pointer; margin: 0; }
+        .dv2-budget-switch-label { font-size: 13px; font-weight: 700; color: var(--text); user-select: none; }
+        .dv2-budget-amount-wrap { margin-top: 10px; }
+        .dv2-budget-amount-label { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 4px; }
+        .dv2-switch { position: relative; width: 40px; height: 22px; flex: none; display: inline-block; }
+        .dv2-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+        .dv2-switch-slider { position: absolute; inset: 0; border-radius: 999px; background: rgba(148,163,184,.45); transition: background .15s ease; }
+        .dv2-switch-slider::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s ease; }
+        .dv2-switch input:checked + .dv2-switch-slider { background: var(--success); }
+        .dv2-switch input:checked + .dv2-switch-slider::before { transform: translateX(18px); }
     `; }
 
     /* =========================================================
@@ -926,6 +939,90 @@ const DineroApp = (function () {
     }
 
     /* =========================================================
+    CIERRE DE MES · devolución de sobrantes de carteras
+    ========================================================= */
+    function closeWalletsForMonth(monthToClose) {
+        const closed = [];
+        const today = todayISO();
+        data.wallets
+            .filter(w => w.includeInBudget && w.accountId)
+            .forEach(w => {
+                const balance = walletBalance(w);
+                if (balance < 0.005) return;
+
+                // 1 · Vaciar el wallet (queda a 0)
+                w.movements.push({
+                    id: uid('wm'), date: today,
+                    concept: `Cierre mes ${monthToClose}: devolución a cuenta`,
+                    amount: balance, type: 'out'
+                });
+
+                // 2 · Devolver el sobrante a la cuenta asociada
+                const acc = getAccounts().find(a => a.id === w.accountId);
+                if (acc) {
+                    acc.balance = round2(Number(acc.balance || 0) + balance);
+                    data.movements.unshift({
+                        id: uid('mv'), date: today,
+                        concept: `Cierre de mes: Devolución de sobrante de ${w.name || 'monedero'}`,
+                        amount: balance, type: 'in',
+                        accountId: w.accountId,
+                        link: { kind: 'wallet-month-close', id: w.id }
+                    });
+                }
+                closed.push({ walletId: w.id, name: w.name || 'Monedero', amount: balance });
+            });
+        return closed;
+    }
+
+    function checkAndCloseWalletsForPreviousMonth() {
+        if (!data) return;
+        if (!data.settings) data.settings = { horizonDays: 7 };
+
+        const now = new Date();
+        const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+        // Primera vez: no cerramos nada, solo anclamos el mes
+        if (!data.lastWalletResetMonth) {
+            data.lastWalletResetMonth = currentMk;
+            saveData();
+            return;
+        }
+        if (data.lastWalletResetMonth === currentMk) return;
+        if (data.lastWalletResetMonth > currentMk) return; // salvaguarda
+
+        let [ly, lm] = data.lastWalletResetMonth.split('-').map(Number);
+        const [cy, cm] = currentMk.split('-').map(Number);
+        const allClosed = [];
+
+        while (ly < cy || (ly === cy && lm < cm)) {
+            const mkClose = `${ly}-${String(lm).padStart(2, '0')}`;
+            allClosed.push(...closeWalletsForMonth(mkClose));
+            lm++; if (lm > 12) { lm = 1; ly++; }
+        }
+
+        data.lastWalletResetMonth = currentMk;
+
+        try {
+            saveData();       // dinero
+            App.saveData();   // app (accounts, movements)
+        } catch (err) {
+            console.warn('[DineroApp] Error guardando tras cierre de mes:', err);
+        }
+
+        if (allClosed.length) {
+            try {
+                App.showToast(`${allClosed.length} cartera(s) devueltas a su cuenta (cierre de mes)`, 'success');
+                allClosed.forEach(c => {
+                    if (typeof App.addHistory === 'function') {
+                        App.addHistory('mi-dinero',
+                            `Cierre de mes: ${c.name} → ${c.amount.toFixed(2)} € devueltos a cuenta`);
+                    }
+                });
+            } catch (e) { /* silencioso */ }
+        }
+    }
+
+    /* =========================================================
        SISTEMA DE MODALES
        ========================================================= */
     let modalPrevFocus = null;
@@ -1116,19 +1213,26 @@ const DineroApp = (function () {
             ${f('fw1', 'Icono', emojiPicker('dv2WEmoji', w ? w.emoji : '👛'))}
             ${f('fw2', 'Nombre', inp('dv2WName', { value: w ? w.name : '', placeholder: 'Ej. Comida' }))}
             ${f('fwAcc', 'Cuenta principal', sel('dv2WAcc', [{v:'', l:'— Ninguna —'}].concat(accOpts), w ? w.accountId : ''))}
-            <div class="dv2-field" style="flex-direction:column; align-items:flex-start; display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:10px; border-radius:8px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <input type="checkbox" id="dv2WInclBudget" ${w && w.includeInBudget ? 'checked' : ''} style="width:16px;height:16px">
-                    <label style="margin:0; text-transform:none; font-size:12px; font-weight:600">Añadir al Presupuesto Común</label>
-                </div>
-                <div style="width:100%;">
-                    <label style="font-size:11px; margin-top:4px;">Importe presupuestado (€)</label>
-                    <input type="number" class="dv2-input" id="dv2WBudgetAmt" value="${w && w.budgetAmount ? w.budgetAmount : ''}" style="width:100%">
+
+            <div class="dv2-budget-block">
+                <label class="dv2-budget-switch-row">
+                    <span class="dv2-switch">
+                        <input type="checkbox" id="dv2WInclBudget" ${w && w.includeInBudget ? 'checked' : ''}>
+                        <span class="dv2-switch-slider"></span>
+                    </span>
+                    <span class="dv2-budget-switch-label">Añadir al Presupuesto</span>
+                </label>
+                <div class="dv2-budget-amount-wrap" id="dv2WBudgetAmtWrap" style="display:${w && w.includeInBudget ? 'block' : 'none'};">
+                    <label class="dv2-budget-amount-label">Cantidad a añadir (si es diferente a la habitual)</label>
+                    <input class="dv2-input" type="number" step="0.01" min="0" id="dv2WBudgetAmt"
+                           placeholder="Dejar vacío = importe habitual"
+                           value="${w && w.budgetAmount > 0 ? w.budgetAmount : ''}" style="width:100%">
                 </div>
             </div>
+
             ${w ? `
-            <div style="font-size:12px;color:var(--text-secondary)">Cantidad actual: <strong>${fmtMoney(walletBalance(w))}</strong> · sin límites ni porcentajes.</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:10px">Cantidad actual: <strong>${fmtMoney(walletBalance(w))}</strong></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
                 <button class="dv2-mini-btn" id="dv2WIn" style="justify-content:center;color:var(--success)"><i class="fas fa-plus"></i> Añadir dinero</button>
                 <button class="dv2-mini-btn" id="dv2WOut" style="justify-content:center;color:var(--danger)"><i class="fas fa-minus"></i> Retirar dinero</button>
             </div>
@@ -1141,20 +1245,34 @@ const DineroApp = (function () {
             `${w ? '<button class="dv2-danger-link" id="dv2WDel">Eliminar monedero</button>' : ''}<button class="btn btn-secondary" id="dv2WCancel">${w ? 'Cerrar' : 'Cancelar'}</button><button class="btn btn-primary" id="dv2WSave"><i class="fas fa-save"></i> ${w ? 'Guardar cambios' : 'Crear monedero'}</button>`
         );
         bindEmojiPicker(body);
+
+        // Toggle mostrar/ocultar el campo de cantidad
+        const wTgl = body.querySelector('#dv2WInclBudget');
+        const wWrap = body.querySelector('#dv2WBudgetAmtWrap');
+        wTgl.addEventListener('change', () => { wWrap.style.display = wTgl.checked ? 'block' : 'none'; });
+
         body.parentElement.querySelector('#dv2WCancel').onclick = closeModal;
         body.parentElement.querySelector('#dv2WSave').onclick = () => {
             const name = body.querySelector('#dv2WName').value.trim();
             if (!name) { toast('El monedero necesita un nombre', 'error'); return; }
             const emoji = pickedEmoji(body);
             const accId = body.querySelector('#dv2WAcc').value;
-            const incl = body.querySelector('#dv2WInclBudget').checked;
-            const bAmt = round2(parseFloat(body.querySelector('#dv2WBudgetAmt').value) || 0);
-            
-            if (w) { w.name = name; w.emoji = emoji; w.accountId = accId; w.includeInBudget = incl; w.budgetAmount = bAmt; toast('Monedero actualizado'); }
-            else { data.wallets.push({ id: uid('w'), emoji, name, color: '#f59e0b', accountId: accId, includeInBudget: incl, budgetAmount: bAmt, movements: [] }); toast('Monedero creado'); }
+            const incl  = wTgl.checked;
+            const amtRaw = body.querySelector('#dv2WBudgetAmt').value;
+            const bAmt = incl && amtRaw && parseFloat(amtRaw) > 0 ? round2(parseFloat(amtRaw)) : 0;
+
+            if (w) {
+                w.name = name; w.emoji = emoji; w.accountId = accId;
+                w.includeInBudget = incl; w.budgetAmount = bAmt;
+                toast('Monedero actualizado');
+            } else {
+                data.wallets.push({ id: uid('w'), emoji, name, color: '#f59e0b', accountId: accId,
+                    includeInBudget: incl, budgetAmount: bAmt, movements: [] });
+                toast('Monedero creado');
+            }
             saveData(); closeModal(); renderAll();
         };
-        
+
         if (w) {
             body.parentElement.querySelector('#dv2WDel').onclick = () => confirmDelete(`¿Eliminar el monedero «${w.name}»? Su contenido vuelve al saldo común.`, () => {
                 data.wallets = data.wallets.filter(x => x.id !== w.id);
@@ -1469,22 +1587,29 @@ const DineroApp = (function () {
                 ${f('fd4', 'Fecha estimada (opcional)', inp('dv2DDue', { type: 'date', value: d ? d.dueDate || '' : '' }))}
             </div>
             ${f('fdAcc', 'Cuenta asociada', sel('dv2DAcc', [{v:'', l:'— Sin cuenta —'}].concat(accOpts), d ? d.accountId : ''))}
-            <div class="dv2-field" style="flex-direction:column; align-items:flex-start; display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:10px; border-radius:8px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <input type="checkbox" id="dv2DInclBudget" ${!d || d.includeInBudget ? 'checked' : ''} style="width:16px;height:16px">
-                    <label style="margin:0; text-transform:none; font-size:12px; font-weight:600">Añadir al Presupuesto Común</label>
-                </div>
-                <div id="dv2DBudgetWrap" style="display:${!d || d.includeInBudget ? 'block' : 'none'}; width:100%;">
-                    <label style="font-size:11px; margin-top:4px;">Importe presupuestado (€)</label>
-                    <input type="number" class="dv2-input" id="dv2DBudgetAmt" value="${d && d.budgetAmount ? d.budgetAmount : (d ? (d.total - d.returned) : '')}" style="width:100%">
+
+            <div class="dv2-budget-block">
+                <label class="dv2-budget-switch-row">
+                    <span class="dv2-switch">
+                        <input type="checkbox" id="dv2DInclBudget" ${d && d.includeInBudget ? 'checked' : ''}>
+                        <span class="dv2-switch-slider"></span>
+                    </span>
+                    <span class="dv2-budget-switch-label">Añadir al Presupuesto</span>
+                </label>
+                <div class="dv2-budget-amount-wrap" id="dv2DBudgetAmtWrap" style="display:${d && d.includeInBudget ? 'block' : 'none'};">
+                    <label class="dv2-budget-amount-label">Cantidad a añadir (si es diferente a la habitual)</label>
+                    <input class="dv2-input" type="number" step="0.01" min="0" id="dv2DBudgetAmt"
+                           placeholder="Dejar vacío = total de la deuda"
+                           value="${d && d.budgetAmount > 0 ? d.budgetAmount : ''}" style="width:100%">
                 </div>
             </div>
+
             ${f('fd5', 'Contraparte (opcional)', inp('dv2DCounterparty', { value: d ? d.counterparty || '' : '', placeholder: 'Ej. Hermano, Marta…' }))}
             ${f('fd7', 'Nota', inp('dv2DNote', { value: d ? d.note || '' : '' }))}`,
             `${d ? '<button class="dv2-danger-link" id="dv2DDel">Eliminar</button>' : ''}<button class="btn btn-secondary" id="dv2DCancel">Cancelar</button><button class="btn btn-primary" id="dv2DSave"><i class="fas fa-save"></i> Guardar</button>`
         );
         bindEmojiPicker(body);
-        
+
         const seg = body.querySelector('#dv2DKind');
         seg.addEventListener('click', (e) => {
             const b = e.target.closest('[data-kind]');
@@ -1492,20 +1617,27 @@ const DineroApp = (function () {
             kind = b.dataset.kind;
             seg.querySelectorAll('button').forEach(x => x.classList.toggle('sel', x === b));
         });
-        
+
+        const dTgl = body.querySelector('#dv2DInclBudget');
+        const dWrap = body.querySelector('#dv2DBudgetAmtWrap');
+        dTgl.addEventListener('change', () => { dWrap.style.display = dTgl.checked ? 'block' : 'none'; });
+
         body.parentElement.querySelector('#dv2DCancel').onclick = closeModal;
         body.parentElement.querySelector('#dv2DSave').onclick = () => {
             const name = body.querySelector('#dv2DName').value.trim();
             const total = round2(parseFloat(body.querySelector('#dv2DAmt').value));
             if (!name || isNaN(total) || total <= 0) { toast('Nombre e importe válidos requeridos', 'error'); return; }
+            const incl = dTgl.checked;
+            const amtRaw = body.querySelector('#dv2DBudgetAmt').value;
+            const bAmt = incl && amtRaw && parseFloat(amtRaw) > 0 ? round2(parseFloat(amtRaw)) : 0;
+
             const obj = {
-                includeInBudget: body.querySelector('#dv2DInclBudget').checked,
-                budgetAmount: round2(parseFloat(body.querySelector('#dv2DBudgetAmt').value) || 0),
                 id: d ? d.id : uid('d'), kind, emoji: pickedEmoji(body), name, total,
                 returned: d ? d.returned : 0,
                 dueDate: body.querySelector('#dv2DDue').value || '',
                 accountId: body.querySelector('#dv2DAcc').value || null,
-                includeInBudget: body.querySelector('#dv2DInclBudget').checked,
+                includeInBudget: incl,
+                budgetAmount: bAmt,
                 counterparty: body.querySelector('#dv2DCounterparty').value.trim(),
                 note: body.querySelector('#dv2DNote').value.trim(),
                 history: d ? d.history : []
@@ -1513,7 +1645,7 @@ const DineroApp = (function () {
             if (d) Object.assign(d, obj); else data.debts.push(obj);
             saveData(); closeModal(); renderAll(); toast(d ? 'Deuda actualizada' : 'Deuda registrada');
         };
-        
+
         if (d) body.parentElement.querySelector('#dv2DDel').onclick = () => confirmDelete(`¿Eliminar «${d.name}»?`, () => {
             data.debts = data.debts.filter(x => x.id !== d.id);
             saveData(); closeModal(); renderAll();
@@ -1588,14 +1720,20 @@ const DineroApp = (function () {
             </div>
             ${f('fl6', 'Próximo recibo', inp('dv2LNext', { type: 'date', value: l ? l.nextDate || '' : todayISO() }))}
             ${f('fl7', 'Cuenta asociada', sel('dv2LAcc', accNames, l ? l.accountName : (accNames[0] || {}).v))}
-            <div class="dv2-field" style="flex-direction:column; align-items:flex-start; display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:10px; border-radius:8px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <input type="checkbox" id="dv2LInclBudget" ${l && l.includeInBudget ? 'checked' : ''} style="width:16px;height:16px">
-                    <label style="margin:0; text-transform:none; font-size:12px; font-weight:600">Añadir al Presupuesto Común</label>
-                </div>
-                <div style="width:100%;">
-                    <label style="font-size:11px; margin-top:4px;">Importe presupuestado (€)</label>
-                    <input type="number" class="dv2-input" id="dv2LBudgetAmt" value="${l && l.budgetAmount ? l.budgetAmount : (l ? l.installmentAmount : '')}" style="width:100%">
+
+            <div class="dv2-budget-block">
+                <label class="dv2-budget-switch-row">
+                    <span class="dv2-switch">
+                        <input type="checkbox" id="dv2LInclBudget" ${l && l.includeInBudget ? 'checked' : ''}>
+                        <span class="dv2-switch-slider"></span>
+                    </span>
+                    <span class="dv2-budget-switch-label">Añadir al Presupuesto</span>
+                </label>
+                <div class="dv2-budget-amount-wrap" id="dv2LBudgetAmtWrap" style="display:${l && l.includeInBudget ? 'block' : 'none'};">
+                    <label class="dv2-budget-amount-label">Cantidad a añadir (si es diferente a la habitual)</label>
+                    <input class="dv2-input" type="number" step="0.01" min="0" id="dv2LBudgetAmt"
+                           placeholder="Dejar vacío = cuota del préstamo"
+                           value="${l && l.budgetAmount > 0 ? l.budgetAmount : ''}" style="width:100%">
                 </div>
             </div>`,
             `${l ? '<button class="dv2-danger-link" id="dv2LDel">Eliminar</button>' : ''}<button class="btn btn-secondary" id="dv2LCancel">Cancelar</button><button class="btn btn-primary" id="dv2LSave"><i class="fas fa-save"></i> Guardar</button>`
@@ -1609,6 +1747,10 @@ const DineroApp = (function () {
         body.querySelector('#dv2LAmt').addEventListener('input', auto);
         body.querySelector('#dv2LInst').addEventListener('input', auto);
 
+        const lTgl = body.querySelector('#dv2LInclBudget');
+        const lWrap = body.querySelector('#dv2LBudgetAmtWrap');
+        lTgl.addEventListener('change', () => { lWrap.style.display = lTgl.checked ? 'block' : 'none'; });
+
         body.parentElement.querySelector('#dv2LCancel').onclick = closeModal;
         body.parentElement.querySelector('#dv2LSave').onclick = () => {
             const name = body.querySelector('#dv2LName').value.trim();
@@ -1617,13 +1759,17 @@ const DineroApp = (function () {
             const installmentAmount = round2(parseFloat(body.querySelector('#dv2LQi').value));
             const paidCount = Math.max(0, parseInt(body.querySelector('#dv2LPaid').value) || 0);
             if (!name || isNaN(financed) || isNaN(installments) || isNaN(installmentAmount) || installments <= 0) { toast('Revisa los datos del préstamo', 'error'); return; }
+            const incl = lTgl.checked;
+            const amtRaw = body.querySelector('#dv2LBudgetAmt').value;
+            const bAmt = incl && amtRaw && parseFloat(amtRaw) > 0 ? round2(parseFloat(amtRaw)) : 0;
+
             const obj = {
                 id: l ? l.id : uid('loan'), emoji: pickedEmoji(body), name, financed, installments,
                 installmentAmount, paidCount: Math.min(paidCount, installments),
                 nextDate: body.querySelector('#dv2LNext').value || null,
                 accountName: body.querySelector('#dv2LAcc').value,
-                includeInBudget: body.querySelector('#dv2LInclBudget').checked,
-                budgetAmount: round2(parseFloat(body.querySelector('#dv2LBudgetAmt').value) || 0),
+                includeInBudget: incl,
+                budgetAmount: bAmt,
                 payments: l ? l.payments : []
             };
             if (l) Object.assign(l, obj); else data.loans.push(obj);
@@ -1653,24 +1799,39 @@ const DineroApp = (function () {
                 ${f('fg5', 'Importe por aportación (€)', inp('dv2GContrib', { type: 'number', step: '0.01', min: '0', value: g ? g.contribution : '' }))}
             </div>
             ${f('fg6', 'Próxima aportación programada', inp('dv2GNext', { type: 'date', value: g ? g.nextDate || '' : todayISO() }))}
-            <div class="dv2-field" style="flex-direction:column; align-items:flex-start; display:flex; gap:8px; margin-top:8px; background:var(--bg); padding:10px; border-radius:8px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <input type="checkbox" id="dv2GInclBudget" ${g && g.includeInBudget ? 'checked' : ''} style="width:16px;height:16px">
-                    <label style="margin:0; text-transform:none; font-size:12px; font-weight:600">Añadir al Presupuesto Común</label>
-                </div>
-                <div style="width:100%;">
-                    <label style="font-size:11px; margin-top:4px;">Importe presupuestado (€)</label>
-                    <input type="number" class="dv2-input" id="dv2GBudgetAmt" value="${g && g.budgetAmount ? g.budgetAmount : (g ? g.contribution : '')}" style="width:100%">
+
+            <div class="dv2-budget-block">
+                <label class="dv2-budget-switch-row">
+                    <span class="dv2-switch">
+                        <input type="checkbox" id="dv2GInclBudget" ${g && g.includeInBudget ? 'checked' : ''}>
+                        <span class="dv2-switch-slider"></span>
+                    </span>
+                    <span class="dv2-budget-switch-label">Añadir al Presupuesto</span>
+                </label>
+                <div class="dv2-budget-amount-wrap" id="dv2GBudgetAmtWrap" style="display:${g && g.includeInBudget ? 'block' : 'none'};">
+                    <label class="dv2-budget-amount-label">Cantidad a añadir (si es diferente a la habitual)</label>
+                    <input class="dv2-input" type="number" step="0.01" min="0" id="dv2GBudgetAmt"
+                           placeholder="Dejar vacío = aportación del objetivo"
+                           value="${g && g.budgetAmount > 0 ? g.budgetAmount : ''}" style="width:100%">
                 </div>
             </div>`,
             `${g && g.id !== 'g-trip-fund' ? '<button class="dv2-danger-link" id="dv2GDel">Eliminar</button>' : ''}<button class="btn btn-secondary" id="dv2GCancel">Cancelar</button><button class="btn btn-primary" id="dv2GSave"><i class="fas fa-save"></i> Guardar</button>`
         );
         bindEmojiPicker(body);
+
+        const gTgl = body.querySelector('#dv2GInclBudget');
+        const gWrap = body.querySelector('#dv2GBudgetAmtWrap');
+        gTgl.addEventListener('change', () => { gWrap.style.display = gTgl.checked ? 'block' : 'none'; });
+
         body.parentElement.querySelector('#dv2GCancel').onclick = closeModal;
         body.parentElement.querySelector('#dv2GSave').onclick = () => {
             const name = body.querySelector('#dv2GName').value.trim();
             if (!name) { toast('El objetivo necesita un nombre', 'error'); return; }
             const targetRaw = body.querySelector('#dv2GTarget').value;
+            const incl = gTgl.checked;
+            const amtRaw = body.querySelector('#dv2GBudgetAmt').value;
+            const bAmt = incl && amtRaw && parseFloat(amtRaw) > 0 ? round2(parseFloat(amtRaw)) : 0;
+
             const obj = {
                 id: g ? g.id : uid('g'), emoji: pickedEmoji(body), name,
                 target: targetRaw === '' ? null : round2(parseFloat(targetRaw)),
@@ -1678,8 +1839,8 @@ const DineroApp = (function () {
                 frequency: body.querySelector('#dv2GFreq').value,
                 contribution: round2(parseFloat(body.querySelector('#dv2GContrib').value) || 0),
                 nextDate: body.querySelector('#dv2GNext').value || '',
-                includeInBudget: body.querySelector('#dv2GInclBudget').checked,
-                budgetAmount: round2(parseFloat(body.querySelector('#dv2GBudgetAmt').value) || 0),
+                includeInBudget: incl,
+                budgetAmount: bAmt,
                 contributions: g ? g.contributions : []
             };
             if (g) Object.assign(g, obj); else data.goals.push(obj);
@@ -1910,6 +2071,7 @@ const DineroApp = (function () {
     function init() {
         loadFxRate();
         bindModuleChange();
+        try { checkAndCloseWalletsForPreviousMonth(); } catch (e) { console.warn('[DineroApp] init close check:', e); }
     }
     function onThemeChange() {}
 
@@ -2088,7 +2250,10 @@ const DineroApp = (function () {
 
     return {
         render, init, onThemeChange,
-        reloadFromStorage: () => { data = loadData(); },
+        reloadFromStorage: () => {
+            data = loadData();
+            try { checkAndCloseWalletsForPreviousMonth(); } catch (e) { console.warn('[DineroApp] reload close check:', e); }
+        },
 
         /* Fase 1 */
         getLoans: () => data.loans.filter(l => l.status !== 'archived'),
@@ -2102,29 +2267,52 @@ const DineroApp = (function () {
         getBudgetItems: () => {
             const items = [];
             const currentMonth = new Date().toISOString().slice(0, 7);
-            
-            // Deudas
+
+            // Deudas (importe natural: total − devuelto)
             data.debts.filter(d => d.includeInBudget && d.returned < d.total).forEach(d => {
-                const paidThisMonth = (d.history || []).filter(h => h.date.startsWith(currentMonth)).reduce((s,h) => s+h.amount, 0);
-                items.push({ id: d.id, type: 'debt', name: d.emoji + ' ' + d.name, budgetAmount: d.budgetAmount || 0, spentAmount: paidThisMonth });
+                const paidThisMonth = (d.history || []).filter(h => h.date.startsWith(currentMonth)).reduce((s, h) => s + h.amount, 0);
+                const natural = Math.max(0, Number(d.total || 0) - Number(d.returned || 0));
+                const amt = d.budgetAmount > 0 ? d.budgetAmount : natural;
+                items.push({ id: d.id, type: 'debt', name: d.emoji + ' ' + d.name, budgetAmount: amt, spentAmount: paidThisMonth });
             });
 
-            // Préstamos
+            // Préstamos (importe natural: cuota)
             data.loans.filter(l => l.includeInBudget && l.paidCount < l.installments).forEach(l => {
-                const paidThisMonth = (l.payments || []).filter(p => p.date.startsWith(currentMonth)).reduce((s,p) => s+p.amount, 0);
-                items.push({ id: l.id, type: 'loan', name: l.emoji + ' ' + l.name, budgetAmount: l.budgetAmount || l.installmentAmount || 0, spentAmount: paidThisMonth });
+                const paidThisMonth = (l.payments || []).filter(p => p.date.startsWith(currentMonth)).reduce((s, p) => s + p.amount, 0);
+                const natural = Number(l.installmentAmount || 0);
+                const amt = l.budgetAmount > 0 ? l.budgetAmount : natural;
+                items.push({ id: l.id, type: 'loan', name: l.emoji + ' ' + l.name, budgetAmount: amt, spentAmount: paidThisMonth });
             });
 
-            // Monederos
+            // Monederos (sin importe natural → si está vacío queda 0, editable inline)
             data.wallets.filter(w => w.includeInBudget).forEach(w => {
-                const paidThisMonth = (w.movements || []).filter(m => m.type === 'in' && m.date.startsWith(currentMonth)).reduce((s,m) => s+m.amount, 0);
-                items.push({ id: w.id, type: 'wallet', name: w.emoji + ' ' + w.name, budgetAmount: w.budgetAmount || 0, spentAmount: paidThisMonth });
+                const paidThisMonth = (w.movements || []).filter(m => m.type === 'in' && m.date.startsWith(currentMonth)).reduce((s, m) => s + m.amount, 0);
+                items.push({ id: w.id, type: 'wallet', name: w.emoji + ' ' + w.name, budgetAmount: Number(w.budgetAmount || 0), spentAmount: paidThisMonth });
             });
 
-            // Objetivos
+            // Objetivos (importe natural: aportación)
             data.goals.filter(g => g.includeInBudget && (g.target == null || g.saved < g.target)).forEach(g => {
-                const paidThisMonth = (g.contributions || []).filter(c => c.date.startsWith(currentMonth)).reduce((s,c) => s+c.amount, 0);
-                items.push({ id: g.id, type: 'goal', name: g.emoji + ' ' + g.name, budgetAmount: g.budgetAmount || 0, spentAmount: paidThisMonth });
+                const paidThisMonth = (g.contributions || []).filter(c => c.date.startsWith(currentMonth)).reduce((s, c) => s + c.amount, 0);
+                const natural = Number(g.contribution || 0);
+                const amt = g.budgetAmount > 0 ? g.budgetAmount : natural;
+                items.push({ id: g.id, type: 'goal', name: g.emoji + ' ' + g.name, budgetAmount: amt, spentAmount: paidThisMonth });
+            });
+
+            // Recurrentes activos con fecha de este mes o anterior
+            data.recurring.filter(r => {
+                if (!r.active) return false;
+                if (!r.nextDate) return true;
+                return String(r.nextDate).slice(0, 7) <= currentMonth;
+            }).forEach(r => {
+                const paidThisMonth = (r.history || [])
+                    .filter(h => String(h.date).startsWith(currentMonth))
+                    .reduce((s, h) => s + Math.abs(Number(h.amount || 0)), 0);
+                items.push({
+                    id: r.id, type: 'recurring',
+                    name: (r.emoji ? r.emoji + ' ' : '') + r.name,
+                    budgetAmount: Number(r.amount || 0),
+                    spentAmount: paidThisMonth
+                });
             });
 
             return items;
@@ -2139,20 +2327,69 @@ const DineroApp = (function () {
         },
 
         payBudgetItem: (id, type, amount) => {
+            const amt = round2(Math.abs(Number(amount) || 0));
             if (type === 'debt') {
                 const d = data.debts.find(x => x.id === id);
-                if (d) { d.returned = round2(d.returned + amount); d.history = d.history || []; d.history.push({ id: uid('dh'), date: todayISO(), amount, note: 'Pago desde Presupuesto' });
-                    if(d.accountId) registerMovement({ date: todayISO(), concept: `Deuda: ${d.name}`, amount: d.kind === 'pay' ? -amount : amount, type: d.kind === 'pay' ? 'out' : 'in', accountId: d.accountId, link: { kind: 'debt', id: d.id } }); }
+                if (d) {
+                    d.returned = round2(d.returned + amt);
+                    d.history = d.history || [];
+                    d.history.push({ id: uid('dh'), date: todayISO(), amount: amt, note: 'Pago desde Presupuesto' });
+                    if (d.accountId) registerMovement({
+                        date: todayISO(), concept: `Deuda: ${d.name}`,
+                        amount: d.kind === 'pay' ? -amt : amt,
+                        type: d.kind === 'pay' ? 'out' : 'in',
+                        accountId: d.accountId, link: { kind: 'debt', id: d.id }
+                    });
+                }
             } else if (type === 'loan') {
-                payLoanInstallment(id); return; // Ya baja el saldo y registra el pago
+                payLoanInstallment(id);
+                return; // payLoanInstallment ya baja el saldo y registra
             } else if (type === 'wallet') {
                 const w = data.wallets.find(x => x.id === id);
-                if (w) { w.movements.push({ id: uid('wm'), date: todayISO(), concept: 'Aportación desde Presupuesto', amount, type: 'in' });
-                    if(w.accountId) registerMovement({ date: todayISO(), concept: `Monedero: ${w.name}`, amount: -amount, type: 'out', accountId: w.accountId, link: { kind: 'wallet', id: w.id } }); }
+                if (w) {
+                    w.movements.push({ id: uid('wm'), date: todayISO(), concept: 'Aportación desde Presupuesto', amount: amt, type: 'in' });
+                    if (w.accountId) registerMovement({
+                        date: todayISO(), concept: `Monedero: ${w.name}`,
+                        amount: -amt, type: 'out',
+                        accountId: w.accountId, link: { kind: 'wallet', id: w.id }
+                    });
+                }
             } else if (type === 'goal') {
                 const g = data.goals.find(x => x.id === id);
-                if (g) { g.saved = round2(g.saved + amount); g.contributions = g.contributions || []; g.contributions.push({ id: uid('gc'), date: todayISO(), amount });
-                    if(g.accountId) registerMovement({ date: todayISO(), concept: `Objetivo: ${g.name}`, amount: -amount, type: 'out', accountId: g.accountId, link: { kind: 'goal', id: g.id } }); }
+                if (g) {
+                    g.saved = round2(g.saved + amt);
+                    g.contributions = g.contributions || [];
+                    g.contributions.push({ id: uid('gc'), date: todayISO(), amount: amt });
+                    if (g.accountId) registerMovement({
+                        date: todayISO(), concept: `Objetivo: ${g.name}`,
+                        amount: -amt, type: 'out',
+                        accountId: g.accountId, link: { kind: 'goal', id: g.id }
+                    });
+                }
+            } else if (type === 'recurring') {
+                const r = data.recurring.find(x => x.id === id);
+                if (r && r.active) {
+                    r.history = r.history || [];
+                    r.history.push({ id: uid('rh'), date: todayISO(), amount: amt, note: 'Pago desde Presupuesto' });
+                    // Buscar cuenta por nombre (mismo criterio que en openRecurringDetailModal)
+                    const accNameKey = String(r.accountName || '').toLowerCase().split(' ')[0];
+                    const acc = getAccounts().find(a => (a.name || '').toLowerCase().includes(accNameKey));
+                    if (acc) registerMovement({
+                        date: todayISO(), concept: r.name,
+                        amount: -amt, type: 'out',
+                        accountId: acc.id, link: { kind: 'recurring', id: r.id }
+                    });
+                    // Avanzar nextDate
+                    if (r.nextDate) {
+                        const stepDays = r.period === 'weekly' ? 7
+                            : r.period === 'quarterly' ? 91
+                            : r.period === 'semiannual' ? 182
+                            : r.period === 'annual' ? 365 : 30;
+                        let nd = r.nextDate;
+                        while (nd <= todayISO()) nd = addDays(nd, stepDays);
+                        r.nextDate = nd;
+                    }
+                }
             }
             App.saveData(); saveData(); renderAll();
         },

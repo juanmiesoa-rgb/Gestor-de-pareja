@@ -23,7 +23,7 @@ const App = (function () {
             recentCount: 5, defaultSort: 'date-desc'
         },
         history: [],
-        pcCategories: [], pcSubcategories: [], pcWeeks: [],
+        pcCategories: [], pcSubcategories: [], pcWeeks: [], pcWeekTransfers: [],
         pcMyInvestorTarget: 0,
         pcReconciliation: {
             initialBalance: 0, weeksClosed: {}, loansPaid: {}, realBalances: {}
@@ -62,7 +62,7 @@ const App = (function () {
 
     function loadData() {
         const parsed = loadStored('finanzas_data', DEFAULT_DATA);
-        ['pcCategories','pcSubcategories','pcWeeks','pcReconciliation',
+        ['pcCategories','pcSubcategories','pcWeeks','pcWeekTransfers','pcReconciliation',
          'calendarEvents','transfers','tripActivities','tripReservations'].forEach(k => {
             if (!(k in parsed)) parsed[k] = clone(DEFAULT_DATA[k]);
         });

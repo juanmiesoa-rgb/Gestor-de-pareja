@@ -218,6 +218,96 @@ const BudgetApp = (function () {
     function totalRealSpent() { return sum(pcRealExpenses()); }
     function combinedRealBalance() { return getAccounts().reduce((s, a) => s + Number(a.balance || 0), 0); }
 
+    /* =========================================================
+    TRANSFERENCIAS ENTRE SEMANAS (nuevo)
+    ========================================================= */
+    function getWeekTransfers() {
+        if (!Array.isArray(data().pcWeekTransfers)) data().pcWeekTransfers = [];
+        return data().pcWeekTransfers;
+    }
+
+    function getWeekTransfersFor(weekId) {
+        return getWeekTransfers().filter(t => t.fromWeekId === weekId || t.toWeekId === weekId);
+    }
+
+    function getWeekTransfersSum(weekId) {
+        const transfers = getWeekTransfersFor(weekId);
+        const inAmt  = transfers.filter(t => t.toWeekId === weekId).reduce((s, t) => s + Number(t.amount || 0), 0);
+        const outAmt = transfers.filter(t => t.fromWeekId === weekId).reduce((s, t) => s + Number(t.amount || 0), 0);
+        return inAmt - outAmt;
+    }
+
+    function getWeekEffectiveBudget(weekId) {
+        const w = allWeeks().find(x => x.id === weekId);
+        if (!w) return 0;
+        return Number(w.budget || 0) + getWeekTransfersSum(weekId);
+    }
+
+    function applyWeekTransfer(fromWeekId, toWeekId, amount) {
+        const amt = Number(amount) || 0;
+        if (amt <= 0) { App.showToast('El importe debe ser mayor que 0', 'warning'); return false; }
+        if (fromWeekId === toWeekId) { App.showToast('No puedes mover el presupuesto a la misma semana', 'warning'); return false; }
+        const source = allWeeks().find(x => x.id === fromWeekId);
+        const target = allWeeks().find(x => x.id === toWeekId);
+        if (!source || !target) return false;
+        const sourceEff = getWeekEffectiveBudget(fromWeekId);
+        if (sourceEff - amt < 0) {
+            App.showToast(`La ${source.label} no tiene suficiente presupuesto (${fmt(sourceEff)})`, 'warning');
+            return false;
+        }
+        getWeekTransfers().push({
+            id: 'wt-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+            fromWeekId, toWeekId, amount: amt,
+            date: new Date().toISOString().slice(0, 10),
+            period: currentPeriod
+        });
+        App.saveData();
+        if (typeof App.addHistory === 'function') {
+            App.addHistory('presupuesto-comun',
+                `Arrastre: ${fmt(amt)} de ${source.label} → ${target.label}`);
+        }
+        return true;
+    }
+
+    /* =========================================================
+    PRESUPUESTO POR CUENTA (nuevo)
+    ========================================================= */
+    function computeAccountBudget(accId) {
+        const account = getAccounts().find(a => a.id === accId);
+        if (!account) return 0;
+        const accName = String(account.name || '').toLowerCase().trim();
+        let total = 0;
+
+        // 1 · Categorías manuales vinculadas a la cuenta
+        pcCats().forEach(c => {
+            if (c.isVirtual) return;
+            if (String(c.account || '').toLowerCase().trim() !== accName) return;
+            const b = catBudget(c.id);
+            if (b !== null) total += b;
+        });
+
+        // 2 · Aportaciones de Dinero con includeInBudget (deudas, préstamos, wallets, goals)
+        const dinero = (window.App && typeof App.getDineroData === 'function') ? App.getDineroData() : null;
+        if (dinero) {
+            const sumItem = it => {
+                if (!it || !it.includeInBudget) return 0;
+                const def = Number(it.budgetAmount || 0);
+                if (def > 0) return def;
+                if (it.total !== undefined)  return Math.max(0, Number(it.total) - Number(it.returned || 0));  // deuda
+                if (it.installmentAmount)    return Number(it.installmentAmount || 0);                              // préstamo
+                if (it.contribution)         return Number(it.contribution || 0);                                   // objetivo
+                return 0;
+            };
+            (dinero.debts  || []).forEach(d => { if (d.accountId === accId) total += sumItem(d); });
+            (dinero.wallets|| []).forEach(w => { if (w.accountId === accId) total += sumItem(w); });
+            (dinero.goals  || []).forEach(g => { if (g.accountId === accId) total += sumItem(g); });
+            (dinero.loans  || []).forEach(l => {
+                if (String(l.accountName || '').toLowerCase().trim() === accName) total += sumItem(l);
+            });
+        }
+        return total;
+    }
+
     function fmt(n) { return App.formatCurrency(Number(n) || 0); }
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
     function badge(text, cls) { return `<span class="pc-badge ${cls || 'pc-badge-gray'}">${text}</span>`; }
@@ -404,39 +494,43 @@ const BudgetApp = (function () {
 
     function weeksPanelHtml() {
         const weeks = pcWeeks();
-        const total = weeks.reduce((s, w) => s + Number(w.budget || 0), 0);
         const wkExp = pcRealExpenses().filter(e => String(e.date || '').substring(0, 7) === currentPeriod);
-        
-        // Si las semanas están a 0, intentamos coger el presupuesto de la categoría y repartirlo
-        const gCat = pcCats().find(c => isGroceries(c));
-        if (total === 0 && gCat && gCat.budget > 0) {
-            const perWeek = gCat.budget / weeks.length;
-            weeks.forEach(w => { w.budget = perWeek; });
+
+        // Si las semanas están a 0, usar el presupuesto de Groceries repartido
+        const totalRaw = weeks.reduce((s, w) => s + Number(w.budget || 0), 0);
+        if (totalRaw === 0) {
+            const gCat = pcCats().find(c => isGroceries(c));
+            if (gCat && gCat.budget > 0 && weeks.length) {
+                const perWeek = gCat.budget / weeks.length;
+                weeks.forEach(w => { w.budget = perWeek; });
+            }
         }
+
+        const today = new Date().toISOString().slice(0, 10);
 
         const rows = weeks.map(w => {
             const spent = sum(wkExp.filter(e => e.pcWeekId === w.id));
-            const today = new Date().toISOString().slice(0, 10);
+            const budget = getWeekEffectiveBudget(w.id);
             const startClean = String(w.start).slice(0, 10);
-            const endClean = String(w.end).slice(0, 10);
-            
+            const endClean   = String(w.end).slice(0, 10);
+
             let cls = '';
             if (today >= startClean && today <= endClean) cls = 'week-en-curso';
-            else if (today > endClean) cls = 'week-pasada';
+            else if (today > endClean)                     cls = 'week-pasada';
 
-            const remaining = w.budget - spent;
+            const remaining = budget - spent;
             let spentColor = 'pc-pos';
             if (remaining < 0) spentColor = 'pc-neg';
-            else if (remaining < w.budget * 0.2) spentColor = 'pc-warn';
-            
-            return `<div class="pc-week-row ${cls}" data-week="${w.id}">
+            else if (budget > 0 && remaining < budget * 0.2) spentColor = 'pc-warn';
+
+            return `<div class="pc-week-row ${cls}" data-week="${w.id}" onclick="BudgetApp.openWeekRowModal('${w.id}')">
                 <div class="pc-week-name-col"><span>${esc(w.label)}</span></div>
                 <div class="pc-week-date-col">${shortDate(w.start)} → ${shortDate(w.end)}</div>
-                <div style="display:flex; align-items:center; gap:8px; justify-content:flex-end;">
-                    <div class="pc-week-budget-col pc-num" onclick="BudgetApp.editWeekBudget('${w.id}', ${w.budget})" title="Editar presupuesto">${fmt(w.budget)}</div>
-                    <button class="pc-tick-btn" onclick="BudgetApp.equalizeWeek('${w.id}')" title="Igualar gasto"><svg viewBox="0 0 16 16"><path d="M3.8 8.6 6.4 11.2 12.2 5.4"/></svg></button>
+                <div class="pc-week-budget-col pc-num" onclick="event.stopPropagation();BudgetApp.editWeekBudget('${w.id}', ${Number(w.budget) || 0})" title="Editar presupuesto base">${fmt(budget)}</div>
+                <div class="pc-week-spent-col pc-num ${spentColor}" onclick="event.stopPropagation();BudgetApp.openWeekSpentModal('${w.id}')" title="Ver gasto / tickets">${fmt(spent)}</div>
+                <div class="pc-week-transfer-col">
+                    <button class="pc-transfer-btn" onclick="event.stopPropagation();BudgetApp.openTransferBudgetModal('${w.id}')" title="Arrastrar presupuesto desde otra semana">↪️</button>
                 </div>
-                <div class="pc-week-spent-col pc-num ${spentColor}" onclick="BudgetApp.openWeekSpentModal('${w.id}')" title="Editar/Gestionar gasto">${fmt(spent)}</div>
             </div>`;
         }).join('');
 
@@ -445,7 +539,7 @@ const BudgetApp = (function () {
                 <span class="pc-dot"></span>
                 <span>🛒 Groceries &amp; Leisure</span>
                 <button class="btn btn-ghost btn-sm" onclick="BudgetApp.openWeekCountModal()" style="margin-left:auto; padding:2px 6px; font-size:14px;" title="Configurar semanas">⚙️</button>
-                <span style="margin-left:8px;">${badge('Total ' + fmt(weeks.reduce((s, w) => s + Number(w.budget || 0), 0)), 'pc-badge-blue')}</span>
+                <span style="margin-left:8px;">${badge('Total ' + fmt(weeks.reduce((s, w) => s + getWeekEffectiveBudget(w.id), 0)), 'pc-badge-blue')}</span>
             </div>
             <div class="pc-week-list">
                 <div class="pc-week-row pc-week-header">
@@ -453,9 +547,174 @@ const BudgetApp = (function () {
                     <div class="pc-week-date-col">FECHAS</div>
                     <div class="pc-week-budget-col">PRESUPUESTO</div>
                     <div class="pc-week-spent-col" style="color:var(--text-muted); text-decoration:none;">GASTADO</div>
+                    <div class="pc-week-transfer-col"></div>
                 </div>
                 ${rows || '<div class="pc-empty">No hay semanas configuradas.</div>'}
             </div>
+        </div>`;
+    }
+
+    /* =========================================================
+    TARJETAS DINÁMICAS (incluidas en Presupuesto)
+    ========================================================= */
+    function getDinero() {
+        return (window.App && typeof App.getDineroData === 'function') ? App.getDineroData() : null;
+    }
+
+    function spentThisMonthFromDebt(d) {
+        const mk = currentPeriod;
+        return (d.history || []).filter(h => String(h.date).startsWith(mk)).reduce((s, h) => s + Number(h.amount || 0), 0);
+    }
+    function spentThisMonthFromLoan(l) {
+        const mk = currentPeriod;
+        return (l.payments || []).filter(p => String(p.date).startsWith(mk)).reduce((s, p) => s + Number(p.amount || 0), 0);
+    }
+    function spentThisMonthFromWallet(w) {
+        const mk = currentPeriod;
+        return (w.movements || []).filter(m => m.type === 'in' && String(m.date).startsWith(mk)).reduce((s, m) => s + Number(m.amount || 0), 0);
+    }
+    function spentThisMonthFromGoal(g) {
+        const mk = currentPeriod;
+        return (g.contributions || []).filter(c => String(c.date).startsWith(mk)).reduce((s, c) => s + Number(c.amount || 0), 0);
+    }
+    function spentThisMonthFromRecurring(r) {
+        const mk = currentPeriod;
+        return (r.history || []).filter(h => String(h.date).startsWith(mk)).reduce((s, h) => s + Math.abs(Number(h.amount || 0)), 0);
+    }
+
+    function budgetCardsHtml() {
+        const d = getDinero();
+        if (!d) return '';
+
+        const today = new Date().toISOString().slice(0, 10);
+        const mk = currentPeriod;
+
+        /* 1 · Recurrentes: PC categories tipo Rent + Dinero recurring activos */
+        const recurringRows = [];
+        // Renta (desde categorías PC)
+        pcCats().filter(c => !c.isVirtual && /rent|renta|alquiler/i.test(String(c.id) + ' ' + String(c.name))).forEach(c => {
+            const budget = catBudget(c.id);
+            const spent  = rowSpent(c.id);
+            if (budget === null && spent === 0) return;
+            recurringRows.push({
+                id: c.id, source: 'pc', type: 'pc-cat',
+                name: `${c.icon || '🏠'} ${c.name}`,
+                budget: Number(budget || 0), spent: spent, accountId: null,
+                onPay: () => { const diff = Number(budget || 0) - spent; if (Math.abs(diff) > 0.005) addMovement(c.id, diff, { concept: 'Pago recurrente ' + c.name }); }
+            });
+        });
+        // Dinero recurring (activos, con nextDate del mes actual o pasada)
+        (d.recurring || []).forEach(r => {
+            if (!r.active) return;
+            if (!r.nextDate) return;
+            const due = String(r.nextDate).slice(0, 7);
+            if (due > mk) return;
+            const budget = Number(r.amount || 0);
+            const spent  = spentThisMonthFromRecurring(r);
+            recurringRows.push({
+                id: r.id, source: 'dinero', type: 'recurring',
+                name: `${r.emoji || '🔁'} ${r.name}`,
+                budget, spent,
+                onPay: () => { if (window.App && typeof App.payBudgetItem === 'function') App.payBudgetItem(r.id, 'recurring', budget - spent); }
+            });
+        });
+
+        /* 2 · Wallets con includeInBudget */
+        const walletRows = (d.wallets || []).filter(w => w.includeInBudget).map(w => ({
+            id: w.id, source: 'dinero', type: 'wallet',
+            name: `${w.emoji || '👛'} ${w.name}`,
+            budget: Number(w.budgetAmount || 0),
+            spent: spentThisMonthFromWallet(w),
+            onPay: () => {
+                const diff = Number(w.budgetAmount || 0) - spentThisMonthFromWallet(w);
+                if (diff > 0.005 && window.App && typeof App.payBudgetItem === 'function') App.payBudgetItem(w.id, 'wallet', diff);
+            }
+        })).filter(r => r.budget > 0 || r.spent > 0);
+
+        /* 3 · Loans con includeInBudget y no pagados del todo */
+        const loanRows = (d.loans || [])
+            .filter(l => l.includeInBudget && (l.paidCount || 0) < (l.installments || 0))
+            .map(l => ({
+                id: l.id, source: 'dinero', type: 'loan',
+                name: `${l.emoji || '🏦'} ${l.name}`,
+                budget: Number(l.budgetAmount || l.installmentAmount || 0),
+                spent: spentThisMonthFromLoan(l),
+                onPay: () => { if (window.App && typeof App.payLoanInstallment === 'function') App.payLoanInstallment(l.id); }
+            }));
+
+        /* 4 · Goals con includeInBudget y contribución programada este mes */
+        const goalRows = (d.goals || [])
+            .filter(g => g.includeInBudget && (g.target == null || g.saved < g.target))
+            .filter(g => g.contribution > 0)
+            .map(g => ({
+                id: g.id, source: 'dinero', type: 'goal',
+                name: `${g.emoji || '🎯'} ${g.name}`,
+                budget: Number(g.budgetAmount || g.contribution || 0),
+                spent: spentThisMonthFromGoal(g),
+                onPay: () => {
+                    const diff = Number(g.budgetAmount || g.contribution || 0) - spentThisMonthFromGoal(g);
+                    if (diff > 0.005 && window.App && typeof App.payBudgetItem === 'function') App.payBudgetItem(g.id, 'goal', diff);
+                }
+            })).filter(r => r.budget > 0 || r.spent > 0);
+
+        /* 5 · Debts con includeInBudget pendientes */
+        const debtRows = (d.debts || [])
+            .filter(x => x.includeInBudget && Number(x.returned || 0) < Number(x.total || 0))
+            .map(x => ({
+                id: x.id, source: 'dinero', type: 'debt',
+                name: `${x.emoji || '🔄'} ${x.name}`,
+                budget: Number(x.budgetAmount || (x.total - x.returned) || 0),
+                spent: spentThisMonthFromDebt(x),
+                onPay: () => {
+                    const remaining = Number(x.total || 0) - Number(x.returned || 0);
+                    const paidThisMonth = spentThisMonthFromDebt(x);
+                    const diff = Math.min(remaining, Math.max(0, Number(x.budgetAmount || remaining) - paidThisMonth));
+                    if (diff > 0.005 && window.App && typeof App.payBudgetItem === 'function') App.payBudgetItem(x.id, 'debt', diff);
+                }
+            })).filter(r => r.budget > 0 || r.spent > 0);
+
+        const groups = [
+            { key: 'recurring', icon: '🔄', label: 'Gastos recurrentes', accent: '#0ea5e9', rows: recurringRows },
+            { key: 'wallets',   icon: '👛', label: 'Wallets',              accent: '#f59e0b', rows: walletRows },
+            { key: 'loans',     icon: '🏦', label: 'Préstamos',            accent: '#8b5cf6', rows: loanRows },
+            { key: 'goals',     icon: '🎯', label: 'Objetivos de ahorro',  accent: '#10b981', rows: goalRows },
+            { key: 'debts',     icon: '🔄', label: 'Deudas',               accent: '#ef4444', rows: debtRows }
+        ].filter(g => g.rows.length > 0);
+
+        if (!groups.length) return '';
+
+        const cardHtml = g => {
+            const totalBudget = g.rows.reduce((s, r) => s + r.budget, 0);
+            const totalSpent  = g.rows.reduce((s, r) => s + r.spent, 0);
+            const pct = totalBudget > 0 ? Math.min(100, Math.round(totalSpent / totalBudget * 100)) : 0;
+
+            const items = g.rows.map(r => {
+                const p = r.budget > 0 ? Math.min(100, Math.round(r.spent / r.budget * 100)) : 0;
+                const done = Math.abs(r.budget - r.spent) < 0.005;
+                return `<div class="pc-dyn-item">
+                    <div class="pc-dyn-item-head">
+                        <span class="pc-dyn-item-name">${esc(r.name)}</span>
+                        <span class="pc-dyn-item-amt pc-num">${fmt(r.spent)} / ${fmt(r.budget)}</span>
+                        <button class="pc-tick-btn ${done ? 'done' : ''}" data-dyn-pay="${g.key}::${r.type}::${r.id}" title="Registrar pago">${done ? '✓' : ''}</button>
+                    </div>
+                    <div class="pc-dyn-progress"><div class="pc-dyn-progress-fill" style="width:${p}%"></div></div>
+                </div>`;
+            }).join('');
+
+            return `<div class="pc-dyn-card" style="--dyn-accent:${g.accent}">
+                <div class="pc-dyn-card-head">
+                    <span class="pc-dyn-icon">${g.icon}</span>
+                    <span class="pc-dyn-title">${g.label}</span>
+                    <span class="pc-dyn-badge pc-num">${fmt(totalSpent)} / ${fmt(totalBudget)}</span>
+                </div>
+                <div class="pc-dyn-card-progress"><div class="pc-dyn-card-progress-fill" style="width:${pct}%"></div></div>
+                <div class="pc-dyn-items">${items}</div>
+            </div>`;
+        };
+
+        return `<div class="pc-dyn-section">
+            <div class="pc-dyn-section-title">Incluido en Presupuesto · ${App.formatPeriod(currentPeriod)}</div>
+            <div class="pc-dyn-grid">${groups.map(cardHtml).join('')}</div>
         </div>`;
     }
 
@@ -463,17 +722,21 @@ const BudgetApp = (function () {
         const accounts = getAccounts();
         let html = accounts.map(a => {
             const realVal = Number(a.balance) || 0;
+            const budgeted = computeAccountBudget(a.id);
+            const available = realVal - budgeted;
             const isImg = String(a.icon).startsWith('http') || String(a.icon).startsWith('data:');
             const iconHtml = isImg ? `<img src="${esc(a.icon)}" alt="">` : (a.icon || '🏦');
 
             return `<div class="pc-account-row">
                 <div style="display:flex; align-items:center; cursor:pointer;" onclick="BudgetApp.openEditAccountModal('${a.id}')" title="Editar cuenta">
                     <div class="pc-account-icon">${iconHtml}</div>
-                    <div><b>${esc(a.name)}</b><div class="pc-week-dates">Tipo: <b>${esc(a.type || 'conjunta')}</b></div></div>
+                    <div><b>${esc(a.name)}</b></div>
                 </div>
                 <div style="text-align:right; cursor:pointer;" onclick="BudgetApp.openUpdateBalanceModal('${a.id}')" title="Actualizar saldo">
                     <div class="pc-num" style="font-size:15px;font-weight:800;color:var(--text)">${fmt(realVal)}</div>
-                    <div style="font-size:11px;color:var(--text-muted);">Actualizar</div>
+                    <div style="font-size:11px;color:${available < 0 ? 'var(--pc-neg)' : 'var(--text-muted)'};">
+                        Disponible: ${fmt(available)}
+                    </div>
                 </div>
             </div>`;
         }).join('');
@@ -594,7 +857,6 @@ const BudgetApp = (function () {
     function openWeekCountModal() {
         closeModal();
         const cur = weekCount(currentPeriod);
-        const firstWeekBudget = pcWeeks().length ? pcWeeks()[0].budget : 0;
         const div = document.createElement('div');
         div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
         div.innerHTML = `<div class="pc-modal"><h3>⚙️ Configurar Semanas</h3>
@@ -604,21 +866,153 @@ const BudgetApp = (function () {
                     <option value="5" ${cur===5?'selected':''}>5 semanas</option>
                 </select>
             </div>
-            <div class="pc-field"><label>Presupuesto por semana (€)</label>
-                <input id="wcB" type="number" step="0.01" value="${firstWeekBudget}">
+            <div style="font-size:12px;color:var(--text-muted);margin:8px 0 12px;">
+                💡 El presupuesto de cada semana se edita haciendo clic en el importe de la fila. Si creas menos semanas de las que había, se conservan los arrastres existentes.
             </div>
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="wcCancel">Cancelar</button>
             <button class="pc-btn pc-btn-primary" id="wcSave">Aplicar</button></div></div>`;
         document.body.appendChild(div);
         div.addEventListener('click', e => { if (e.target === div) closeModal(); });
-        focusInput(div.querySelector('#wcB'));
         div.querySelector('#wcCancel').onclick = closeModal;
         div.querySelector('#wcSave').onclick = () => {
             const n = Number(div.querySelector('#wcN').value);
-            const b = Number(div.querySelector('#wcB').value);
-            const gen = generateMonthWeeks(currentPeriod, n, b);
+            const existing = pcWeeks();
+            const baseBudget = existing.length ? Number(existing[0].budget || 0) : 0;
+            const gen = generateMonthWeeks(currentPeriod, n, baseBudget);
             data().pcWeeks = allWeeks().filter(w => String(w.period) !== currentPeriod).concat(gen);
             App.saveData(); closeModal(); render();
+        };
+    }
+
+    function openWeekRowModal(weekId) {
+        const w = allWeeks().find(x => x.id === weekId);
+        if (!w) return;
+        const effBudget = getWeekEffectiveBudget(weekId);
+        const spent = sum(pcRealExpenses().filter(e => e.pcWeekId === weekId));
+        const movs = pcRealExpenses().filter(e => e.pcWeekId === weekId);
+        const transfers = getWeekTransfersFor(weekId).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const weeks = allWeeks();
+
+        const transferHtml = transfers.length
+            ? transfers.map(t => {
+                const isIn = t.toWeekId === weekId;
+                const otherId = isIn ? t.fromWeekId : t.toWeekId;
+                const other = weeks.find(x => x.id === otherId);
+                const label = other ? other.label : otherId;
+                return `<div class="pc-week-transfer-line ${isIn ? 'in' : 'out'}">
+                    <span>${isIn ? '⬅️ Recibido de' : '➡️ Enviado a'} <b>${esc(label)}</b></span>
+                    <strong>${isIn ? '+' : '−'}${fmt(t.amount)}</strong>
+                    <small>${App.formatDate(t.date)}</small>
+                </div>`;
+            }).join('')
+            : '<div class="pc-empty" style="padding:10px;font-size:12px;">Sin arrastres</div>';
+
+        const movsHtml = movs.length
+            ? movs.map(m => `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--border-light);font-size:13px;">
+                <div><div style="font-weight:600;">${esc(m.concept)}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${App.formatDate(m.date)} · ${esc(m.status || '')}</div></div>
+                <b class="${Number(m.amount) < 0 ? 'pc-pos' : 'pc-neg'}">${fmt(m.amount)}</b>
+            </div>`).join('')
+            : '<div class="pc-empty" style="padding:10px;font-size:12px;">Sin tickets registrados</div>';
+
+        closeModal();
+        const div = document.createElement('div');
+        div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
+        div.innerHTML = `<div class="pc-modal" style="max-width:520px;">
+            <h3>📅 ${esc(w.label)} · ${shortDate(w.start)} → ${shortDate(w.end)}</h3>
+
+            <div class="pc-week-modal-kpis">
+                <div class="pc-wm-kpi"><small>Presupuesto base</small><strong>${fmt(w.budget)}</strong></div>
+                <div class="pc-wm-kpi"><small>Con arrastres</small><strong>${fmt(effBudget)}</strong></div>
+                <div class="pc-wm-kpi"><small>Gastado</small><strong class="${spent > effBudget ? 'pc-neg' : 'pc-pos'}">${fmt(spent)}</strong></div>
+            </div>
+
+            <div class="pc-field" style="margin-top:14px;">
+                <label>Editar presupuesto base de la semana (€)</label>
+                <input id="wrmBudget" type="number" step="0.01" value="${Number(w.budget) || 0}">
+            </div>
+
+            <div class="pc-wm-section">
+                <div class="pc-wm-title">🔄 Historial de arrastres</div>
+                ${transferHtml}
+            </div>
+
+            <div class="pc-wm-section">
+                <div class="pc-wm-title">🧾 Tickets / movimientos de esta semana</div>
+                ${movsHtml}
+            </div>
+
+            <div class="pc-modal-actions" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">
+                <button class="pc-btn pc-btn-ghost" id="wrmTransfer">↪️ Arrastrar desde otra semana</button>
+                <button class="pc-btn pc-btn-ghost" id="wrmCancel">Cerrar</button>
+                <button class="pc-btn pc-btn-primary" id="wrmSave">Guardar</button>
+            </div>
+        </div>`;
+        document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        focusInput(div.querySelector('#wrmBudget'));
+
+        div.querySelector('#wrmCancel').onclick = closeModal;
+        div.querySelector('#wrmTransfer').onclick = () => { closeModal(); openTransferBudgetModal(weekId); };
+        div.querySelector('#wrmSave').onclick = () => {
+            const v = Number(div.querySelector('#wrmBudget').value);
+            if (!isNaN(v) && v >= 0) { w.budget = v; App.saveData(); }
+            closeModal(); render();
+        };
+    }
+
+    function openTransferBudgetModal(weekId) {
+        const weeks = pcWeeks();
+        const target = weeks.find(w => w.id === weekId);
+        if (!target) return;
+        const others = weeks.filter(w => w.id !== weekId);
+        if (!others.length) { App.showToast('No hay otra semana a la que transferir', 'warning'); return; }
+
+        const targetEff = getWeekEffectiveBudget(weekId);
+        const opts = others.map(w => {
+            const eff = getWeekEffectiveBudget(w.id);
+            return `<option value="${w.id}" data-max="${eff}">${esc(w.label)} — ${fmt(eff)} disponibles</option>`;
+        }).join('');
+
+        closeModal();
+        const div = document.createElement('div');
+        div.className = 'pc-modal-backdrop show'; div.id = 'pcBackdrop';
+        div.innerHTML = `<div class="pc-modal"><h3>↪️ Arrastrar presupuesto</h3>
+            <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+                Mover presupuesto <b>desde otra semana</b> hacia <b>${esc(target.label)}</b>.
+            </div>
+            <div class="pc-field"><label>Semana origen</label>
+                <select id="tbFrom">${opts}</select>
+            </div>
+            <div class="pc-field"><label>Importe a mover (€)</label>
+                <input id="tbAmount" type="number" step="0.01" min="0" value="10">
+            </div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">
+                ${esc(target.label)} recibirá ${fmt(0)} → ${fmt(targetEff)} + importe.
+            </div>
+            <div class="pc-modal-actions" style="margin-top:16px;">
+                <button class="pc-btn pc-btn-ghost" id="tbCancel">Cancelar</button>
+                <button class="pc-btn pc-btn-primary" id="tbSave">Aplicar arrastre</button>
+            </div>
+        </div>`;
+        document.body.appendChild(div);
+        div.addEventListener('click', e => { if (e.target === div) closeModal(); });
+        focusInput(div.querySelector('#tbAmount'));
+
+        div.querySelector('#tbCancel').onclick = closeModal;
+        div.querySelector('#tbSave').onclick = () => {
+            const fromId = div.querySelector('#tbFrom').value;
+            const amt = Number(div.querySelector('#tbAmount').value);
+            if (applyWeekTransfer(fromId, weekId, amt)) {
+                closeModal();
+                render();
+                App.showToast(`Arrastre aplicado · ${fmt(amt)}`, 'success');
+                // Pequeño parpadeo verde en el botón origen para confirmar
+                requestAnimationFrame(() => {
+                    const btn = containerEl.querySelector(`[data-week="${weekId}"] .pc-transfer-btn`);
+                    if (btn) { btn.classList.add('flash'); setTimeout(() => btn.classList.remove('flash'), 700); }
+                });
+            }
         };
     }
 
@@ -1142,7 +1536,7 @@ function addMovement(targetId, amount, opts) {
 
     function render() {
         if (!containerEl) return;
-        
+
         containerEl.innerHTML = headerHtml() + kpisHtml() +
             `<div class="pc-layout-grid">
                 <div class="pc-col-left">
@@ -1150,6 +1544,7 @@ function addMovement(targetId, amount, opts) {
                     ${weeksPanelHtml()}
                 </div>
                 <div class="pc-col-right">
+                    ${budgetCardsHtml()}
                     ${tableHtml()}
                 </div>
             </div>`;
@@ -1158,7 +1553,7 @@ function addMovement(targetId, amount, opts) {
 
     function bind() {
         const $ = sel => containerEl.querySelector(sel);
-        
+
         const btnPrev = $('#pcPrevMonth');
         if (btnPrev) {
             btnPrev.onclick = () => {
@@ -1169,13 +1564,16 @@ function addMovement(targetId, amount, opts) {
                 render();
             };
         }
-        
-        $('#pcNextMonth').onclick = () => {
-            let [y, m] = currentPeriod.split('-').map(Number);
-            m++; if (m > 12) { m = 1; y++; }
-            currentPeriod = `${y}-${String(m).padStart(2,'0')}`;
-            render();
-        };
+
+        const btnNext = $('#pcNextMonth');
+        if (btnNext) {
+            btnNext.onclick = () => {
+                let [y, m] = currentPeriod.split('-').map(Number);
+                m++; if (m > 12) { m = 1; y++; }
+                currentPeriod = `${y}-${String(m).padStart(2,'0')}`;
+                render();
+            };
+        }
 
         if ($('#pcBtnCat')) $('#pcBtnCat').onclick = openNewCatModal;
 
@@ -1183,7 +1581,7 @@ function addMovement(targetId, amount, opts) {
             e.stopPropagation();
             const id = btn.getAttribute('data-tick');
             const isLoan = pcLoans().some(l => l.id === id);
-            
+
             if (String(id).startsWith('din-')) {
                 const parts = id.split('-');
                 const type = parts.pop();
@@ -1191,13 +1589,9 @@ function addMovement(targetId, amount, opts) {
                 const spent = subSpent(id);
                 const budget = subBudget(id);
                 const diff = budget - spent;
-                if (diff > 0.005) {
-                    App.payBudgetItem(rawId, type, diff);
-                    render();
-                }
+                if (diff > 0.005) { App.payBudgetItem(rawId, type, diff); render(); }
             } else if (isLoan) {
-                App.payLoanInstallment(id);
-                render();
+                App.payLoanInstallment(id); render();
             } else {
                 const row = findRow(id);
                 if (!row) return;
@@ -1206,7 +1600,57 @@ function addMovement(targetId, amount, opts) {
                 if (Math.abs(diff) > 0.005) addMovement(id, diff, { concept: 'Ajuste hasta presupuesto' });
             }
         });
-        
+
+        // Tick de las TARJETAS DINÁMICAS
+        containerEl.querySelectorAll('[data-dyn-pay]').forEach(btn => btn.onclick = e => {
+            e.stopPropagation();
+            const [groupKey, type, id] = btn.dataset.dynPay.split('::');
+            // Buscamos la fila correspondiente en el último render
+            const d = getDinero();
+            if (!d) return;
+            if (type === 'pc-cat') {
+                const row = findRow(id);
+                if (!row) return;
+                const budget = catBudget(id);
+                const spent = rowSpent(id);
+                const diff = budget - spent;
+                if (Math.abs(diff) > 0.005) addMovement(id, diff, { concept: 'Pago ' + row.name });
+                return;
+            }
+            if (type === 'recurring') {
+                const r = (d.recurring || []).find(x => x.id === id);
+                if (r && window.App && typeof App.payBudgetItem === 'function') App.payBudgetItem(id, 'recurring', Number(r.amount || 0) - spentThisMonthFromRecurring(r));
+                return;
+            }
+            if (type === 'wallet') {
+                const w = (d.wallets || []).find(x => x.id === id);
+                if (w && window.App && typeof App.payBudgetItem === 'function') {
+                    const diff = Number(w.budgetAmount || 0) - spentThisMonthFromWallet(w);
+                    if (diff > 0.005) App.payBudgetItem(id, 'wallet', diff);
+                }
+                return;
+            }
+            if (type === 'loan') { if (window.App && typeof App.payLoanInstallment === 'function') App.payLoanInstallment(id); return; }
+            if (type === 'goal') {
+                const g = (d.goals || []).find(x => x.id === id);
+                if (g && window.App && typeof App.payBudgetItem === 'function') {
+                    const diff = Number(g.budgetAmount || g.contribution || 0) - spentThisMonthFromGoal(g);
+                    if (diff > 0.005) App.payBudgetItem(id, 'goal', diff);
+                }
+                return;
+            }
+            if (type === 'debt') {
+                const x = (d.debts || []).find(y => y.id === id);
+                if (x && window.App && typeof App.payBudgetItem === 'function') {
+                    const remaining = Number(x.total || 0) - Number(x.returned || 0);
+                    const paid = spentThisMonthFromDebt(x);
+                    const diff = Math.min(remaining, Math.max(0, Number(x.budgetAmount || remaining) - paid));
+                    if (diff > 0.005) App.payBudgetItem(id, 'debt', diff);
+                }
+                return;
+            }
+        });
+
         containerEl.querySelectorAll('[data-editcat]').forEach(el => el.onclick = e => { e.stopPropagation(); openCatModal(el.getAttribute('data-editcat'), false); });
         containerEl.querySelectorAll('[data-editsub]').forEach(el => el.onclick = e => {
             e.stopPropagation();
@@ -1216,12 +1660,8 @@ function addMovement(targetId, amount, opts) {
                 const type = parts.pop();
                 const rawId = parts.slice(1).join('-');
                 const currentBudget = subBudget(id);
-                // Modal rápido para editar
-                const val = prompt("Nuevo presupuesto para esta aportación:", currentBudget);
-                if (val !== null) {
-                    App.updateBudgetItemAmount(rawId, type, parseFloat(val) || 0);
-                    render();
-                }
+                const val = prompt('Nuevo presupuesto para esta aportación:', currentBudget);
+                if (val !== null) { App.updateBudgetItemAmount(rawId, type, parseFloat(val) || 0); render(); }
             } else {
                 openCatModal(id, true);
             }
@@ -1241,14 +1681,19 @@ function addMovement(targetId, amount, opts) {
         },
         render,
         addMovement,        // ← AÑADE ESTO
-        getState: () => ({  // ← Y ESTO
+        getState: () => ({
             categories: data().pcCategories || [],
             subcategories: data().pcSubcategories || [],
             weeks: data().pcWeeks || [],
+            weekTransfers: data().pcWeekTransfers || [],
             expenses: data().expenses || [],
             currentPeriod
-        }),
+        }),                                                                                                                
         openWeekCountModal,
+        openWeekRowModal,
+        openTransferBudgetModal,
+        getWeekTransfers,
+        applyWeekTransfer,
         editWeekBudget: openWeekBudgetModal,
         openWeekSpentModal,
         openCatSpentModal,
