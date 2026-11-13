@@ -311,6 +311,64 @@ table.pc-table { width: max-content !important; min-width: 640px; border-collaps
     .pc-week-modal-kpis { grid-template-columns: 1fr; }
 }
 
+/* =====================================================
+   NUEVOS ESTILOS · Tablas de Presupuesto y Modales
+   ===================================================== */
+
+/* Contenedor de las tablas */
+.pc-money-tables { display: flex; flex-direction: column; gap: 16px; }
+.pc-money-table-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
+
+/* Fila de la tabla con el icono del banco */
+.pc-row-cat { background: color-mix(in srgb, var(--cat-accent, var(--primary)) 6%, var(--bg-card)); border-bottom: 1px solid var(--border-light); transition: background .15s; }
+.pc-row-cat:hover { background: color-mix(in srgb, var(--cat-accent, var(--primary)) 10%, var(--bg-card)); }
+.pc-row-sub { background: var(--bg-card); border-bottom: 1px solid var(--border-light); }
+.pc-row-sub:hover { background: var(--border-light); }
+
+/* Celda de la categoría (Tick + Barra + Nombre) */
+.pc-td-cat { display: flex; align-items: center; gap: 8px; padding: 12px 16px !important; }
+.pc-title-bar { display: flex; align-items: center; justify-content: space-between; flex: 1; position: relative; overflow: hidden; border-radius: 8px; }
+.pc-title-bar::before { content: ""; position: absolute; inset: 0; width: var(--fill); background: var(--fill-col); transition: width .3s ease; pointer-events: none; z-index: 0; }
+.pc-title-inner { position: relative; z-index: 1; display: flex; align-items: center; gap: 6px; font-weight: 700; white-space: nowrap; }
+.pc-title-pct { position: relative; z-index: 1; font-size: 11.5px; color: var(--text-secondary); padding-right: 8px; }
+
+/* Botones de acción del modal ↪️ */
+.pc-action-option {
+    display: flex; align-items: flex-start; gap: 12px; width: 100%;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 10px; text-align: left;
+    cursor: pointer; font-family: inherit; transition: all .15s ease;
+}
+.pc-action-option:hover {
+    border-color: var(--primary); background: var(--primary-light);
+    transform: translateX(2px);
+}
+.pc-action-option .pc-action-icon {
+    font-size: 22px; line-height: 1; flex: none;
+    width: 36px; height: 36px; display: inline-flex;
+    align-items: center; justify-content: center;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+}
+.pc-action-option strong { display: block; font-size: 13.5px; font-weight: 800; color: var(--text); margin-bottom: 2px; }
+.pc-action-option small { display: block; font-size: 11.5px; color: var(--text-muted); line-height: 1.35; }
+
+/* Líneas de historial de arrastres en el modal semanal */
+.pc-week-transfer-line {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 8px 10px; border-radius: 8px; font-size: 13px;
+    background: var(--bg); margin-bottom: 6px; border-left: 3px solid var(--border);
+}
+.pc-week-transfer-line.in  { border-left-color: var(--success); background: color-mix(in srgb, var(--success) 6%, var(--bg)); }
+.pc-week-transfer-line.out { border-left-color: var(--warning); background: color-mix(in srgb, var(--warning) 6%, var(--bg)); }
+.pc-week-transfer-line strong { font-variant-numeric: tabular-nums; }
+.pc-week-transfer-line small { color: var(--text-muted); font-size: 11px; }
+
+/* Flechita de expandir subcategorías en la tabla */
+.pc-expand-arrow {
+    background: none; border: none; color: var(--text-muted); cursor: pointer;
+    font-size: 10px; padding: 0 4px; margin-right: 2px; transition: transform .2s;
+}
+
 
 /* =====================================================
    3. MÓDULO: INGRESOS PERSONALES (ip-)

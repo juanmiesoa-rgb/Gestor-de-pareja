@@ -1,16 +1,6 @@
 /* =============================================================================
-   DINERO.JS · v4 — Módulo con versiones mensuales, subcategorías, filtros
-   y reinicio mensual de wallets
-   -----------------------------------------------------------------------------
-   · Versiones mensuales por item (parent y subcategorías) con herencia
-   · Subcategorías con flechita expansible dentro de cada tarjeta
-   · Historial de versiones (🕘) con Restaurar/Eliminar
-   · KPIs con lista clickable de cuentas → filtro global del módulo
-   · Selector superior Todos / Incluido / No incluido en presupuesto
-   · Icono emoji o URL
-   · Reinicio mensual solo wallets con includeInBudget
-   · Bug del modal de monedero arreglado (bloque de presupuesto)
-   · Eliminado "+ Nuevo compromiso"
+   DINERO.JS · v4.1 — Módulo con versiones mensuales, subcategorías, filtros
+   y reinicio mensual de wallets + Troceo de Deudas/Objetivos + Logs
    ============================================================================= */
 const DineroApp = (function () {
     'use strict';
@@ -100,7 +90,7 @@ const DineroApp = (function () {
                 id: 'g-trip-fund', emoji: '✈️', name: 'Fondo Viajes',
                 target: 0, saved: 0, frequency: 'none', contribution: 0, nextDate: '',
                 contributions: [],
-                includeInBudget: false, budgetAmount: 0, versions: {}, subcategories: []
+                includeInBudget: false, budgetAmount: 0, versions: {}, subcategories: [], plannedSplits: []
             }
         ],
         recurring: [],
@@ -127,6 +117,7 @@ const DineroApp = (function () {
             (parsed[k] || []).forEach(item => {
                 if (!item.versions || typeof item.versions !== 'object') item.versions = {};
                 if (!Array.isArray(item.subcategories)) item.subcategories = [];
+                if (!Array.isArray(item.plannedSplits)) item.plannedSplits = [];
                 if (typeof item.includeInBudget !== 'boolean') item.includeInBudget = false;
                 if (typeof item.budgetAmount !== 'number') item.budgetAmount = 0;
                 /* Subcategorías: asegurar versions */
@@ -161,17 +152,16 @@ const DineroApp = (function () {
     }
 
     /* =========================================================
-       FILTROS DE VISTA (ampliados)
+       FILTROS DE VISTA
        ========================================================= */
     const viewFilters = {
         loanStatus: 'active',
         debtStatus: 'pending',
         recurringStatus: 'active',
         goalStatus: 'dateActive',
-        /* NUEVOS */
-        accountId: 'all',      // 'all' | <accountId>
-        budgetStatus: 'all',   // 'all' | 'included' | 'excluded'
-        expandedSubcats: new Set()  // ids de items con subcategorías expandidas
+        accountId: 'all',
+        budgetStatus: 'all',
+        expandedSubcats: new Set()
     };
 
     function passesBudgetFilter(item) {
@@ -183,7 +173,6 @@ const DineroApp = (function () {
     function passesAccountFilter(item) {
         if (viewFilters.accountId === 'all') return true;
         if (item.accountId === viewFilters.accountId) return true;
-        /* Loans usan accountName, no accountId */
         if (item.accountName) {
             const acc = getAccounts().find(a => a.id === viewFilters.accountId);
             if (acc && String(acc.name).toLowerCase() === String(item.accountName).toLowerCase()) return true;
@@ -238,22 +227,13 @@ const DineroApp = (function () {
     function getEffectiveVersion(item, mk) {
         mk = mk || currentMonthKey();
         if (!item.versions) item.versions = {};
-
-        /* 1 · Versión exacta */
         if (item.versions[mk]) return item.versions[mk];
-
-        /* 2 · Última anterior */
         const past = Object.keys(item.versions).filter(m => m < mk).sort().reverse();
         if (past.length) return item.versions[past[0]];
-
-        /* 3 · Fallback (nunca versionado) */
         return {
             budgetAmount: Number(item.budgetAmount || 0),
             subcategories: (item.subcategories || []).map(sub => ({
-                id: sub.id,
-                name: sub.name,
-                icon: sub.icon,
-                budgetAmount: Number(sub.budgetAmount || 0)
+                id: sub.id, name: sub.name, icon: sub.icon, budgetAmount: Number(sub.budgetAmount || 0)
             }))
         };
     }
@@ -267,15 +247,12 @@ const DineroApp = (function () {
         if (!item.versions) item.versions = {};
         if (!item.versions[mk]) item.versions[mk] = {};
         item.versions[mk].budgetAmount = round2(Number(amount) || 0);
-        /* Sincronizar budgetAmount actual si es el mes en curso */
         if (mk === currentMonthKey()) item.budgetAmount = item.versions[mk].budgetAmount;
     }
 
     function recalcParentBudget(item) {
-        /* Si tiene subcategorías con includeInBudget, parent = suma */
         const includedSubs = (item.subcategories || []).filter(s => s.includeInBudget);
-        if (includedSubs.length === 0) return; // mantiene su budget propio
-
+        if (includedSubs.length === 0) return;
         const mk = currentMonthKey();
         let sum = 0;
         includedSubs.forEach(sub => {
@@ -298,7 +275,6 @@ const DineroApp = (function () {
     function pendingCommitments() {
         const list = [];
         const today = new Date().toISOString().slice(0, 10);
-
         data.commitments.filter(c => !c.executed).forEach(c => list.push({ ...c, source: 'commitment' }));
         data.debts.filter(d => d.returned < d.total && d.includeInBudget !== false).forEach(d =>
             list.push({ id: d.id, name: d.name, amount: d.total - d.returned, dueDate: d.dueDate || '2099-12-31', source: 'debt' })
@@ -315,7 +291,6 @@ const DineroApp = (function () {
         (App.data.expenses || []).filter(e => (e.status === 'previsto' || e.status === 'pendiente') && e.date >= today).forEach(e =>
             list.push({ id: e.id, name: e.concept, amount: e.amount, dueDate: e.date, source: 'budget' })
         );
-
         return list;
     }
     function commitmentsWithin(days) {
@@ -327,15 +302,7 @@ const DineroApp = (function () {
     function availableNow(accountId) {
         let commitments = commitmentsWithin(data.settings.horizonDays);
         if (accountId && accountId !== 'all') {
-            /* Filtrar por cuenta (solo los que tienen accountId) */
-            const acc = getAccounts().find(a => a.id === accountId);
-            if (acc) {
-                commitments = commitments.filter(c => {
-                    if (c.accountId === accountId) return true;
-                    if (c.source === 'commitment' && c.accountId === accountId) return true;
-                    return false;
-                });
-            }
+            commitments = commitments.filter(c => c.accountId === accountId || (c.source === 'commitment' && c.accountId === accountId));
         }
         return realBalance(accountId) - commitments.reduce((s, c) => s + c.amount, 0);
     }
@@ -354,12 +321,8 @@ const DineroApp = (function () {
         if (d.returned > 0) return 'partial';
         return 'pending';
     }
-    function loanPending(l) {
-        return (l.installments - l.paidCount) * l.installmentAmount;
-    }
-    function goalRemaining(g) {
-        return g.target == null ? null : Math.max(0, g.target - g.saved);
-    }
+    function loanPending(l) { return (l.installments - l.paidCount) * l.installmentAmount; }
+    function goalRemaining(g) { return g.target == null ? null : Math.max(0, g.target - g.saved); }
     function goalFinishDate(g) {
         if (g.target == null || !g.contribution || g.frequency === 'none') return null;
         const remaining = goalRemaining(g);
@@ -371,27 +334,15 @@ const DineroApp = (function () {
     function periodLabel(p) {
         return { weekly: 'Semanal', biweekly: 'Quincenal', monthly: 'Mensual', quarterly: 'Trimestral', semiannual: 'Semestral', annual: 'Anual' }[p] || p;
     }
-
-    /* Gasto del mes actual */
     function walletSpentThisMonth(w) {
         const mk = currentMonthKey();
-        return (w.movements || [])
-            .filter(m => m.type === 'out' && String(m.date || '').startsWith(mk))
-            .reduce((s, m) => s + Number(m.amount || 0), 0);
+        return (w.movements || []).filter(m => m.type === 'out' && String(m.date || '').startsWith(mk)).reduce((s, m) => s + Number(m.amount || 0), 0);
     }
 
-    const SECTION_COLORS = {
-        summary:   '#2563eb',
-        wallets:   '#f59e0b',
-        debts:     '#ef4444',
-        loans:     '#8b5cf6',
-        goals:     '#10b981',
-        recurring: '#0ea5e9',
-        history:   '#64748b'
-    };
+    const SECTION_COLORS = { summary: '#2563eb', wallets: '#f59e0b', debts: '#ef4444', loans: '#8b5cf6', goals: '#10b981', recurring: '#0ea5e9', history: '#64748b' };
 
     /* =========================================================
-       CSS
+       CSS (Sin cambios)
        ========================================================= */
     function moduleCSS() { return `
         .dv2-wrap { display: grid; grid-template-columns: minmax(0, 68fr) minmax(0, 32fr); gap: 22px; align-items: start; }
@@ -399,7 +350,6 @@ const DineroApp = (function () {
         .dv2-col-left { display: flex; flex-direction: column; gap: 26px; min-width: 0; }
         .dv2-col-right { position: sticky; top: 14px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
         @media (max-width: 1100px) { .dv2-col-right { position: static; } }
-
         .dv2-section { min-width: 0; }
         .dv2-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--dv2-accent, var(--primary)) 16%, var(--bg-card)); border: 1px solid color-mix(in srgb, var(--dv2-accent, var(--primary)) 35%, transparent); box-shadow: inset 4px 0 0 var(--dv2-accent, var(--primary)); }
         .dv2-section-title { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 800; letter-spacing: .2px; color: var(--dv2-accent, var(--text)); }
@@ -410,31 +360,23 @@ const DineroApp = (function () {
         .dv2-filter-chips { display: inline-flex; gap: 6px; align-items: center; }
         .dv2-fchip { border: 1px solid color-mix(in srgb, var(--dv2-accent, var(--primary)) 40%, transparent); background: var(--bg-card); color: var(--text-secondary); border-radius: 999px; padding: 5px 12px; font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; }
         .dv2-fchip.sel { background: var(--dv2-accent, var(--primary)); color: #fff; border-color: var(--dv2-accent, var(--primary)); }
-
-        /* Filtros superiores */
         .dv2-global-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 16px; }
         .dv2-global-filters-label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); }
         .dv2-filter-pill { border: 1px solid var(--border); background: var(--bg); color: var(--text-secondary); border-radius: 999px; padding: 7px 14px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; transition: all .15s; display: inline-flex; align-items: center; gap: 6px; }
         .dv2-filter-pill.sel { background: var(--primary); color: #fff; border-color: var(--primary); }
         .dv2-filter-pill:hover:not(.sel) { border-color: var(--primary); color: var(--primary); }
-
-        /* Botón cuenta activa */
         .dv2-active-account-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: color-mix(in srgb, var(--primary) 10%, var(--bg-card)); border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent); border-radius: 12px; font-size: 13px; margin-bottom: 16px; }
         .dv2-active-account-banner strong { color: var(--primary); }
         .dv2-active-account-banner button { margin-left: auto; background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer; }
-
-        /* KPI con cuentas */
         .dv2-kpi-accounts { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
         .dv2-kpi-acc { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; font-size: 11.5px; cursor: pointer; transition: background .12s; }
         .dv2-kpi-acc:hover { background: var(--bg); }
         .dv2-kpi-acc.sel { background: color-mix(in srgb, var(--primary) 14%, transparent); font-weight: 800; color: var(--primary); }
         .dv2-kpi-acc-name { display: flex; align-items: center; gap: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .dv2-kpi-acc-amt { font-variant-numeric: tabular-nums; flex-shrink: 0; }
-
         .dv2-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: var(--shadow-sm); position: relative; overflow: hidden; transition: box-shadow .2s, transform .2s; }
         .dv2-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--dv2-accent, var(--primary)); border-radius: 4px 0 0 4px; }
         .dv2-card:hover { box-shadow: var(--shadow-md); }
-
         .dv2-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
         @media (max-width: 900px) { .dv2-kpis { grid-template-columns: 1fr; } }
         .dv2-kpi { padding: 18px 18px 16px 20px; }
@@ -452,7 +394,6 @@ const DineroApp = (function () {
         .dv2-horizon { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; }
         .dv2-horizon input { width: 46px; border: none; background: transparent; color: var(--text); font-weight: 800; font-size: 13px; text-align: center; outline: none; font-family: inherit; }
         .dv2-horizon span { font-size: 11.5px; color: var(--text-muted); font-weight: 600; }
-
         .dv2-summary-banner { position: relative; overflow: hidden; border-radius: 18px; padding: 18px 18px 20px; margin-bottom: 16px; background: linear-gradient(135deg, color-mix(in srgb, #2563eb 15%, var(--bg-card)) 0%, color-mix(in srgb, #8b5cf6 13%, var(--bg-card)) 55%, color-mix(in srgb, #0ea5e9 11%, var(--bg-card)) 100%); border: 1px solid color-mix(in srgb, #2563eb 30%, var(--border)); box-shadow: var(--shadow-md); }
         .dv2-summary-banner::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(520px 130px at 8% -20%, color-mix(in srgb, #2563eb 22%, transparent), transparent 70%), radial-gradient(420px 120px at 95% 130%, color-mix(in srgb, #8b5cf6 18%, transparent), transparent 70%); }
         .dv2-summary-head { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
@@ -466,10 +407,8 @@ const DineroApp = (function () {
         .dv2-kpi3-value.negative { color: var(--danger); }
         .dv2-pill-select { appearance: none; -webkit-appearance: none; border: 1px solid color-mix(in srgb, var(--dv2-accent, var(--primary)) 45%, var(--border)); background: color-mix(in srgb, var(--dv2-accent, var(--primary)) 10%, var(--bg)); color: var(--dv2-accent, var(--primary)); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 800; font-family: inherit; cursor: pointer; outline: none; transition: all .15s; }
         .dv2-pill-select:hover { background: color-mix(in srgb, var(--dv2-accent, var(--primary)) 18%, var(--bg)); }
-
         .dv2-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
         .dv2-grid-wide { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
-
         .dv2-wallet { cursor: pointer; text-align: left; }
         .dv2-wallet-top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
         .dv2-emoji { width: 38px; height: 38px; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; font-size: 19px; background: color-mix(in srgb, var(--dv2-accent, var(--primary)) 14%, var(--bg)); flex-shrink: 0; }
@@ -483,23 +422,17 @@ const DineroApp = (function () {
         .dv2-mov-date { color: var(--text-muted); font-size: 11px; min-width: 74px; }
         .dv2-pos { color: var(--success); font-weight: 700; }
         .dv2-neg { color: var(--danger); font-weight: 700; }
-
         .dv2-debt-status { font-size: 10.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; text-transform: uppercase; letter-spacing: .4px; }
         .dv2-st-pending { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
         .dv2-st-partial  { background: color-mix(in srgb, var(--info) 16%, transparent); color: var(--info); }
         .dv2-st-done     { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
-
         .dv2-progress { height: 9px; border-radius: 999px; background: var(--border-light); overflow: hidden; margin: 10px 0 6px; }
         .dv2-progress-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--dv2-accent, var(--primary)), color-mix(in srgb, var(--dv2-accent, var(--primary)) 55%, #ffffff)); transition: width .4s ease; }
         .dv2-progress-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); }
-
-        /* Flechita expandir subcategorías */
         .dv2-expand-arrow { background: none; border: 1px solid var(--border); color: var(--text-secondary); width: 24px; height: 24px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .2s; flex-shrink: 0; font-size: 10px; }
         .dv2-expand-arrow:hover { border-color: var(--dv2-accent, var(--primary)); color: var(--dv2-accent, var(--primary)); }
         .dv2-expand-arrow.open i { transform: rotate(90deg); }
         .dv2-expand-arrow i { transition: transform .2s; }
-
-        /* Subcategorías expandibles dentro de tarjeta */
         .dv2-subcats { display: none; margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px; }
         .dv2-subcats.open { display: block; animation: dv2Fade .22s ease; }
         .dv2-subcat-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; font-size: 12.5px; }
@@ -507,16 +440,10 @@ const DineroApp = (function () {
         .dv2-subcat-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .dv2-subcat-amt { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text-muted); }
         .dv2-subcat-actions { display: inline-flex; gap: 3px; }
-
-        /* Botón historial versiones */
         .dv2-history-btn { background: none; border: 1px solid var(--border); color: var(--text-muted); width: 26px; height: 26px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; transition: all .15s; flex-shrink: 0; }
         .dv2-history-btn:hover { border-color: var(--dv2-accent, var(--primary)); color: var(--dv2-accent, var(--primary)); background: color-mix(in srgb, var(--dv2-accent, var(--primary)) 10%, transparent); }
-
-        /* Chip "incluido en presupuesto" */
         .dv2-budget-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); text-transform: uppercase; letter-spacing: .4px; }
         .dv2-budget-badge.off { background: var(--border-light); color: var(--text-muted); }
-
-        /* Historial versiones modal */
         .dv2-vers-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
         .dv2-vers-table th { text-align: left; padding: 8px 6px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
         .dv2-vers-table td { padding: 10px 6px; border-bottom: 1px solid var(--border-light); vertical-align: top; }
@@ -525,22 +452,17 @@ const DineroApp = (function () {
         .dv2-vers-table .col-budget { width: 100px; font-weight: 700; font-variant-numeric: tabular-nums; }
         .dv2-vers-table .col-subs { font-size: 11px; color: var(--text-secondary); }
         .dv2-vers-table .col-actions { width: 60px; text-align: right; }
-
-        /* Switch */
         .dv2-switch { position: relative; width: 40px; height: 22px; flex: none; display: inline-block; }
         .dv2-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
         .dv2-switch-slider { position: absolute; inset: 0; border-radius: 999px; background: rgba(148,163,184,.45); transition: background .15s ease; }
         .dv2-switch-slider::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s ease; }
         .dv2-switch input:checked + .dv2-switch-slider { background: var(--success); }
         .dv2-switch input:checked + .dv2-switch-slider::before { transform: translateX(18px); }
-
         .dv2-budget-block { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-top: 10px; }
         .dv2-budget-switch-row { display: flex; align-items: center; gap: 10px; cursor: pointer; margin: 0; }
         .dv2-budget-switch-label { font-size: 13px; font-weight: 700; color: var(--text); user-select: none; }
         .dv2-budget-amount-wrap { margin-top: 10px; }
         .dv2-budget-amount-label { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 4px; }
-
-        /* Subcategorías en modal edición */
         .dv2-subcat-editor { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
         .dv2-subcat-editor-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
         .dv2-subcat-editor-head strong { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); }
@@ -549,10 +471,8 @@ const DineroApp = (function () {
         .dv2-subcat-editor-row .icon-prev { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
         .dv2-subcat-editor-row .del { background: none; border: none; color: var(--text-muted); cursor: pointer; width: 30px; height: 30px; border-radius: 6px; }
         .dv2-subcat-editor-row .del:hover { color: var(--danger); background: var(--danger-light); }
-
         .dv2-expand-btn { background: none; border: 1px solid var(--border); color: var(--text-secondary); width: 30px; height: 30px; border-radius: 9px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all .2s; flex-shrink: 0; font-size: 12px; }
         .dv2-expand-btn:hover { border-color: var(--dv2-accent, var(--primary)); color: var(--dv2-accent, var(--primary)); }
-
         .dv2-hist-filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
         .dv2-hist-list { max-height: 460px; overflow-y: auto; display: flex; flex-direction: column; }
         .dv2-hist-row { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--border-light); }
@@ -562,7 +482,6 @@ const DineroApp = (function () {
         .dv2-hist-concept { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .dv2-hist-sub { font-size: 10.5px; color: var(--text-muted); }
         .dv2-hist-amt { font-size: 13px; font-weight: 800; white-space: nowrap; }
-
         .dv2-modal-backdrop { position: fixed; inset: 0; background: rgba(2,6,23,.55); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 1200; opacity: 0; pointer-events: none; transition: opacity .2s; padding: 18px; }
         .dv2-modal-backdrop.show { opacity: 1; pointer-events: auto; }
         .dv2-modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; width: min(480px, 94vw); max-height: 88vh; overflow-y: auto; box-shadow: 0 18px 50px rgba(0,0,0,.25); transform: translateY(10px) scale(.98); transition: transform .2s; }
@@ -597,12 +516,7 @@ const DineroApp = (function () {
        ========================================================= */
     function checkAndResetWalletsForNewMonth() {
         const mk = currentMonthKey();
-
-        if (!data.lastWalletResetMonth) {
-            data.lastWalletResetMonth = mk;
-            saveData();
-            return;
-        }
+        if (!data.lastWalletResetMonth) { data.lastWalletResetMonth = mk; saveData(); return; }
         if (data.lastWalletResetMonth === mk) return;
         if (data.lastWalletResetMonth > mk) return;
 
@@ -614,7 +528,6 @@ const DineroApp = (function () {
                 if (Math.abs(balance) < 0.005) return;
 
                 if (balance > 0) {
-                    /* Sobrante → devolver a cuenta */
                     w.movements.push({
                         id: uid('wm'), date: todayISO(),
                         concept: `Cierre de mes ${data.lastWalletResetMonth}: devolución a cuenta`,
@@ -627,12 +540,12 @@ const DineroApp = (function () {
                             id: uid('mv'), date: todayISO(),
                             concept: `Cierre de mes: Devolución de sobrante de ${w.name || 'monedero'}`,
                             amount: balance, type: 'in', accountId: w.accountId,
+                            module: 'Wallets', category: w.name, // AÑADIDO
                             link: { kind: 'wallet-month-close', id: w.id }
                         });
                     }
                     results.push({ name: w.name, amount: balance, action: 'devuelto' });
                 } else {
-                    /* Saldo negativo → warning (Q9=C) */
                     results.push({ name: w.name, amount: balance, action: 'negativo' });
                 }
             });
@@ -829,7 +742,6 @@ const DineroApp = (function () {
             const accName = acc ? escapeHtml(acc.name) : 'Sin cuenta';
             const isOpen = viewFilters.expandedSubcats.has(w.id);
             const hasSubcats = (w.subcategories || []).length > 0;
-
             const progressPct = budgetAmt > 0 ? Math.min(100, Math.round((spent / budgetAmt) * 100)) : 0;
 
             return `
@@ -1129,11 +1041,9 @@ const DineroApp = (function () {
 
     function filteredMovements() {
         let list = data.movements;
-        /* Filtro por cuenta activa */
         if (viewFilters.accountId !== 'all') {
             list = list.filter(m => m.accountId === viewFilters.accountId);
         }
-        /* Filtros locales del historial */
         list = list
             .filter(m => histFilter.account === 'all' || m.accountId === histFilter.account)
             .filter(m => histFilter.type === 'all' || m.type.startsWith(histFilter.type))
@@ -1153,8 +1063,6 @@ const DineroApp = (function () {
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
             _keyboardBound = true;
         }
-
-        /* Filtros superiores */
         containerEl.querySelectorAll('[data-account-filter]').forEach(btn => {
             btn.addEventListener('click', () => {
                 viewFilters.accountId = btn.dataset.accountFilter;
@@ -1276,7 +1184,7 @@ const DineroApp = (function () {
     }
 
     /* =========================================================
-       NÚCLEO FINANCIERO
+       NÚCLEO FINANCIERO (MODIFICADO)
        ========================================================= */
     function registerMovement(m) {
         if (m.link && m.link.kind && m.link.id) {
@@ -1288,7 +1196,10 @@ const DineroApp = (function () {
         const mv = {
             id: uid('mv'), date: m.date || todayISO(),
             concept: m.concept, amount: m.amount, type: m.type,
-            accountId: m.accountId || null, link: m.link || null
+            accountId: m.accountId || null, 
+            module: m.module || '', // AÑADIDO
+            category: m.category || '', // AÑADIDO
+            link: m.link || null
         };
         if (m.currency === 'USD') {
             mv.currency = 'USD';
@@ -1327,6 +1238,7 @@ const DineroApp = (function () {
             date: todayISO(), concept: `Cuota #${n} · ${l.name}`,
             amount: -l.installmentAmount, type: 'out',
             accountId: acc ? acc.id : null,
+            module: 'Préstamos', category: l.name, // AÑADIDO
             link: { kind: 'loan', id: l.id }
         });
         App.saveData();
@@ -1366,7 +1278,6 @@ const DineroApp = (function () {
 
     const EMOJIS = ['👛', '🛒', '🎮', '🚗', '🎁', '🐱', '✈️', '🏠', '💍', '🎓', '🚨', '💡', '📱', '🎸', '⚽', '💄', '🏦', '🎯', '🔄', '🔁', '📦', '💰'];
 
-    /* Picker ampliado: emoji + URL */
     function emojiPicker(name, current) {
         const cur = current || '👛';
         const isUrl = /^(https?:|data:|\/)/.test(String(cur));
@@ -1480,7 +1391,6 @@ const DineroApp = (function () {
                 const currentMk = currentMonthKey();
                 if (!target.versions) target.versions = {};
                 const backup = JSON.parse(JSON.stringify(v));
-                /* Si es un padre con subcategorías, restaurar subcategorías según la versión */
                 if (backup.subcategories && backup.subcategories.length) {
                     const currentSubs = target.subcategories || [];
                     const nextSubs = backup.subcategories.map(s => {
@@ -1500,7 +1410,6 @@ const DineroApp = (function () {
                             budgetHistory: {}
                         };
                     });
-                    /* Q10=a: subcats que no existían en backup se eliminan */
                     target.subcategories = nextSubs;
                     target.versions[currentMk] = { budgetAmount: 0, subcategories: backup.subcategories };
                     recalcParentBudget(target);
@@ -1638,11 +1547,9 @@ const DineroApp = (function () {
         };
     }
 
-    /* --- WALLET MODAL (con bugfix del bloque presupuesto + subcategorías) --- */
     function openWalletModal(editId) {
         const w = editId ? data.wallets.find(x => x.id === editId) : null;
         const accOpts = getAccounts().map(a => ({ v: a.id, l: `${a.icon || '🏦'} ${a.name}` }));
-
         const effVersion = w ? getEffectiveVersion(w, currentMonthKey()) : { budgetAmount: 0 };
         const accIncludes = w && w.includeInBudget;
         const accAmt = w && w.budgetAmount > 0 ? w.budgetAmount : '';
@@ -1691,10 +1598,7 @@ const DineroApp = (function () {
             const incl = wTgl.checked;
             const amtRaw = body.querySelector('#dv2WBudgetAmt').value;
             const mk = currentMonthKey();
-
             const subcats = collectSubcatsFromEditor(body, w || { subcategories: [] });
-
-            /* Cálculo del budget: si tiene subcats incluidas → suma */
             let budgetAmount;
             if (subcats.length > 0) {
                 budgetAmount = subcats.reduce((s, sc) => s + Number(sc.budgetAmount || 0), 0);
@@ -1761,12 +1665,13 @@ const DineroApp = (function () {
         });
     }
 
-    /* --- DEBT MODAL (con subcategorías) --- */
+    /* --- DEBT MODAL (MODIFICADO CON TROCEO) --- */
     function openDebtModal(editId) {
         const d = editId ? data.debts.find(x => x.id === editId) : null;
         let kind = d ? d.kind : 'pay';
         const accOpts = getAccounts().map(a => ({ v: a.id, l: `${a.icon || '🏦'} ${a.name}` }));
         const effVersion = d ? getEffectiveVersion(d, currentMonthKey()) : { budgetAmount: 0 };
+        let plannedSplits = d && d.plannedSplits ? JSON.parse(JSON.stringify(d.plannedSplits)) : [];
 
         const body = openModal(
             `<span class="dv2-badge" style="background:${kind === 'pay' ? '#ef4444' : '#0ea5e9'}">${d ? renderIcon(d.emoji, 16) : '🔄'}</span> ${d ? 'Editar deuda' : 'Nueva deuda'}`,
@@ -1797,6 +1702,17 @@ const DineroApp = (function () {
                 <div class="dv2-budget-amount-wrap" id="dv2DBudgetAmtWrap" style="display:${d && d.includeInBudget ? 'block' : 'none'};">
                     <label class="dv2-budget-amount-label">Cantidad (vacío = total deuda)</label>
                     <input class="dv2-input" type="number" step="0.01" min="0" id="dv2DBudgetAmt" value="${d && d.budgetAmount > 0 ? d.budgetAmount : ''}" style="width:100%">
+                    
+                    <div style="margin-top:12px; border-top:1px dashed var(--border); padding-top:12px;">
+                        <div style="font-size:11.5px; font-weight:700; color:var(--text-muted); margin-bottom:6px;">TROCEO DEL PAGO (Opcional)</div>
+                        <div id="dv2DSplitsList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;">
+                            <!-- Se rellena con JS -->
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button type="button" class="dv2-mini-btn" id="dv2DAddSplit"><i class="fas fa-plus"></i> Añadir Mes</button>
+                            <button type="button" class="dv2-mini-btn" id="dv2DSplitEven" style="color:var(--primary)">Equidistar</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1820,6 +1736,33 @@ const DineroApp = (function () {
         const dTgl = body.querySelector('#dv2DInclBudget');
         const dWrap = body.querySelector('#dv2DBudgetAmtWrap');
         dTgl.addEventListener('change', () => { dWrap.style.display = dTgl.checked ? 'block' : 'none'; });
+
+        // Lógica del Troceo
+        function renderSplits() {
+            const list = body.querySelector('#dv2DSplitsList');
+            list.innerHTML = plannedSplits.map((s, i) => `
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <input type="month" class="dv2-input" style="flex:1;" value="${s.month}" onchange="window.updateSplit(${i}, 'month', this.value)">
+                    <input type="number" class="dv2-input" style="width:100px;" value="${s.amount}" onchange="window.updateSplit(${i}, 'amount', this.value)">
+                    <button type="button" class="dv2-mini-btn" style="color:var(--danger)" onclick="window.removeSplit(${i})"><i class="fas fa-times"></i></button>
+                </div>
+            `).join('');
+        }
+        window.updateSplit = (i, key, val) => { plannedSplits[i][key] = val; };
+        window.removeSplit = (i) => { plannedSplits.splice(i, 1); renderSplits(); };
+
+        body.querySelector('#dv2DAddSplit').onclick = () => {
+            plannedSplits.push({ month: currentMonthKey(), amount: 0 });
+            renderSplits();
+        };
+        body.querySelector('#dv2DSplitEven').onclick = () => {
+            const total = parseFloat(body.querySelector('#dv2DAmt').value) || 0;
+            const n = plannedSplits.length || 2;
+            const per = round2(total / n);
+            plannedSplits.forEach(s => s.amount = per);
+            renderSplits();
+        };
+        renderSplits();
 
         body.parentElement.querySelector('#dv2DCancel').onclick = closeModal;
         body.parentElement.querySelector('#dv2DSave').onclick = () => {
@@ -1850,6 +1793,7 @@ const DineroApp = (function () {
                 accountId: body.querySelector('#dv2DAcc').value || null,
                 includeInBudget: incl, budgetAmount,
                 versions, subcategories: subcats,
+                plannedSplits: plannedSplits.filter(s => s.amount > 0), // AÑADIDO
                 counterparty: body.querySelector('#dv2DCounterparty').value.trim(),
                 note: body.querySelector('#dv2DNote').value.trim(),
                 history: d ? d.history : []
@@ -2011,11 +1955,13 @@ const DineroApp = (function () {
         };
     }
 
-    /* --- GOAL MODAL --- */
+    /* --- GOAL MODAL (MODIFICADO CON TROCEO) --- */
     function openGoalModal(editId) {
         const g = editId ? data.goals.find(x => x.id === editId) : null;
         const freqs = [{ v: 'none', l: 'Sin aportación' }, { v: 'weekly', l: 'Semanal' }, { v: 'biweekly', l: 'Quincenal' }, { v: 'monthly', l: 'Mensual' }];
         const isTripFund = g && g.id === 'g-trip-fund';
+        let plannedSplits = g && g.plannedSplits ? JSON.parse(JSON.stringify(g.plannedSplits)) : [];
+
         const body = openModal(
             `<span class="dv2-badge" style="background:#10b981">${g ? renderIcon(g.emoji, 16) : '🎯'}</span> ${g ? 'Editar objetivo' : 'Nuevo objetivo'}`,
             '#10b981',
@@ -2043,6 +1989,17 @@ const DineroApp = (function () {
                 <div class="dv2-budget-amount-wrap" id="dv2GBudgetAmtWrap" style="display:${g && g.includeInBudget ? 'block' : 'none'};">
                     <label class="dv2-budget-amount-label">Cantidad (vacío = aportación)</label>
                     <input class="dv2-input" type="number" step="0.01" min="0" id="dv2GBudgetAmt" value="${g && g.budgetAmount > 0 ? g.budgetAmount : ''}" style="width:100%">
+                    
+                    <div style="margin-top:12px; border-top:1px dashed var(--border); padding-top:12px;">
+                        <div style="font-size:11.5px; font-weight:700; color:var(--text-muted); margin-bottom:6px;">TROCEO DE APORTACIONES (Opcional)</div>
+                        <div id="dv2GSplitsList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px;">
+                            <!-- Se rellena con JS -->
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button type="button" class="dv2-mini-btn" id="dv2GAddSplit"><i class="fas fa-plus"></i> Añadir Mes</button>
+                            <button type="button" class="dv2-mini-btn" id="dv2GSplitEven" style="color:var(--primary)">Equidistar</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2056,6 +2013,33 @@ const DineroApp = (function () {
         const gTgl = body.querySelector('#dv2GInclBudget');
         const gWrap = body.querySelector('#dv2GBudgetAmtWrap');
         gTgl.addEventListener('change', () => { gWrap.style.display = gTgl.checked ? 'block' : 'none'; });
+
+        // Lógica del Troceo
+        function renderSplits() {
+            const list = body.querySelector('#dv2GSplitsList');
+            list.innerHTML = plannedSplits.map((s, i) => `
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <input type="month" class="dv2-input" style="flex:1;" value="${s.month}" onchange="window.updateGSplit(${i}, 'month', this.value)">
+                    <input type="number" class="dv2-input" style="width:100px;" value="${s.amount}" onchange="window.updateGSplit(${i}, 'amount', this.value)">
+                    <button type="button" class="dv2-mini-btn" style="color:var(--danger)" onclick="window.removeGSplit(${i})"><i class="fas fa-times"></i></button>
+                </div>
+            `).join('');
+        }
+        window.updateGSplit = (i, key, val) => { plannedSplits[i][key] = val; };
+        window.removeGSplit = (i) => { plannedSplits.splice(i, 1); renderSplits(); };
+
+        body.querySelector('#dv2GAddSplit').onclick = () => {
+            plannedSplits.push({ month: currentMonthKey(), amount: 0 });
+            renderSplits();
+        };
+        body.querySelector('#dv2GSplitEven').onclick = () => {
+            const total = parseFloat(body.querySelector('#dv2GTarget').value) || 0;
+            const n = plannedSplits.length || 2;
+            const per = round2(total / n);
+            plannedSplits.forEach(s => s.amount = per);
+            renderSplits();
+        };
+        renderSplits();
 
         body.parentElement.querySelector('#dv2GCancel').onclick = closeModal;
         body.parentElement.querySelector('#dv2GSave').onclick = () => {
@@ -2088,6 +2072,7 @@ const DineroApp = (function () {
                 contribution: contrib,
                 nextDate: body.querySelector('#dv2GNext').value || '',
                 includeInBudget: incl, budgetAmount, versions, subcategories: subcats,
+                plannedSplits: plannedSplits.filter(s => s.amount > 0), // AÑADIDO
                 contributions: g ? g.contributions : []
             };
             if (g) Object.assign(g, obj); else data.goals.push(obj);
@@ -2158,7 +2143,7 @@ const DineroApp = (function () {
                 gn.nextDate = nd;
             }
             const accId = body.querySelector('#dv2GAcc').value;
-            if (accId) registerMovement({ date, concept: `Aportación · ${gn.name}`, amount: -amt, type: 'out', accountId: accId, link: { kind: 'goal', id: gn.id } });
+            if (accId) registerMovement({ date, concept: `Aportación · ${gn.name}`, amount: -amt, type: 'out', accountId: accId, module: 'Objetivos', category: gn.name, link: { kind: 'goal', id: gn.id } });
             else { saveData(); renderAll(); }
             closeModal(); toast('Aportación registrada');
         };
@@ -2424,7 +2409,7 @@ const DineroApp = (function () {
                 target: payload.target || null, saved: 0,
                 frequency: 'none', contribution: 0, nextDate: '',
                 contributions: [],
-                includeInBudget: false, budgetAmount: 0, versions: {}, subcategories: []
+                includeInBudget: false, budgetAmount: 0, versions: {}, subcategories: [], plannedSplits: []
             };
             data.goals.push(g);
         } else {
@@ -2453,13 +2438,13 @@ const DineroApp = (function () {
         const total = round2(Number(amount) || 0);
         if (total <= 0) return null;
         const accId = accountId || (getAccounts()[0] || {}).id;
-        const mv = registerMovement({ date, concept, amount: total, type: 'in', accountId: accId, link: { kind: 'income', id: 'extra-' + uid('x') } });
+        const mv = registerMovement({ date, concept, amount: total, type: 'in', accountId: accId, module: 'Ingresos', category: concept, link: { kind: 'income', id: 'extra-' + uid('x') } });
         const savingsAmt = round2(total * savingsPct / 100);
         if (savingsAmt > 0) {
             const savingsAcc = getAccounts().find(a => a.id === 'acc-tr') || getAccounts().find(a => a.type === 'inversion');
             if (savingsAcc && accId) {
-                registerMovement({ date, concept: `${concept} → Ahorro`, amount: -savingsAmt, type: 'transfer-out', accountId: accId });
-                registerMovement({ date, concept: `${concept} → Ahorro`, amount: savingsAmt, type: 'transfer-in', accountId: savingsAcc.id });
+                registerMovement({ date, concept: `${concept} → Ahorro`, amount: -savingsAmt, type: 'transfer-out', accountId: accId, module: 'Ingresos', category: 'Ahorro' });
+                registerMovement({ date, concept: `${concept} → Ahorro`, amount: savingsAmt, type: 'transfer-in', accountId: savingsAcc.id, module: 'Ingresos', category: 'Ahorro' });
             }
         }
         const tripsAmt = round2(total * tripsPct / 100);
@@ -2484,7 +2469,7 @@ const DineroApp = (function () {
             if (exists) return exists;
         }
         const accId = payload.accountId || (getAccounts()[0] || {}).id;
-        const mv = { id: uid('mv'), date: payload.date || todayISO(), concept: payload.concept || 'Ingreso', amount: amt, type: 'in', accountId: accId, link };
+        const mv = { id: uid('mv'), date: payload.date || todayISO(), concept: payload.concept || 'Ingreso', amount: amt, type: 'in', accountId: accId, module: payload.module || 'Ingresos', category: payload.category || '', link };
         data.movements.unshift(mv);
         const acc = getAccounts().find(a => a.id === accId);
         if (acc) acc.balance = round2(acc.balance + amt);
@@ -2501,7 +2486,7 @@ const DineroApp = (function () {
             if (exists) return exists;
         }
         const accId = payload.accountId || (getAccounts()[0] || {}).id;
-        const mv = { id: uid('mv'), date: payload.date || todayISO(), concept: payload.concept || 'Gasto', amount: -amt, type: 'out', accountId: accId, link };
+        const mv = { id: uid('mv'), date: payload.date || todayISO(), concept: payload.concept || 'Gasto', amount: -amt, type: 'out', accountId: accId, module: payload.module || 'Gastos', category: payload.category || '', link };
         data.movements.unshift(mv);
         const acc = getAccounts().find(a => a.id === accId);
         if (acc) acc.balance = round2(acc.balance - amt);
@@ -2552,9 +2537,17 @@ const DineroApp = (function () {
             const mk = currentMonthKey();
 
             data.debts.filter(d => d.includeInBudget && d.returned < d.total).forEach(d => {
+                let budgetAmt = 0;
+                if (d.plannedSplits && d.plannedSplits.length > 0) {
+                    const split = d.plannedSplits.find(s => s.month === mk);
+                    if (split) budgetAmt = split.amount;
+                    else return; // Si está troceado y este mes no toca, no se incluye
+                } else {
+                    const natural = Math.max(0, Number(d.total) - Number(d.returned));
+                    budgetAmt = getEffectiveAmount(d, mk) || natural;
+                }
                 const paid = (d.history || []).filter(h => String(h.date).startsWith(mk)).reduce((s, h) => s + Number(h.amount || 0), 0);
-                const natural = Math.max(0, Number(d.total) - Number(d.returned));
-                items.push({ id: d.id, type: 'debt', name: d.name, icon: d.emoji, budgetAmount: getEffectiveAmount(d, mk) || natural, spentAmount: paid, includeInBudget: true });
+                items.push({ id: d.id, type: 'debt', name: d.name, icon: d.emoji, budgetAmount: budgetAmt, spentAmount: paid, includeInBudget: true });
             });
 
             data.loans.filter(l => l.includeInBudget && l.paidCount < l.installments).forEach(l => {
@@ -2568,8 +2561,16 @@ const DineroApp = (function () {
             });
 
             data.goals.filter(g => g.includeInBudget && (g.target == null || g.saved < g.target)).forEach(g => {
+                let budgetAmt = 0;
+                if (g.plannedSplits && g.plannedSplits.length > 0) {
+                    const split = g.plannedSplits.find(s => s.month === mk);
+                    if (split) budgetAmt = split.amount;
+                    else return; // Si está troceado y este mes no toca, no se incluye
+                } else {
+                    budgetAmt = getEffectiveAmount(g, mk) || Number(g.contribution || 0);
+                }
                 const paid = (g.contributions || []).filter(c => String(c.date).startsWith(mk)).reduce((s, c) => s + Number(c.amount || 0), 0);
-                items.push({ id: g.id, type: 'goal', name: g.name, icon: g.emoji, budgetAmount: getEffectiveAmount(g, mk) || Number(g.contribution || 0), spentAmount: paid, includeInBudget: true });
+                items.push({ id: g.id, type: 'goal', name: g.name, icon: g.emoji, budgetAmount: budgetAmt, spentAmount: paid, includeInBudget: true });
             });
 
             data.recurring.filter(r => r.active && r.includeInBudget).forEach(r => {
@@ -2605,7 +2606,7 @@ const DineroApp = (function () {
                         date: todayISO(), concept: `Deuda: ${d.name}`,
                         amount: d.kind === 'pay' ? -amt : amt,
                         type: d.kind === 'pay' ? 'out' : 'in',
-                        accountId: d.accountId, link: { kind: 'debt', id: d.id }
+                        accountId: d.accountId, module: 'Deudas', category: d.name, link: { kind: 'debt', id: d.id }
                     });
                 }
             } else if (type === 'loan') {
@@ -2618,7 +2619,7 @@ const DineroApp = (function () {
                     if (w.accountId) registerMovement({
                         date: todayISO(), concept: `Monedero: ${w.name}`,
                         amount: -amt, type: 'out', accountId: w.accountId,
-                        link: { kind: 'wallet', id: w.id }
+                        module: 'Wallets', category: w.name, link: { kind: 'wallet', id: w.id }
                     });
                 }
             } else if (type === 'goal') {
@@ -2630,7 +2631,7 @@ const DineroApp = (function () {
                     if (g.accountId) registerMovement({
                         date: todayISO(), concept: `Objetivo: ${g.name}`,
                         amount: -amt, type: 'out', accountId: g.accountId,
-                        link: { kind: 'goal', id: g.id }
+                        module: 'Objetivos', category: g.name, link: { kind: 'goal', id: g.id }
                     });
                 }
             } else if (type === 'recurring') {
@@ -2643,7 +2644,7 @@ const DineroApp = (function () {
                     if (acc) registerMovement({
                         date: todayISO(), concept: r.name,
                         amount: -amt, type: 'out', accountId: acc.id,
-                        link: { kind: 'recurring', id: r.id }
+                        module: 'Recurrentes', category: r.name, link: { kind: 'recurring', id: r.id }
                     });
                     if (r.nextDate) {
                         const stepDays = r.period === 'weekly' ? 7 : r.period === 'quarterly' ? 91 : r.period === 'semiannual' ? 182 : r.period === 'annual' ? 365 : 30;
@@ -2674,7 +2675,24 @@ const DineroApp = (function () {
             data = clone(DEFAULT_MOCK);
             saveData();
             renderAll();
-        }
+        },
+
+        /* EXPONER MODALES PARA PRESUPUESTO */
+        openWalletModal,
+        openDebtModal,
+        openLoanModal,
+        openGoalModal,
+        openRecurringModal,
+
+        addWalletMovement: (walletId, amount, type, concept, date) => {
+            const w = data.wallets.find(x => x.id === walletId);
+            if (!w) return;
+            const wm = { id: uid('wm'), date: date || todayISO(), concept, amount, type };
+            w.movements.push(wm);
+            const mv = { id: uid('mv'), date: date || todayISO(), concept, amount: type === 'out' ? -amount : amount, type, accountId: w.accountId, module: 'Wallets', category: w.name };
+            data.movements.unshift(mv);
+            saveData(); renderAll();
+        },
     };
 })();
 
