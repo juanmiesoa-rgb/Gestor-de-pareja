@@ -773,7 +773,7 @@ const DineroApp = (function () {
 
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.wallets}">
-            ${sectionHead('wallets', 'Monederos virtuales', 'Distribución interna del saldo real', '+ Nuevo monedero', 'dv2AddWallet')}
+            ${sectionHead('wallets', 'WALLETS', 'Distribución interna del saldo real', '+ Nuevo monedero', 'dv2AddWallet')}
             <div class="dv2-grid">${cards || '<div class="dv2-empty">Crea tu primer monedero</div>'}</div>
         </section>`;
     }
@@ -836,7 +836,7 @@ const DineroApp = (function () {
 
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.debts}">
-            ${sectionHead('debts', 'Deudas y devoluciones', 'Dinero temporalmente fuera de su sitio', '+ Nueva deuda', 'dv2AddDebt')}
+            ${sectionHead('debts', 'DEBTS', 'Dinero temporalmente fuera de su sitio', '+ Nueva deuda', 'dv2AddDebt')}
             ${filterRowHtml('debtStatus', [{ v: 'pending', l: 'Pendientes' }, { v: 'done', l: 'Completadas' }, { v: 'all', l: 'Todas' }])}
             ${blocks}
         </section>`;
@@ -882,7 +882,7 @@ const DineroApp = (function () {
 
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.loans}">
-            ${sectionHead('loans', 'Préstamos y financiaciones', viewFilters.loanStatus === 'completed' ? 'Historial cerrado' : 'Cuotas activas', '+ Nuevo préstamo', 'dv2AddLoan')}
+            ${sectionHead('loans', 'LOANS', viewFilters.loanStatus === 'completed' ? 'Historial cerrado' : 'Cuotas activas', '+ Nuevo préstamo', 'dv2AddLoan')}
             ${filterRowHtml('loanStatus', [{ v: 'active', l: 'Pendientes' }, { v: 'completed', l: 'Completados' }, { v: 'all', l: 'Todos' }])}
             <div class="dv2-grid dv2-grid-wide">${cards || '<div class="dv2-empty">' + (viewFilters.loanStatus === 'active' ? 'Sin préstamos activos 🎉' : 'Nada con este filtro') + '</div>'}</div>
         </section>`;
@@ -933,7 +933,7 @@ const DineroApp = (function () {
 
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.goals}">
-            ${sectionHead('goals', 'Objetivos de ahorro', 'Metas con seguimiento', '+ Nuevo objetivo', 'dv2AddGoal')}
+            ${sectionHead('goals', 'SAVING GOALS', 'Metas con seguimiento', '+ Nuevo objetivo', 'dv2AddGoal')}
             ${filterRowHtml('goalStatus', [{ v: 'dateActive', l: '📅 Fecha activa' }, { v: 'done', l: 'Completados' }, { v: 'all', l: 'Todos' }])}
             <div class="dv2-grid dv2-grid-wide">${cards || '<div class="dv2-empty">' + (viewFilters.goalStatus === 'dateActive' ? 'Ningún objetivo con aportación programada' : 'Sin objetivos con este filtro') + '</div>'}</div>
         </section>`;
@@ -969,7 +969,7 @@ const DineroApp = (function () {
 
         return `
         <section class="dv2-section" style="--dv2-accent:${SECTION_COLORS.recurring}">
-            ${sectionHead('recurring', 'Pagos recurrentes y suscripciones', 'Compromisos periódicos', '+ Nuevo pago', 'dv2AddRecurring')}
+            ${sectionHead('recurring', 'RECURRING & SUBSCRIPTIONS', 'Compromisos periódicos', '+ Nuevo pago', 'dv2AddRecurring')}
             ${filterRowHtml('recurringStatus', [{ v: 'active', l: '🟢 Activo' }, { v: 'paused', l: '⏸ Pausados' }, { v: 'all', l: 'Todos' }])}
             <div class="dv2-grid">${cards || '<div class="dv2-empty">' + (viewFilters.recurringStatus === 'active' ? 'Sin pagos activos con este filtro' : 'Nada con este filtro') + '</div>'}</div>
         </section>`;
@@ -1457,58 +1457,48 @@ const DineroApp = (function () {
     /* =========================================================
        EDITOR DE SUBCATEGORÍAS (dentro de modales de item)
        ========================================================= */
-    function subcatEditorHTML(item) {
-        const subs = item.subcategories || [];
-        const rows = subs.map((sub, idx) => {
-            const v = getEffectiveVersion(sub, currentMonthKey());
-            return `
-            <div class="dv2-subcat-editor-row" data-subcat-id="${sub.id}">
-                <span class="icon-prev">${renderIcon(sub.icon || '·', 16)}</span>
-                <input class="sub-name" placeholder="Nombre" value="${escapeHtml(sub.name || '')}">
-                <input class="sub-budget" type="number" step="0.01" min="0" placeholder="Presupuesto" value="${Number(v.budgetAmount || 0)}">
-                <button type="button" class="del" title="Eliminar"><i class="fas fa-times"></i></button>
-            </div>`;
-        }).join('');
-        return `
-        <div class="dv2-subcat-editor">
-            <div class="dv2-subcat-editor-head">
-                <strong>Subcategorías (${subs.length})</strong>
-                <button type="button" class="dv2-mini-btn" id="dv2SubcatAdd"><i class="fas fa-plus"></i> Añadir</button>
-            </div>
-            <div id="dv2SubcatList">${rows || '<div style="font-size:12px;color:var(--text-muted);padding:6px 0">Sin subcategorías</div>'}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
-                💡 Si añades subcategorías, el presupuesto del padre pasará a ser la suma automáticamente.
-            </div>
-        </div>`;
+    function openIconPickerModal(currentIcon, onSave) {
+        const body = openModal('Elegir Icono', '#2563eb',
+            `<div class="dv2-field"><label>URL de Imagen (opcional)</label><input class="dv2-input" id="iconUrl" value="${/^(https?:|data:|\/)/.test(currentIcon) ? currentIcon : ''}" placeholder="https://..."></div>
+             <div class="dv2-emoji-picker" id="iconPicker" style="margin-top:10px;">${EMOJIS.map(e => `<button type="button" class="dv2-emoji-opt ${e === currentIcon ? 'sel' : ''}" data-emoji="${e}">${e}</button>`).join('')}</div>`,
+            `<button class="btn btn-secondary" id="iconCancel">Cancelar</button><button class="btn btn-primary" id="iconSave">Elegir</button>`
+        );
+        body.querySelectorAll('.dv2-emoji-opt').forEach(btn => btn.onclick = () => {
+            body.querySelectorAll('.dv2-emoji-opt').forEach(b => b.classList.remove('sel'));
+            btn.classList.add('sel'); body.querySelector('#iconUrl').value = '';
+        });
+        body.querySelector('#iconUrl').oninput = (e) => {
+            if (e.target.value.trim()) body.querySelectorAll('.dv2-emoji-opt').forEach(b => b.classList.remove('sel'));
+        };
+        body.parentElement.querySelector('#iconCancel').onclick = closeModal;
+        body.parentElement.querySelector('#iconSave').onclick = () => {
+            const url = body.querySelector('#iconUrl').value.trim();
+            const em = body.querySelector('#iconPicker .dv2-emoji-opt.sel');
+            onSave(url || (em ? em.dataset.emoji : '·'));
+            closeModal();
+        };
     }
 
-    function bindSubcatEditor(body, item) {
-        const addBtn = body.querySelector('#dv2SubcatAdd');
-        const list = body.querySelector('#dv2SubcatList');
-        if (!addBtn || !list) return;
-
-        addBtn.onclick = () => {
-            const id = uid('sub');
-            const div = document.createElement('div');
-            div.className = 'dv2-subcat-editor-row';
-            div.dataset.subcatId = id;
-            div.innerHTML = `
-                <span class="icon-prev">·</span>
-                <input class="sub-name" placeholder="Nombre" value="">
-                <input class="sub-budget" type="number" step="0.01" min="0" placeholder="Presupuesto" value="0">
-                <button type="button" class="del" title="Eliminar"><i class="fas fa-times"></i></button>`;
-            const empty = list.querySelector('div[style*="color:var(--text-muted)"]');
-            if (empty) empty.remove();
-            list.appendChild(div);
-            div.querySelector('.sub-name').focus();
-        };
-
-        list.addEventListener('click', (e) => {
-            const del = e.target.closest('.del');
-            if (del) {
-                del.closest('.dv2-subcat-editor-row').remove();
-            }
+    function openIconPickerModal(currentIcon, onSave) {
+        const body = openModal('Elegir Icono', '#2563eb',
+            `<div class="dv2-field"><label>URL de Imagen (opcional)</label><input class="dv2-input" id="iconUrl" value="${/^(https?:|data:|\/)/.test(currentIcon) ? currentIcon : ''}" placeholder="https://..."></div>
+             <div class="dv2-emoji-picker" id="iconPicker" style="margin-top:10px;">${EMOJIS.map(e => `<button type="button" class="dv2-emoji-opt ${e === currentIcon ? 'sel' : ''}" data-emoji="${e}">${e}</button>`).join('')}</div>`,
+            `<button class="btn btn-secondary" id="iconCancel">Cancelar</button><button class="btn btn-primary" id="iconSave">Elegir</button>`
+        );
+        body.querySelectorAll('.dv2-emoji-opt').forEach(btn => btn.onclick = () => {
+            body.querySelectorAll('.dv2-emoji-opt').forEach(b => b.classList.remove('sel'));
+            btn.classList.add('sel'); body.querySelector('#iconUrl').value = '';
         });
+        body.querySelector('#iconUrl').oninput = (e) => {
+            if (e.target.value.trim()) body.querySelectorAll('.dv2-emoji-opt').forEach(b => b.classList.remove('sel'));
+        };
+        body.parentElement.querySelector('#iconCancel').onclick = closeModal;
+        body.parentElement.querySelector('#iconSave').onclick = () => {
+            const url = body.querySelector('#iconUrl').value.trim();
+            const em = body.querySelector('#iconPicker .dv2-emoji-opt.sel');
+            onSave(url || (em ? em.dataset.emoji : '·'));
+            closeModal();
+        };
     }
 
     function collectSubcatsFromEditor(body, item) {
@@ -1567,7 +1557,7 @@ const DineroApp = (function () {
 
     function openWalletModal(editId) {
         const w = editId ? data.wallets.find(x => x.id === editId) : null;
-        const accOpts = getAccounts().map(a => ({ v: a.id, l: `${a.icon || '🏦'} ${a.name}` }));
+        const accOpts = getAccounts().map(a => ({ v: a.id, l: a.name }));
         const effVersion = w ? getEffectiveVersion(w, currentMonthKey()) : { budgetAmount: 0 };
         const accIncludes = w && w.includeInBudget;
         const accAmt = w && w.budgetAmount > 0 ? w.budgetAmount : '';
@@ -1733,6 +1723,10 @@ const DineroApp = (function () {
             } else {
                 w.movements.push({ id: uid('wm'), concept, amount: amt, date, type });
             }
+            
+            // REGISTRO EN EL HISTORIAL GLOBAL
+            registerMovement({ date, concept: `${w.name}: ${concept}`, amount: type === 'out' ? -amt : amt, type, accountId: w.accountId, module: 'Wallets', category: w.name });
+            
             saveData();
             closeModal();
             openWalletDetailModal(walletId);
@@ -1752,7 +1746,7 @@ const DineroApp = (function () {
     function openDebtModal(editId) {
         const d = editId ? data.debts.find(x => x.id === editId) : null;
         let kind = d ? d.kind : 'pay';
-        const accOpts = getAccounts().map(a => ({ v: a.id, l: `${a.icon || '🏦'} ${a.name}` }));
+        const accOpts = getAccounts().map(a => ({ v: a.id, l: a.name }));
         const effVersion = d ? getEffectiveVersion(d, currentMonthKey()) : { budgetAmount: 0 };
         let plannedSplits = d && d.plannedSplits ? JSON.parse(JSON.stringify(d.plannedSplits)) : [];
 
@@ -1949,11 +1943,19 @@ const DineroApp = (function () {
         bindEmojiPicker(body, 'dv2LEmoji');
         bindSubcatEditor(body, l || { subcategories: [] });
 
-        const auto = () => {
-            const tot = parseFloat(body.querySelector('#dv2LAmt').value);
-            const n = parseInt(body.querySelector('#dv2LInst').value);
-            if (tot > 0 && n > 0) body.querySelector('#dv2LQi').value = round2(tot / n);
+        const calcFin = () => { 
+            const qi = parseFloat(body.querySelector('#dv2LQi').value); 
+            const n = parseInt(body.querySelector('#dv2LInst').value); 
+            if (qi > 0 && n > 0) body.querySelector('#dv2LAmt').value = round2(qi * n); 
         };
+        const calcQi = () => { 
+            const tot = parseFloat(body.querySelector('#dv2LAmt').value); 
+            const n = parseInt(body.querySelector('#dv2LInst').value); 
+            if (tot > 0 && n > 0) body.querySelector('#dv2LQi').value = round2(tot / n); 
+        };
+        body.querySelector('#dv2LQi').addEventListener('input', calcFin); 
+        body.querySelector('#dv2LInst').addEventListener('input', calcFin);
+        body.querySelector('#dv2LAmt').addEventListener('input', calcQi);
         body.querySelector('#dv2LAmt').addEventListener('input', auto);
         body.querySelector('#dv2LInst').addEventListener('input', auto);
 
@@ -2348,7 +2350,7 @@ const DineroApp = (function () {
     /* --- COMMITMENT MODAL (solo interno; sin botón público) --- */
     function openCommitmentModal(editId) {
         const c = editId ? data.commitments.find(x => x.id === editId) : null;
-        const accOpts = getAccounts().map(a => ({ v: a.id, l: `${a.icon || '🏦'} ${a.name}` }));
+        const accOpts = getAccounts().map(a => ({ v: a.id, l: a.name }));
         const body = openModal(
             `<span class="dv2-badge" style="background:#2563eb">📅</span> ${c ? 'Editar compromiso' : 'Nuevo compromiso'}`,
             '#2563eb',
@@ -2388,7 +2390,7 @@ const DineroApp = (function () {
     function openMovementModal(editId) {
         const mv = editId ? data.movements.find(x => x.id === editId) : null;
         const types = [['out', 'Salida (gasto)'], ['in', 'Entrada (ingreso)'], ['transfer-out', 'Transferencia (salida)'], ['transfer-in', 'Transferencia (entrada)']].map(([v, l]) => ({ v, l }));
-        const accOpts = getAccounts().map(a => ({ v: a.id, l: `${a.icon || '🏦'} ${a.name}` }));
+        const accOpts = getAccounts().map(a => ({ v: a.id, l: a.name }));
         const body = openModal(
             `<span class="dv2-badge" style="background:#64748b">${mv ? '✏️' : '↕️'}</span> ${mv ? 'Editar movimiento' : 'Nuevo movimiento'}`,
             '#64748b',

@@ -544,10 +544,22 @@ const BudgetApp = (function () {
         const rowsHtml = rows.map(r => {
             const pct = r.budget > 0 ? Math.min(100, Math.round(r.spent / r.budget * 100)) : (r.spent > 0 ? 100 : 0);
             const done = r.budget > 0 && Math.abs(r.budget - r.spent) < 0.005;
-            const avail = r.budget - r.spent;
-            const hasSubcats = (r.subcats || []).length > 0;
             
-            // Icono del banco
+            // DISPONIBLE REAL
+            let avail = 0;
+            if (r.type === 'wallet') {
+                avail = (r.raw.movements || []).reduce((s, m) => s + (m.type === 'out' ? -m.amount : m.amount), 0);
+            } else if (r.type === 'debt') {
+                avail = Math.max(0, r.raw.total - r.raw.returned);
+            } else if (r.type === 'loan') {
+                avail = (r.raw.installments - r.raw.paidCount) * r.raw.installmentAmount;
+            } else if (r.type === 'goal') {
+                avail = r.raw.target ? Math.max(0, r.raw.target - r.raw.saved) : 0;
+            } else {
+                avail = r.budget - r.spent;
+            }
+
+            const hasSubcats = (r.subcats || []).length > 0;
             const accId = r.raw.accountId || (r.raw.accountName ? (getAccounts().find(a => a.name === r.raw.accountName)||{}).id : null);
             const accIcon = accId ? (getAccounts().find(a => a.id === accId)||{}).icon : '';
 
@@ -574,9 +586,11 @@ const BudgetApp = (function () {
                     const subSpent = 0;
                     const subPct = subBudget > 0 ? Math.min(100, Math.round((subSpent / subBudget) * 100)) : 0;
                     const subAvail = subBudget - subSpent;
+                    
+                    // TICK AÑADIDO A LAS SUBCATEGORÍAS
                     html += `<tr class="pc-row-sub" data-parent="${r.type}-${r.id}" style="--cat-accent:${accent};display:none">
                         <td class="pc-td-cat">
-                            <button class="pc-tick-btn" style="visibility:hidden"></button>
+                            <button class="pc-tick-btn" data-mtick="${r.type}::${sub.id}" title="Registrar pago"></button>
                             <div class="pc-title-bar" style="--fill:${subPct}%;--fill-col:color-mix(in srgb, ${accent} 20%, transparent);border:none">
                                 <span class="pc-title-inner" style="padding:3px 6px;font-size:12px; text-transform:uppercase;">
                                     ${renderIcon(sub.icon || '·', 14)} ${esc(sub.name)}

@@ -588,6 +588,20 @@ const IngresosModulo = (function () {
         const rules = getSharedContributionRules();
         const aportePct = eq.totalRemaining > 0 ? round2((rules.total / eq.totalRemaining) * 100) : 0;
 
+        // NUEVO: Calculamos el desglose por cuentas basándonos en el Presupuesto
+        const cuentasDesglose = {};
+        const accounts = (window.App && typeof App.getAccounts === 'function') ? App.getAccounts() : [];
+        const budgetItems = (window.App && typeof App.getBudgetItems === 'function') ? App.getBudgetItems() : [];
+        
+        accounts.forEach(acc => {
+            const totalAcc = budgetItems.filter(item => item.accountId === acc.id).reduce((sum, item) => sum + item.budgetAmount, 0);
+            if (totalAcc > 0) cuentasDesglose[acc.name] = totalAcc;
+        });
+        
+        const desgloseTexto = Object.entries(cuentasDesglose)
+            .map(([name, amount]) => `${name}: ${fmtEur(amount)}`)
+            .join(' · ');
+
         return `
         <div class="ip-period-bar">
             <button class="ip-nav-btn" data-action="prev-month">‹</button>
@@ -600,6 +614,10 @@ const IngresosModulo = (function () {
                 <div class="ip-kpi-label">Aporte Común</div>
                 <div class="ip-kpi-value">${fmtEur(rules.total)}</div>
                 <div class="ip-kpi-sub">${fmtPct(aportePct)} del remanente</div>
+                <!-- NUEVO: Desglose por cuentas debajo del valor -->
+                <div style="font-size:11.5px; color:var(--primary); margin-top:6px; font-weight:600; border-top:1px dashed var(--border); padding-top:6px;">
+                    ${desgloseTexto || 'Sin asignación por cuentas'}
+                </div>
             </div>
             <div class="ip-kpi ip-kpi-main" style="--pc:var(--success)">
                 <div class="ip-kpi-label">Remanente Total</div>
