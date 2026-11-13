@@ -173,14 +173,16 @@ const BudgetApp = (function () {
         if (!account) return 0;
         const accName = String(account.name || '').toLowerCase().trim();
         const rows = getMoneyRows();
-        let total = 0;
+        let totalSpent = 0;
+        
         const allRows = [].concat(rows.recurring, rows.wallets, rows.loans, rows.goals, rows.debts);
         allRows.forEach(r => {
             const item = r.raw;
-            if (item.accountId === accId) total += r.budget;
-            else if (item.accountName && String(item.accountName).toLowerCase().trim() === accName) total += r.budget;
+            if (item.accountId === accId || (item.accountName && String(item.accountName).toLowerCase().trim() === accName)) {
+                totalSpent += r.spent; 
+            }
         });
-        return total;
+        return totalSpent;
     }
 
     function accountsPanelHtml() {
@@ -188,7 +190,7 @@ const BudgetApp = (function () {
         const html = accounts.map(a => {
             const realVal = Number(a.balance) || 0;
             const budgeted = computeAccountBudget(a.id);
-            const available = realVal - budgeted;
+            const available = realVal - budgeted; // Real - Gastado Real;
             const iconHtml = renderIcon(a.icon || '🏦', 18);
 
             return `<div class="pc-account-row">
@@ -713,19 +715,23 @@ const BudgetApp = (function () {
         }
     }
 
-    /* =========================================================
-       ACCIONES: pagar / editar / ver gasto
-       ========================================================= */
     function payMoneyRow(type, id) {
         if (type === 'loan') {
-            if (App.payLoanInstallment) App.payLoanInstallment(id);
+            if (window.DineroApp && window.DineroApp.payLoanInstallment) window.DineroApp.payLoanInstallment(id);
             return;
         }
         const rows = getMoneyRows();
         const row = [].concat(rows[type === 'recurring' ? 'recurring' : type + 's']).find(r => r.id === id);
         if (!row) return;
         const diff = row.budget - row.spent;
-        if (diff > 0.005 && App.payBudgetItem) App.payBudgetItem(id, type, diff);
+        if (diff > 0.005) {
+            if (window.DineroApp && typeof window.DineroApp.payBudgetItem === 'function') {
+                window.DineroApp.payBudgetItem(id, type, diff);
+                render();
+            } else {
+                App.showToast('Error al conectar con Dinero', 'error');
+            }
+        }
     }
 
     function openMoneyBudgetModal(type, id) {

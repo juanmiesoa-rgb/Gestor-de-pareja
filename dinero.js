@@ -755,10 +755,10 @@ const DineroApp = (function () {
                         <div class="dv2-wallet-name" data-wallet-name="${w.id}">${escapeHtml(w.name)}</div>
                         <div style="font-size:10px;color:var(--text-muted)"><i class="fas fa-link"></i> ${accName}</div>
                     </div>
-                    ${w.includeInBudget
-                        ? `<span class="dv2-budget-badge" title="Incluido en presupuesto">✓ Presup.</span>`
-                        : `<span class="dv2-budget-badge off" title="No incluido en presupuesto">— Presup.</span>`}
-                    <button class="dv2-history-btn" data-versions="${w.id}" title="Historial de versiones"><i class="fas fa-clock-rotate-left"></i></button>
+                    <div style="flex:1;min-width:0">
+                        <div class="dv2-wallet-name" data-wallet-name="${w.id}">${escapeHtml(w.name)}</div>
+                        <div style="font-size:10px;color:var(--text-muted)"><i class="fas fa-link"></i> ${accName}</div>
+                    </div>
                 </div>
                 <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px">
                     <div class="dv2-wallet-amt">${fmtMoney(balance)}</div>
@@ -1193,14 +1193,7 @@ const DineroApp = (function () {
             );
             if (exists) return exists;
         }
-        const mv = {
-            id: uid('mv'), date: m.date || todayISO(),
-            concept: m.concept, amount: m.amount, type: m.type,
-            accountId: m.accountId || null, 
-            module: m.module || '', // AÑADIDO
-            category: m.category || '', // AÑADIDO
-            link: m.link || null
-        };
+        const mv = { id: uid('mv'), date: m.date || todayISO(), concept: m.concept, amount: m.amount, type: m.type, accountId: m.accountId || null, module: m.module || '', category: m.category || '', subcategory: m.subcategory || '', link: m.link || null };
         if (m.currency === 'USD') {
             mv.currency = 'USD';
             mv.eurEquivalent = round2(m.amount / eurUsdRate);
@@ -1555,6 +1548,66 @@ const DineroApp = (function () {
         };
     }
 
+    function subcatEditorHTML(item) {
+        const subs = item.subcategories || [];
+        const rows = subs.map((sub, idx) => {
+            const v = getEffectiveVersion(sub, currentMonthKey());
+            return `
+            <div class="dv2-subcat-editor-row" data-subcat-id="${sub.id}">
+                <span class="icon-prev" data-edit-icon="${sub.id}">${renderIcon(sub.icon || '·', 16)}</span>
+                <input class="sub-name" placeholder="Nombre" value="${escapeHtml(sub.name || '')}">
+                <input class="sub-budget" type="number" step="0.01" min="0" placeholder="Presupuesto" value="${Number(v.budgetAmount || 0)}">
+                <button type="button" class="del" title="Eliminar"><i class="fas fa-times"></i></button>
+            </div>`;
+        }).join('');
+        return `
+        <div class="dv2-subcat-editor">
+            <div class="dv2-subcat-editor-head">
+                <strong>Subcategorías (${subs.length})</strong>
+                <button type="button" class="dv2-mini-btn" id="dv2SubcatAdd"><i class="fas fa-plus"></i> Añadir</button>
+            </div>
+            <div id="dv2SubcatList">${rows || '<div style="font-size:12px;color:var(--text-muted);padding:6px 0">Sin subcategorías</div>'}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+                💡 Si añades subcategorías, el presupuesto del padre pasará a ser la suma automáticamente.
+            </div>
+        </div>`;
+    }
+
+    function bindSubcatEditor(body, item) {
+        const addBtn = body.querySelector('#dv2SubcatAdd');
+        const list = body.querySelector('#dv2SubcatList');
+        if (!addBtn || !list) return;
+
+        addBtn.onclick = () => {
+            const id = uid('sub');
+            const div = document.createElement('div');
+            div.className = 'dv2-subcat-editor-row';
+            div.dataset.subcatId = id;
+            div.innerHTML = `
+                <span class="icon-prev" data-edit-icon="${id}">·</span>
+                <input class="sub-name" placeholder="Nombre" value="">
+                <input class="sub-budget" type="number" step="0.01" min="0" placeholder="Presupuesto" value="0">
+                <button type="button" class="del" title="Eliminar"><i class="fas fa-times"></i></button>`;
+            const empty = list.querySelector('div[style*="color:var(--text-muted)"]');
+            if (empty) empty.remove();
+            list.appendChild(div);
+            div.querySelector('.sub-name').focus();
+        };
+
+        list.addEventListener('click', (e) => {
+            const del = e.target.closest('.del');
+            if (del) del.closest('.dv2-subcat-editor-row').remove();
+            
+            const iconBtn = e.target.closest('[data-edit-icon]');
+            if (iconBtn) {
+                openIconPickerModal(iconBtn.textContent.trim(), (newIcon) => {
+                    iconBtn.innerHTML = renderIcon(newIcon, 16);
+                    iconBtn.dataset.icon = newIcon;
+                });
+            }
+        });
+    }
+
     function openWalletModal(editId) {
         const w = editId ? data.wallets.find(x => x.id === editId) : null;
         const accOpts = getAccounts().map(a => ({ v: a.id, l: a.name }));
@@ -1650,10 +1703,13 @@ const DineroApp = (function () {
         const w = data.wallets.find(x => x.id === id); if (!w) return;
         const movs = [...w.movements].sort((a, b) => b.date.localeCompare(a.date));
         const body = openModal(
-            `<span class="dv2-badge" style="background:${w.color}">${renderIcon(w.emoji || '👛', 16)}</span> ${escapeHtml(w.name)} · monedero`,
+            `<span class="dv2-badge" style="background:${w.color}">${renderIcon(w.emoji || '👛', 16)}</span> ${escapeHtml(w.name)}`,
             w.color,
             `
-            <div class="dv2-wallet-amt" style="color:${w.color};margin-bottom:8px">${fmtMoney(walletBalance(w))}</div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div class="dv2-wallet-amt" style="color:${w.color};margin-bottom:8px">${fmtMoney(walletBalance(w))}</div>
+                <button class="dv2-history-btn" data-subcat-versions="${w.id}::" title="Historial de versiones"><i class="fas fa-clock-rotate-left"></i></button>
+            </div>
             
             <div style="display:flex; justify-content:space-between; align-items:center; margin:16px 0 8px;">
                 <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);">Movimientos (${movs.length})</div>
@@ -1664,7 +1720,7 @@ const DineroApp = (function () {
                 ${movs.length ? movs.map(m => `
                     <div class="dv2-mov-line" data-mov-id="${m.id}" style="cursor:pointer; padding:8px 6px; border-radius:6px; transition:background .15s;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
                         <span class="dv2-mov-date">${fmtDate(m.date)}</span>
-                        <span style="flex:1;font-weight:600;">${escapeHtml(m.concept || '—')}</span>
+                        <span style="flex:1;font-weight:600;">${escapeHtml(m.concept || '—')} ${m.subcategory ? `(${escapeHtml(m.subcategory)})` : ''}</span>
                         <span class="${m.type === 'out' ? 'dv2-neg' : 'dv2-pos'}">${m.type === 'out' ? '−' : '+'}${fmtMoney(Math.abs(m.amount))}</span>
                     </div>`).join('') : '<div class="dv2-empty">Sin movimientos</div>'}
             </div>`,
@@ -1675,13 +1731,12 @@ const DineroApp = (function () {
         
         body.parentElement.querySelector('#dv2WDClose').onclick = closeModal;
         body.parentElement.querySelector('#dv2WDEdit').onclick = () => { closeModal(); openWalletModal(w.id); };
-        
         body.parentElement.querySelector('#dv2WDDel').onclick = () => confirmDelete(`¿Eliminar «${w.name}»?`, () => {
             data.wallets = data.wallets.filter(x => x.id !== w.id);
             saveData(); closeModal(); renderAll(); toast('Monedero eliminado');
         });
 
-        // Eventos para los movimientos
+        body.querySelector('[data-subcat-versions]').onclick = () => openVersionsModal(w.id);
         body.querySelector('#dv2WDAddMov').onclick = () => openWalletMovementModal(w.id, null);
         body.querySelectorAll('[data-mov-id]').forEach(el => {
             el.onclick = () => openWalletMovementModal(w.id, el.dataset.movId);
@@ -1691,6 +1746,13 @@ const DineroApp = (function () {
     function openWalletMovementModal(walletId, movId) {
         const w = data.wallets.find(x => x.id === walletId); if (!w) return;
         const mv = movId ? w.movements.find(m => m.id === movId) : null;
+        const subs = w.subcategories || [];
+        
+        let subcatField = '';
+        if (subs.length > 0) {
+            const opts = subs.map(s => ({ v: s.name, l: s.name })).concat([{ v: '', l: '— General —' }]);
+            subcatField = f('wmvSubcat', 'Subcategoría', sel('wmvSubcat', opts, mv ? (mv.subcategory || '') : ''));
+        }
 
         const body = openModal(
             `<span class="dv2-badge" style="background:${w.color}">${renderIcon(w.emoji || '👛', 16)}</span> ${mv ? 'Editar' : 'Nuevo'} movimiento`,
@@ -1703,7 +1765,8 @@ const DineroApp = (function () {
             <div class="dv2-row2">
                 ${f('wmv3', 'Fecha', inp('wmvDate', { type: 'date', value: mv ? mv.date : todayISO() }))}
                 ${f('wmv4', 'Tipo', sel('wmvType', [{v:'out',l:'Gasto'},{v:'in',l:'Ingreso'}], mv ? mv.type : 'out'))}
-            </div>`,
+            </div>
+            ${subcatField}`,
             `${mv ? '<button class="dv2-danger-link" id="wmvDel">Eliminar movimiento</button>' : ''}
              <button class="btn btn-secondary" id="wmvCancel">Cancelar</button>
              <button class="btn btn-primary" id="wmvSave">Guardar</button>`
@@ -1716,16 +1779,20 @@ const DineroApp = (function () {
             const amt = round2(parseFloat(body.querySelector('#wmvAmt').value));
             const date = body.querySelector('#wmvDate').value || todayISO();
             const type = body.querySelector('#wmvType').value;
+            const subcat = body.querySelector('#wmvSubcat') ? body.querySelector('#wmvSubcat').value : '';
+            
             if (isNaN(amt) || amt <= 0) { toast('Importe no válido', 'error'); return; }
 
             if (mv) {
-                mv.concept = concept; mv.amount = amt; mv.date = date; mv.type = type;
+                mv.concept = concept; mv.amount = amt; mv.date = date; mv.type = type; mv.subcategory = subcat;
             } else {
-                w.movements.push({ id: uid('wm'), concept, amount: amt, date, type });
+                w.movements.push({ id: uid('wm'), concept, amount: amt, date, type, subcategory: subcat });
             }
             
-            // REGISTRO EN EL HISTORIAL GLOBAL
-            registerMovement({ date, concept: `${w.name}: ${concept}`, amount: type === 'out' ? -amt : amt, type, accountId: w.accountId, module: 'Wallets', category: w.name });
+            registerMovement({ 
+                date, concept: `${w.name}: ${concept}`, amount: type === 'out' ? -amt : amt, type, 
+                accountId: w.accountId, module: 'Wallets', category: w.name, subcategory: subcat 
+            });
             
             saveData();
             closeModal();
