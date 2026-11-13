@@ -1250,7 +1250,21 @@ const DineroApp = (function () {
        ========================================================= */
     let modalPrevFocus = null;
     function openModal(title, iconColor, bodyHtml, footHtml) {
-        const root = containerEl.querySelector('#dv2ModalRoot');
+        // Forzar la inyección del CSS por si se abre desde otra pestaña
+        App.injectStylesheet('dinero-v2-styles', moduleCSS());
+        
+        // Buscar el contenedor global. Si no existe (porque estamos en Presupuesto), lo creamos en el body
+        let root = document.getElementById('dv2ModalRoot');
+        if (!root) {
+            root = document.createElement('div');
+            root.className = 'dv2-modal-backdrop';
+            root.id = 'dv2ModalRoot';
+            document.body.appendChild(root);
+            
+            // Añadir el listener para cerrar al hacer clic fuera
+            root.addEventListener('click', (e) => { if (e.target === root) closeModal(); });
+        }
+        
         modalPrevFocus = document.activeElement;
         root.innerHTML = `
             <div class="dv2-modal" role="dialog" aria-modal="true">
@@ -1265,11 +1279,15 @@ const DineroApp = (function () {
         root.querySelector('#dv2ModalX').onclick = closeModal;
         return root.querySelector('.dv2-modal-body');
     }
+    
     function closeModal() {
-        const root = containerEl && containerEl.querySelector('#dv2ModalRoot');
+        // Buscar siempre en el documento, no en containerEl
+        const root = document.getElementById('dv2ModalRoot');
         if (!root) return;
         root.classList.remove('show');
-        setTimeout(() => { if (!root.classList.contains('show')) root.innerHTML = ''; }, 220);
+        setTimeout(() => { 
+            if (!root.classList.contains('show')) root.innerHTML = ''; 
+        }, 220);
         if (modalPrevFocus && modalPrevFocus.focus) { try { modalPrevFocus.focus(); } catch (e) {} }
     }
     const f = (id, label, inner) => `<div class="dv2-field"><label>${label}</label>${inner}</div>`;
