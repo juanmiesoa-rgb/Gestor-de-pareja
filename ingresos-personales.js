@@ -588,7 +588,6 @@ const IngresosModulo = (function () {
         const rules = getSharedContributionRules();
         const aportePct = eq.totalRemaining > 0 ? round2((rules.total / eq.totalRemaining) * 100) : 0;
 
-        // NUEVO: Calculamos el desglose por cuentas
         const cuentasDesglose = {};
         const accounts = (window.App && typeof App.getAccounts === 'function') ? App.getAccounts() : [];
         const budgetItems = (window.App && typeof window.DineroApp?.getBudgetItems === 'function') ? window.DineroApp.getBudgetItems() : [];
@@ -596,9 +595,7 @@ const IngresosModulo = (function () {
         accounts.forEach(acc => {
             let totalAcc = 0;
             budgetItems.forEach(item => {
-                if (item.accountId === acc.id) {
-                    totalAcc += item.budgetAmount;
-                }
+                if (item.accountId === acc.id) totalAcc += item.budgetAmount;
             });
             if (totalAcc > 0) cuentasDesglose[acc.name] = totalAcc;
         });
@@ -615,12 +612,17 @@ const IngresosModulo = (function () {
         </div>
 
         <div class="ip-kpis-row">
-            <div class="ip-kpi ip-kpi-main" style="--pc:var(--primary)">
-                <div class="ip-kpi-label">Aporte Común</div>
-                <div class="ip-kpi-value">${fmtEur(rules.total)}</div>
-                <div class="ip-kpi-sub">${fmtPct(aportePct)} del remanente</div>
-                <div style="font-size:11.5px; color:var(--primary); margin-top:6px; font-weight:600; border-top:1px dashed var(--border); padding-top:6px;">
-                    ${desgloseTexto}
+            <div class="ip-kpi ip-kpi-main" style="--pc:var(--primary); display: flex; align-items: center; justify-content: space-between; text-align: left;">
+                <div>
+                    <div class="ip-kpi-label">Aporte Común</div>
+                    <div class="ip-kpi-value">${fmtEur(rules.total)}</div>
+                    <div class="ip-kpi-sub">${fmtPct(aportePct)} del remanente</div>
+                </div>
+                <div style="text-align: right; border-left: 1px dashed var(--border); padding-left: 16px; margin-left: 16px;">
+                    <div style="font-size:10px; text-transform:uppercase; color:var(--text-muted); font-weight:800; margin-bottom:4px;">Reparto por Cuentas</div>
+                    <div style="font-size:12px; color:var(--primary); font-weight:700;">
+                        ${desgloseTexto}
+                    </div>
                 </div>
             </div>
             <div class="ip-kpi ip-kpi-main" style="--pc:var(--success)">

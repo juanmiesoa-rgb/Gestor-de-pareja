@@ -718,33 +718,25 @@ const BudgetApp = (function () {
     function payMoneyRow(type, id) {
         if (type === 'loan') {
             if (window.DineroApp && window.DineroApp.payLoanInstallment) window.DineroApp.payLoanInstallment(id);
+            setTimeout(() => render(), 100);
             return;
         }
         const rows = getMoneyRows();
         const row = [].concat(rows[type === 'recurring' ? 'recurring' : type + 's']).find(r => r.id === id);
         if (!row) return;
         const diff = row.budget - row.spent;
-        if (diff > 0.005) {
-            if (window.DineroApp && typeof window.DineroApp.payBudgetItem === 'function') {
-                window.DineroApp.payBudgetItem(id, type, diff);
-                render();
-            } else {
-                App.showToast('Error al conectar con Dinero', 'error');
-            }
+        if (diff > 0.005 && window.DineroApp && typeof window.DineroApp.payBudgetItem === 'function') {
+            window.DineroApp.payBudgetItem(id, type, diff);
+            setTimeout(() => render(), 100);
         }
     }
 
-    function openMoneyBudgetModal(type, id) {
-        const rows = getMoneyRows();
-        const row = [].concat(rows[type === 'recurring' ? 'recurring' : type + 's']).find(r => r.id === id);
-        if (!row) return;
-        const cur = row.budget;
-        const val = prompt(`Presupuesto ${App.formatPeriod(currentPeriod)} · ${row.name}\n(Deja el valor para mantenerlo)`, cur);
-        if (val === null) return;
-        const n = parseFloat(val);
-        if (isNaN(n) || n < 0) return;
-        if (App.updateBudgetItemAmount) App.updateBudgetItemAmount(id, type, n, currentPeriod);
-        render();
+    function openMoneyModal(type, id) {
+        if (type === 'wallet' && window.DineroApp) window.DineroApp.openWalletModal(id);
+        else if (type === 'debt' && window.DineroApp) window.DineroApp.openDebtModal(id);
+        else if (type === 'loan' && window.DineroApp) window.DineroApp.openLoanModal(id);
+        else if (type === 'goal' && window.DineroApp) window.DineroApp.openGoalModal(id);
+        else if (type === 'recurring' && window.DineroApp) window.DineroApp.openRecurringModal(id);
     }
 
     function openMoneySpentModal(type, id) {
@@ -1023,7 +1015,7 @@ const BudgetApp = (function () {
             <div class="pc-field"><label>Nuevo saldo en banco (€)</label>
                 <input id="eaVal" type="number" step="0.01" value="${cur.toFixed(2)}"></div>
             <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:8px;">
-                💡 El cambio solo ajusta el saldo real. Si es la cuenta de Groceries, la diferencia se aplicará automáticamente a la semana actual.
+                💡 Si es la cuenta de Groceries, la diferencia se aplicará automáticamente a la semana actual.
             </div>
             <div class="pc-modal-actions"><button class="pc-btn pc-btn-ghost" id="eaCancel2">Cancelar</button>
                 <button class="pc-btn pc-btn-primary" id="eaSave2">Ajustar</button></div></div>`;
@@ -1035,7 +1027,6 @@ const BudgetApp = (function () {
             const newVal = Number(inp.value) || 0;
             const delta = newVal - cur;
             
-            // 1. Cuenta dinámica de Groceries
             if (Math.abs(delta) > 0.005) {
                 const gw = getGroceriesWallet();
                 if (gw && gw.accountId === acc.id && typeof App.addWalletMovement === 'function') {
@@ -1043,7 +1034,6 @@ const BudgetApp = (function () {
                 }
             }
 
-            // 2. Actualizar saldo real
             const accToUpdate = data().accounts.find(a => a.id === acc.id);
             if (accToUpdate) accToUpdate.balance = newVal;
             

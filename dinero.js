@@ -747,16 +747,10 @@ const DineroApp = (function () {
             return `
             <div class="dv2-card dv2-wallet" style="--dv2-accent:${w.color || '#f59e0b'}" data-wallet="${w.id}" title="Clic para ver movimientos y editar">
                 <div class="dv2-wallet-top">
-                    ${hasSubcats
-                        ? `<button class="dv2-expand-arrow ${isOpen ? 'open' : ''}" data-expand-subcats="${w.id}" title="Desglose de subcategorías"><i class="fas fa-caret-right"></i></button>`
-                        : `<span style="width:24px"></span>`}
+                    ${hasSubcats ? `<button class="dv2-expand-arrow ${isOpen ? 'open' : ''}" data-expand-subcats="${w.id}"><i class="fas fa-caret-right"></i></button>` : `<span style="width:24px"></span>`}
                     <span class="dv2-emoji">${renderIcon(w.emoji || '👛', 19)}</span>
                     <div style="flex:1;min-width:0">
-                        <div class="dv2-wallet-name" data-wallet-name="${w.id}">${escapeHtml(w.name)}</div>
-                        <div style="font-size:10px;color:var(--text-muted)"><i class="fas fa-link"></i> ${accName}</div>
-                    </div>
-                    <div style="flex:1;min-width:0">
-                        <div class="dv2-wallet-name" data-wallet-name="${w.id}">${escapeHtml(w.name)}</div>
+                        <div class="dv2-wallet-name">${escapeHtml(w.name)}</div>
                         <div style="font-size:10px;color:var(--text-muted)"><i class="fas fa-link"></i> ${accName}</div>
                     </div>
                 </div>
@@ -803,17 +797,14 @@ const DineroApp = (function () {
             return `
             <div class="dv2-card" style="--dv2-accent:${col};cursor:pointer" data-debt="${d.id}" title="Clic para ver movimientos y editar">
                 <div class="dv2-wallet-top">
-                    ${hasSubcats
-                        ? `<button class="dv2-expand-arrow ${isOpen ? 'open' : ''}" data-expand-subcats="${d.id}"><i class="fas fa-caret-right"></i></button>`
-                        : `<span style="width:24px"></span>`}
+                    ${hasSubcats ? `<button class="dv2-expand-arrow ${isOpen ? 'open' : ''}" data-expand-subcats="${d.id}"><i class="fas fa-caret-right"></i></button>` : `<span style="width:24px"></span>`}
                     <span class="dv2-emoji">${renderIcon(d.emoji || '🔄', 19)}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(d.name)}</div>
                         <div style="font-size:10px;color:var(--text-muted)"><i class="fas fa-link"></i> ${accName}</div>
                     </div>
-                    ${d.includeInBudget ? `<span class="dv2-budget-badge">✓ Presup.</span>` : `<span class="dv2-budget-badge off">— Presup.</span>`}
-                    <button class="dv2-history-btn" data-versions="${d.id}"><i class="fas fa-clock-rotate-left"></i></button>
                 </div>
+
                 <div style="display:flex;justify-content:space-between;align-items:baseline">
                     <div class="dv2-wallet-amt">${fmtMoney(d.total)}</div>
                     <span class="dv2-chip">${pct}%</span>
@@ -864,11 +855,10 @@ const DineroApp = (function () {
                     <span class="dv2-emoji">${renderIcon(l.emoji || '🏦', 19)}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(l.name)}</div>
-                        <div style="font-size:10.5px;color:var(--text-muted)">Financiado: ${fmtMoney(l.financed)} · ${fmtMoney(l.installmentAmount)}/cuota</div>
+                        <div style="font-size:10px;color:var(--text-muted)"><i class="fas fa-link"></i> ${accName}</div>
                     </div>
-                    ${l.includeInBudget ? `<span class="dv2-budget-badge">✓ Presup.</span>` : `<span class="dv2-budget-badge off">— Presup.</span>`}
-                    <button class="dv2-history-btn" data-versions="${l.id}"><i class="fas fa-clock-rotate-left"></i></button>
                 </div>
+            
                 <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
                     <div class="dv2-wallet-amt" style="color:${done ? 'var(--success)' : 'var(--danger)'}">${done ? '✅ Completado' : fmtMoney(pending)}</div>
                     <span class="dv2-chip">${pct}%</span>
@@ -911,11 +901,10 @@ const DineroApp = (function () {
                     <span class="dv2-emoji">${renderIcon(g.emoji || '🎯', 19)}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(g.name)}</div>
-                        <div style="font-size:10.5px;color:var(--text-muted)">${g.target != null ? `Meta: ${fmtMoney(g.target)}` : 'Sin meta fija'}${isTripFund ? ' · 🎯 unificado' : ''}</div>
+                        <div style="font-size:10px;color:var(--text-muted)"><i class="fas fa-link"></i> ${accName}</div>
                     </div>
-                    ${g.includeInBudget ? `<span class="dv2-budget-badge">✓ Presup.</span>` : `<span class="dv2-budget-badge off">— Presup.</span>`}
-                    <button class="dv2-history-btn" data-versions="${g.id}"><i class="fas fa-clock-rotate-left"></i></button>
-                </div>
+                </div>    
+
                 <div style="display:flex;justify-content:space-between;align-items:baseline">
                     <div class="dv2-wallet-amt" style="color:#10b981">${fmtMoney(g.saved)}</div>
                     ${pct != null ? `<span class="dv2-chip">${pct}%</span>` : ''}
@@ -948,14 +937,13 @@ const DineroApp = (function () {
             <div class="dv2-card" style="--dv2-accent:#0ea5e9;cursor:pointer" data-recurring="${r.id}" title="Clic para ver historial y editar">
                 <div class="dv2-wallet-top">
                     ${hasSubcats ? `<button class="dv2-expand-arrow ${isOpen ? 'open' : ''}" data-expand-subcats="${r.id}"><i class="fas fa-caret-right"></i></button>` : `<span style="width:24px"></span>`}
-                    <span class="dv2-emoji">${renderIcon(r.emoji || '🔁', 19)}</span>
+                    <span class="dv2-emoji">${renderIcon(r.emoji || '�', 19)}</span>
                     <div style="flex:1;min-width:0">
                         <div class="dv2-wallet-name">${escapeHtml(r.name)}</div>
-                        <div style="font-size:10.5px;color:var(--text-muted)">${periodLabel(r.period)} · ${escapeHtml(r.accountName || 'Sin cuenta')}</div>
+                        <div style="font-size:10px;color:var(--text-muted)"><i class="fas fa-link"></i> ${accName}</div>
                     </div>
-                    ${r.includeInBudget ? `<span class="dv2-budget-badge">✓ Presup.</span>` : `<span class="dv2-budget-badge off">— Presup.</span>`}
-                    <button class="dv2-history-btn" data-versions="${r.id}"><i class="fas fa-clock-rotate-left"></i></button>
                 </div>
+
                 <div style="display:flex;justify-content:space-between;align-items:center">
                     <div class="dv2-wallet-amt">${fmtMoney(r.amount)}</div>
                     <span class="dv2-debt-status ${r.active ? 'dv2-st-done' : 'dv2-st-pending'}" style="${r.active ? '' : 'background:var(--border-light);color:var(--text-muted)'}">${r.active ? 'Activo' : 'Pausado'}</span>
@@ -1971,12 +1959,11 @@ const DineroApp = (function () {
     /* --- LOAN MODAL --- */
     function openLoanModal(editId) {
         const l = editId ? data.loans.find(x => x.id === editId) : null;
-        const accNames = getAccounts().map(a => ({ v: a.name, l: `${a.icon || '🏦'} ${a.name}` }));
+        const accNames = getAccounts().map(a => ({ v: a.name, l: a.name }));
         const body = openModal(
-            `<span class="dv2-badge" style="background:#8b5cf6">${l ? renderIcon(l.emoji, 16) : '🏦'}</span> ${l ? 'Editar préstamo' : 'Nuevo préstamo'}`,
-            '#8b5cf6',
+            `<span class="dv2-badge" style="background:#8b5cf6">${l ? renderIcon(l.emoji, 16) : '🏦'}</span> ${l ? 'Editar préstamo' : 'Nuevo préstamo'}`, '#8b5cf6',
             `
-            ${f('fl0', 'Icono', emojiPicker('dv2LEmoji', l ? l.emoji : '🛋️'))}
+            ${f('fl0', 'Icono', `<input class="dv2-input" id="dv2LEmoji" value="${l ? l.emoji : '🛋️'}">`)}
             ${f('fl1', 'Nombre', inp('dv2LName', { value: l ? l.name : '' }))}
             <div class="dv2-row2">
                 ${f('fl2', 'Importe financiado (€)', inp('dv2LAmt', { type: 'number', step: '0.01', min: '0', value: l ? l.financed : '' }))}
@@ -1988,89 +1975,46 @@ const DineroApp = (function () {
             </div>
             ${f('fl6', 'Próximo recibo', inp('dv2LNext', { type: 'date', value: l ? l.nextDate || '' : todayISO() }))}
             ${f('fl7', 'Cuenta', sel('dv2LAcc', accNames, l ? l.accountName : (accNames[0] || {}).v))}
-
             <div class="dv2-budget-block">
                 <label class="dv2-budget-switch-row">
-                    <span class="dv2-switch">
-                        <input type="checkbox" id="dv2LInclBudget" ${l && l.includeInBudget ? 'checked' : ''}>
-                        <span class="dv2-switch-slider"></span>
-                    </span>
+                    <span class="dv2-switch"><input type="checkbox" id="dv2LInclBudget" ${l && l.includeInBudget ? 'checked' : ''}><span class="dv2-switch-slider"></span></span>
                     <span class="dv2-budget-switch-label">Añadir al Presupuesto</span>
                 </label>
                 <div class="dv2-budget-amount-wrap" id="dv2LBudgetAmtWrap" style="display:${l && l.includeInBudget ? 'block' : 'none'};">
-                    <label class="dv2-budget-amount-label">Cantidad (vacío = cuota del préstamo)</label>
+                    <label class="dv2-budget-amount-label">Cantidad (vacío = cuota)</label>
                     <input class="dv2-input" type="number" step="0.01" min="0" id="dv2LBudgetAmt" value="${l && l.budgetAmount > 0 ? l.budgetAmount : ''}" style="width:100%">
                 </div>
             </div>
-
-            ${subcatEditorHTML(l || { subcategories: [] })}
-            `,
-            `${l ? '<button class="dv2-danger-link" id="dv2LDel">Eliminar</button>' : ''}<button class="btn btn-secondary" id="dv2LCancel">Cancelar</button><button class="btn btn-primary" id="dv2LSave"><i class="fas fa-save"></i> Guardar</button>`
+            ${subcatEditorHTML(l || { subcategories: [] })}`,
+            `${l ? '<button class="dv2-danger-link" id="dv2LDel">Eliminar</button>' : ''}<button class="btn btn-secondary" id="dv2LCancel">Cancelar</button><button class="btn btn-primary" id="dv2LSave">Guardar</button>`
         );
-        bindEmojiPicker(body, 'dv2LEmoji');
         bindSubcatEditor(body, l || { subcategories: [] });
 
-        const calcFin = () => { 
-            const qi = parseFloat(body.querySelector('#dv2LQi').value); 
-            const n = parseInt(body.querySelector('#dv2LInst').value); 
-            if (qi > 0 && n > 0) body.querySelector('#dv2LAmt').value = round2(qi * n); 
-        };
-        const calcQi = () => { 
-            const tot = parseFloat(body.querySelector('#dv2LAmt').value); 
-            const n = parseInt(body.querySelector('#dv2LInst').value); 
-            if (tot > 0 && n > 0) body.querySelector('#dv2LQi').value = round2(tot / n); 
-        };
-        body.querySelector('#dv2LQi').addEventListener('input', calcFin); 
+        const calcFin = () => { const qi = parseFloat(body.querySelector('#dv2LQi').value); const n = parseInt(body.querySelector('#dv2LInst').value); if (qi > 0 && n > 0) body.querySelector('#dv2LAmt').value = round2(qi * n); };
+        const calcQi = () => { const tot = parseFloat(body.querySelector('#dv2LAmt').value); const n = parseInt(body.querySelector('#dv2LInst').value); if (tot > 0 && n > 0) body.querySelector('#dv2LQi').value = round2(tot / n); };
+        
+        body.querySelector('#dv2LQi').addEventListener('input', calcFin);
         body.querySelector('#dv2LInst').addEventListener('input', calcFin);
         body.querySelector('#dv2LAmt').addEventListener('input', calcQi);
-        body.querySelector('#dv2LAmt').addEventListener('input', auto);
-        body.querySelector('#dv2LInst').addEventListener('input', auto);
 
-        const lTgl = body.querySelector('#dv2LInclBudget');
-        const lWrap = body.querySelector('#dv2LBudgetAmtWrap');
-        lTgl.addEventListener('change', () => { lWrap.style.display = lTgl.checked ? 'block' : 'none'; });
+        const lTgl = body.querySelector('#dv2LInclBudget'); const lWrap = body.querySelector('#dv2LBudgetAmtWrap'); lTgl.addEventListener('change', () => { lWrap.style.display = lTgl.checked ? 'block' : 'none'; });
 
         body.parentElement.querySelector('#dv2LCancel').onclick = closeModal;
         body.parentElement.querySelector('#dv2LSave').onclick = () => {
             const name = body.querySelector('#dv2LName').value.trim();
             const financed = round2(parseFloat(body.querySelector('#dv2LAmt').value));
             const installments = parseInt(body.querySelector('#dv2LInst').value);
-            const installmentAmount = round2(parseFloat(body.querySelector('#dv2LQi').value));
-            const paidCount = Math.max(0, parseInt(body.querySelector('#dv2LPaid').value) || 0);
-            if (!name || isNaN(financed) || isNaN(installments) || isNaN(installmentAmount) || installments <= 0) { toast('Revisa los datos', 'error'); return; }
-            const incl = lTgl.checked;
-            const amtRaw = body.querySelector('#dv2LBudgetAmt').value;
-            const mk = currentMonthKey();
-            const subcats = collectSubcatsFromEditor(body, l || { subcategories: [] });
-
-            let budgetAmount;
-            if (subcats.length > 0) {
-                budgetAmount = subcats.reduce((s, sc) => s + Number(sc.budgetAmount || 0), 0);
-            } else {
-                budgetAmount = incl && amtRaw && parseFloat(amtRaw) > 0 ? round2(parseFloat(amtRaw)) : (incl ? installmentAmount : 0);
-            }
-
-            const versions = l ? (l.versions || {}) : {};
-            if (!versions[mk]) versions[mk] = {};
-            versions[mk].budgetAmount = budgetAmount;
-            versions[mk].subcategories = subcats.map(s => ({ id: s.id, name: s.name, icon: s.icon, budgetAmount: s.budgetAmount }));
-
-            const obj = {
-                id: l ? l.id : uid('loan'), emoji: pickedEmoji(body, 'dv2LEmoji'),
-                name, financed, installments, installmentAmount,
-                paidCount: Math.min(paidCount, installments),
-                nextDate: body.querySelector('#dv2LNext').value || null,
-                accountName: body.querySelector('#dv2LAcc').value,
-                includeInBudget: incl, budgetAmount, versions, subcategories: subcats,
-                payments: l ? l.payments : []
-            };
+            const qi = round2(parseFloat(body.querySelector('#dv2LQi').value));
+            const paid = Math.max(0, parseInt(body.querySelector('#dv2LPaid').value) || 0);
+            if (!name || isNaN(financed) || isNaN(installments) || isNaN(qi)) { toast('Revisa los datos', 'error'); return; }
+            const isIncl = lTgl.checked; const amtRaw = body.querySelector('#dv2LBudgetAmt').value; const subcats = collectSubcatsFromEditor(body, l || { subcategories: [] });
+            const budgetAmount = subcats.length > 0 ? subcats.reduce((s, sc) => s + sc.budgetAmount, 0) : (isIncl ? (parseFloat(amtRaw) || qi) : 0);
+            
+            const obj = { id: l ? l.id : uid('loan'), emoji: body.querySelector('#dv2LEmoji').value.trim() || '🏦', name, financed, installments, installmentAmount: qi, paidCount: Math.min(paid, installments), nextDate: body.querySelector('#dv2LNext').value || null, accountName: body.querySelector('#dv2LAcc').value, includeInBudget: isIncl, budgetAmount, versions: { [currentMonthKey()]: { budgetAmount } }, subcategories: subcats, payments: l ? l.payments : [] };
             if (l) Object.assign(l, obj); else data.loans.push(obj);
-            saveData(); closeModal(); renderAll(); toast(l ? 'Préstamo actualizado' : 'Préstamo creado');
-        };
-        if (l) body.parentElement.querySelector('#dv2LDel').onclick = () => confirmDelete(`¿Eliminar el préstamo «${l.name}»?`, () => {
-            data.loans = data.loans.filter(x => x.id !== l.id);
             saveData(); closeModal(); renderAll();
-        });
+        };
+        if (l) body.parentElement.querySelector('#dv2LDel').onclick = () => { data.loans = data.loans.filter(x => x.id !== l.id); saveData(); closeModal(); renderAll(); };
     }
 
     function openLoanDetailModal(id) {
@@ -2689,45 +2633,25 @@ const DineroApp = (function () {
             const mk = currentMonthKey();
 
             data.debts.filter(d => d.includeInBudget && d.returned < d.total).forEach(d => {
-                let budgetAmt = 0;
-                if (d.plannedSplits && d.plannedSplits.length > 0) {
-                    const split = d.plannedSplits.find(s => s.month === mk);
-                    if (split) budgetAmt = split.amount;
-                    else return; // Si está troceado y este mes no toca, no se incluye
-                } else {
-                    const natural = Math.max(0, Number(d.total) - Number(d.returned));
-                    budgetAmt = getEffectiveAmount(d, mk) || natural;
-                }
-                const paid = (d.history || []).filter(h => String(h.date).startsWith(mk)).reduce((s, h) => s + Number(h.amount || 0), 0);
-                items.push({ id: d.id, type: 'debt', name: d.name, icon: d.emoji, budgetAmount: budgetAmt, spentAmount: paid, includeInBudget: true });
-            });
-
-            data.loans.filter(l => l.includeInBudget && l.paidCount < l.installments).forEach(l => {
-                const paid = (l.payments || []).filter(p => String(p.date).startsWith(mk)).reduce((s, p) => s + Number(p.amount || 0), 0);
-                items.push({ id: l.id, type: 'loan', name: l.name, icon: l.emoji, budgetAmount: getEffectiveAmount(l, mk) || Number(l.installmentAmount || 0), spentAmount: paid, includeInBudget: true });
+                items.push({ id: d.id, type: 'debt', name: d.name, icon: d.emoji, budgetAmount: getEffectiveAmount(d, mk) || Math.max(0, d.total - d.returned), spentAmount: (d.history || []).filter(h => String(h.date).startsWith(mk)).reduce((s, h) => s + Number(h.amount || 0), 0), accountId: d.accountId, includeInBudget: true });
             });
 
             data.wallets.filter(w => w.includeInBudget).forEach(w => {
-                const paid = (w.movements || []).filter(m => m.type === 'out' && String(m.date).startsWith(mk)).reduce((s, m) => s + Number(m.amount || 0), 0);
-                items.push({ id: w.id, type: 'wallet', name: w.name, icon: w.emoji, budgetAmount: getEffectiveAmount(w, mk), spentAmount: paid, includeInBudget: true });
+                items.push({ id: w.id, type: 'wallet', name: w.name, icon: w.emoji, budgetAmount: getEffectiveAmount(w, mk), spentAmount: (w.movements || []).filter(m => m.type === 'out' && String(m.date).startsWith(mk)).reduce((s, m) => s + Number(m.amount || 0), 0), accountId: w.accountId, includeInBudget: true });
+            });
+
+            data.loans.filter(l => l.includeInBudget && l.paidCount < l.installments).forEach(l => {
+                const acc = getAccounts().find(a => a.name === l.accountName);
+                items.push({ id: l.id, type: 'loan', name: l.name, icon: l.emoji, budgetAmount: getEffectiveAmount(l, mk) || Number(l.installmentAmount || 0), spentAmount: (l.payments || []).filter(p => String(p.date).startsWith(mk)).reduce((s, p) => s + Number(p.amount || 0), 0), accountId: acc ? acc.id : null, accountName: l.accountName, includeInBudget: true });
             });
 
             data.goals.filter(g => g.includeInBudget && (g.target == null || g.saved < g.target)).forEach(g => {
-                let budgetAmt = 0;
-                if (g.plannedSplits && g.plannedSplits.length > 0) {
-                    const split = g.plannedSplits.find(s => s.month === mk);
-                    if (split) budgetAmt = split.amount;
-                    else return; // Si está troceado y este mes no toca, no se incluye
-                } else {
-                    budgetAmt = getEffectiveAmount(g, mk) || Number(g.contribution || 0);
-                }
-                const paid = (g.contributions || []).filter(c => String(c.date).startsWith(mk)).reduce((s, c) => s + Number(c.amount || 0), 0);
-                items.push({ id: g.id, type: 'goal', name: g.name, icon: g.emoji, budgetAmount: budgetAmt, spentAmount: paid, includeInBudget: true });
+                items.push({ id: g.id, type: 'goal', name: g.name, icon: g.emoji, budgetAmount: getEffectiveAmount(g, mk) || Number(g.contribution || 0), spentAmount: (g.contributions || []).filter(c => String(c.date).startsWith(mk)).reduce((s, c) => s + Number(c.amount || 0), 0), accountId: g.accountId, includeInBudget: true });
             });
 
             data.recurring.filter(r => r.active && r.includeInBudget).forEach(r => {
-                const paid = (r.history || []).filter(h => String(h.date).startsWith(mk)).reduce((s, h) => s + Math.abs(Number(h.amount || 0)), 0);
-                items.push({ id: r.id, type: 'recurring', name: r.name, icon: r.emoji, budgetAmount: getEffectiveAmount(r, mk) || Number(r.amount || 0), spentAmount: paid, includeInBudget: true });
+                const acc = getAccounts().find(a => a.name === r.accountName);
+                items.push({ id: r.id, type: 'recurring', name: r.name, icon: r.emoji, budgetAmount: getEffectiveAmount(r, mk) || Number(r.amount || 0), spentAmount: (r.history || []).filter(h => String(h.date).startsWith(mk)).reduce((s, h) => s + Math.abs(Number(h.amount || 0)), 0), accountId: acc ? acc.id : null, accountName: r.accountName, includeInBudget: true });
             });
 
             return items;
