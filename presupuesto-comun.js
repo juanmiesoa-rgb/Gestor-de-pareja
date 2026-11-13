@@ -733,13 +733,12 @@ const BudgetApp = (function () {
     }
 
     function openMoneyModal(type, id) {
-        const mod = App.getModule('mi-dinero');
-        if (!mod) return;
-        if (type === 'wallet') mod.openWalletModal(id);
-        else if (type === 'debt') mod.openDebtModal(id);
-        else if (type === 'loan') mod.openLoanModal(id);
-        else if (type === 'goal') mod.openGoalModal(id);
-        else if (type === 'recurring') mod.openRecurringModal(id);
+        // Llamada directa a los modales de Dinero, sin pasar por App.getModule
+        if (type === 'wallet' && window.DineroApp) window.DineroApp.openWalletModal(id);
+        else if (type === 'debt' && window.DineroApp) window.DineroApp.openDebtModal(id);
+        else if (type === 'loan' && window.DineroApp) window.DineroApp.openLoanModal(id);
+        else if (type === 'goal' && window.DineroApp) window.DineroApp.openGoalModal(id);
+        else if (type === 'recurring' && window.DineroApp) window.DineroApp.openRecurringModal(id);
     }
 
     /* =========================================================

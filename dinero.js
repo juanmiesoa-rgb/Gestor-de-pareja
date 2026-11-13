@@ -1646,23 +1646,88 @@ const DineroApp = (function () {
             w.color,
             `
             <div class="dv2-wallet-amt" style="color:${w.color};margin-bottom:8px">${fmtMoney(walletBalance(w))}</div>
-            <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin:12px 0 6px">Movimientos (${movs.length})</div>
-            ${movs.length ? movs.slice(0, 30).map(m => `
-                <div class="dv2-mov-line">
-                    <span class="dv2-mov-date">${fmtDate(m.date)}</span>
-                    <span style="flex:1">${escapeHtml(m.concept || '—')}</span>
-                    <span class="${m.type === 'out' ? 'dv2-neg' : 'dv2-pos'}">${m.type === 'out' ? '−' : '+'}${fmtMoney(Math.abs(m.amount))}</span>
-                </div>`).join('') : '<div class="dv2-empty">Sin movimientos</div>'}`,
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; margin:16px 0 8px;">
+                <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);">Movimientos (${movs.length})</div>
+                <button class="dv2-mini-btn" id="dv2WDAddMov" style="padding:4px 8px;"><i class="fas fa-plus"></i> Añadir</button>
+            </div>
+
+            <div style="max-height:300px; overflow-y:auto;">
+                ${movs.length ? movs.map(m => `
+                    <div class="dv2-mov-line" data-mov-id="${m.id}" style="cursor:pointer; padding:8px 6px; border-radius:6px; transition:background .15s;" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='transparent'">
+                        <span class="dv2-mov-date">${fmtDate(m.date)}</span>
+                        <span style="flex:1;font-weight:600;">${escapeHtml(m.concept || '—')}</span>
+                        <span class="${m.type === 'out' ? 'dv2-neg' : 'dv2-pos'}">${m.type === 'out' ? '−' : '+'}${fmtMoney(Math.abs(m.amount))}</span>
+                    </div>`).join('') : '<div class="dv2-empty">Sin movimientos</div>'}
+            </div>`,
             `<button class="dv2-danger-link" id="dv2WDDel">Eliminar monedero</button>
              <button class="btn btn-secondary" id="dv2WDClose">Cerrar</button>
-             <button class="btn btn-primary" id="dv2WDEdit"><i class="fas fa-pen"></i> Editar</button>`
+             <button class="btn btn-primary" id="dv2WDEdit"><i class="fas fa-pen"></i> Editar monedero</button>`
         );
+        
         body.parentElement.querySelector('#dv2WDClose').onclick = closeModal;
         body.parentElement.querySelector('#dv2WDEdit').onclick = () => { closeModal(); openWalletModal(w.id); };
+        
         body.parentElement.querySelector('#dv2WDDel').onclick = () => confirmDelete(`¿Eliminar «${w.name}»?`, () => {
             data.wallets = data.wallets.filter(x => x.id !== w.id);
             saveData(); closeModal(); renderAll(); toast('Monedero eliminado');
         });
+
+        // Eventos para los movimientos
+        body.querySelector('#dv2WDAddMov').onclick = () => openWalletMovementModal(w.id, null);
+        body.querySelectorAll('[data-mov-id]').forEach(el => {
+            el.onclick = () => openWalletMovementModal(w.id, el.dataset.movId);
+        });
+    }
+
+    function openWalletMovementModal(walletId, movId) {
+        const w = data.wallets.find(x => x.id === walletId); if (!w) return;
+        const mv = movId ? w.movements.find(m => m.id === movId) : null;
+
+        const body = openModal(
+            `<span class="dv2-badge" style="background:${w.color}">${renderIcon(w.emoji || '👛', 16)}</span> ${mv ? 'Editar' : 'Nuevo'} movimiento`,
+            w.color,
+            `
+            <div class="dv2-row2">
+                ${f('wmv1', 'Concepto', inp('wmvConcept', { value: mv ? mv.concept : '', placeholder: 'Ej. Compra semanal' }))}
+                ${f('wmv2', 'Importe (€)', inp('wmvAmt', { type: 'number', step: '0.01', min: '0', value: mv ? Math.abs(mv.amount) : '' }))}
+            </div>
+            <div class="dv2-row2">
+                ${f('wmv3', 'Fecha', inp('wmvDate', { type: 'date', value: mv ? mv.date : todayISO() }))}
+                ${f('wmv4', 'Tipo', sel('wmvType', [{v:'out',l:'Gasto'},{v:'in',l:'Ingreso'}], mv ? mv.type : 'out'))}
+            </div>`,
+            `${mv ? '<button class="dv2-danger-link" id="wmvDel">Eliminar movimiento</button>' : ''}
+             <button class="btn btn-secondary" id="wmvCancel">Cancelar</button>
+             <button class="btn btn-primary" id="wmvSave">Guardar</button>`
+        );
+
+        body.parentElement.querySelector('#wmvCancel').onclick = () => { closeModal(); openWalletDetailModal(walletId); };
+        
+        body.parentElement.querySelector('#wmvSave').onclick = () => {
+            const concept = body.querySelector('#wmvConcept').value.trim() || 'Movimiento manual';
+            const amt = round2(parseFloat(body.querySelector('#wmvAmt').value));
+            const date = body.querySelector('#wmvDate').value || todayISO();
+            const type = body.querySelector('#wmvType').value;
+            if (isNaN(amt) || amt <= 0) { toast('Importe no válido', 'error'); return; }
+
+            if (mv) {
+                mv.concept = concept; mv.amount = amt; mv.date = date; mv.type = type;
+            } else {
+                w.movements.push({ id: uid('wm'), concept, amount: amt, date, type });
+            }
+            saveData();
+            closeModal();
+            openWalletDetailModal(walletId);
+        };
+
+        if (mv) {
+            body.parentElement.querySelector('#wmvDel').onclick = () => {
+                w.movements = w.movements.filter(m => m.id !== movId);
+                saveData();
+                closeModal();
+                openWalletDetailModal(walletId);
+            };
+        }
     }
 
     /* --- DEBT MODAL (MODIFICADO CON TROCEO) --- */
