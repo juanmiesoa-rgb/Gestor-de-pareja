@@ -409,18 +409,21 @@
                 `${TripManager.cap(TripManager.longDate(trip.days[dayIdx].date))}`,
                 `<form id="tm-add-line-form">
                     <div class="tm-form-grid">
+                        <div class="tm-field full"><label>Descripción</label>
+                            <input class="tm-input" id="al-desc" placeholder="Ej. Cena en el centro, Entrada museo..." value="">
+                        </div>
                         <div class="tm-field"><label>Categoría</label>
                             <select class="tm-input" id="al-cat">${opts}<option value="__custom__">+ Otra…</option></select>
+                        </div>
+                        <div class="tm-field" id="al-custom-wrap" style="display:none">
+                            <label>Nueva categoría</label>
+                            <input class="tm-input" id="al-custom" placeholder="Ej. Souvenirs">
                         </div>
                         <div class="tm-field"><label>Presupuesto (€)</label>
                             <input class="tm-input" id="al-budgeted" type="number" min="0" step="1" value="0">
                         </div>
                         <div class="tm-field"><label>Gasto real (€)</label>
                             <input class="tm-input" id="al-real" type="number" min="0" step="1" value="0">
-                        </div>
-                        <div class="tm-field" id="al-custom-wrap" style="display:none">
-                            <label>Nueva categoría</label>
-                            <input class="tm-input" id="al-custom" placeholder="Ej. Souvenirs">
                         </div>
                     </div>
                     <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;">
@@ -440,12 +443,15 @@
                 let cat = catSel.value;
                 if (cat === '__custom__') cat = form.querySelector('#al-custom').value.trim();
                 if (!cat) { this._toast('Indica una categoría', 'error'); return; }
+                
+                const desc = form.querySelector('#al-desc').value.trim();
                 const budgeted = Math.max(parseFloat(form.querySelector('#al-budgeted').value) || 0, 0);
                 const real = Math.max(parseFloat(form.querySelector('#al-real').value) || 0, 0);
-                trip.days[dayIdx].items.push({ category: cat, budgeted, real });
+                
+                trip.days[dayIdx].items.push({ category: cat, description: desc, budgeted, real });
                 this.closeModal();
                 this._render_detail();
-                this._toast('Línea añadida: ' + cat);
+                this._toast('Línea añadida: ' + (desc ? desc : cat));
             });
         }
 
@@ -514,11 +520,16 @@
         daysUntil(trip) { return TripManager.daysBetween(this.today, trip.startDate); }
 
         plannedOf(trip) {
-            return trip.categories.reduce((s, c) => s + c.items.reduce((x, i) => x + (i.total || 0), 0), 0);
+            const catTotal = trip.categories.reduce((s, c) => s + c.items.reduce((x, i) => x + (i.total || 0), 0), 0);
+            const dayTotal = trip.days.reduce((s, d) => s + d.items.reduce((x, i) => x + (i.budgeted || 0), 0), 0);
+            return catTotal + dayTotal;
         }
+
         paidOf(trip) {
-            return trip.categories.reduce((s, c) => s + c.items.reduce(
+            const catPaid = trip.categories.reduce((s, c) => s + c.items.reduce(
                 (x, i) => x + i.payments.reduce((p, q) => p + (q.amount || 0), 0), 0), 0);
+            const dayPaid = trip.days.reduce((s, d) => s + d.items.reduce((x, i) => x + (i.real || 0), 0), 0);
+            return catPaid + dayPaid;
         }
         pendingOf(trip) { return Math.max(this.plannedOf(trip) - this.paidOf(trip), 0); }
         dailyBudgetedOf(trip) { return trip.days.reduce((s, d) => s + d.items.reduce((x, i) => x + (i.budgeted || 0), 0), 0); }
@@ -526,10 +537,16 @@
         spentPlannedOf(trip) { return this.plannedOf(trip) + this.dailyBudgetedOf(trip); }
 
         categoryTotals(trip) {
-            return trip.categories.map(c => ({
-                name: c.name,
-                value: c.items.reduce((s, i) => s + (i.total || 0), 0)
-            })).filter(c => c.value > 0);
+            const totals = {};
+            trip.categories.forEach(c => {
+                totals[c.name] = (totals[c.name] || 0) + c.items.reduce((s, i) => s + (i.total || 0), 0);
+            });
+            trip.days.forEach(d => {
+                d.items.forEach(i => {
+                    totals[i.category] = (totals[i.category] || 0) + (i.budgeted || 0);
+                });
+            });
+            return Object.entries(totals).map(([name, value]) => ({ name, value })).filter(c => c.value > 0);
         }
 
         /** FASE 4 · Delegado al puente */
@@ -1048,11 +1065,26 @@
 
         _catAccordionHTML(trip) {
             return trip.categories.map(cat => {
+                // Sumamos los items de la categoría
                 const catTotal = cat.items.reduce((s, i) => s + (i.total || 0), 0);
                 const catPaid = cat.items.reduce((s, i) => s + i.payments.reduce((x, p) => x + p.amount, 0), 0);
+                
+                // Buscamos y sumamos las líneas del presupuesto diario de esta categoría
+                const dailyItems = [];
+                trip.days.forEach(d => {
+                    d.items.filter(i => i.category === cat.name).forEach(i => dailyItems.push(i));
+                });
+                const dailyTotal = dailyItems.reduce((s, i) => s + (i.budgeted || 0), 0);
+                const dailyPaid = dailyItems.reduce((s, i) => s + (i.real || 0), 0);
+
+                const totalGeneral = catTotal + dailyTotal;
+                const paidGeneral = catPaid + dailyPaid;
+
                 const key = trip.id + '|' + cat.id;
                 const open = !!this.state.openCategories[key];
-                const rows = cat.items.map(item => {
+                
+                // Renderizamos los items normales
+                let rows = cat.items.map(item => {
                     const itemPaid = item.payments.reduce((s, p) => s + p.amount, 0);
                     const fullyPaid = itemPaid >= (item.total || 0) - 0.005;
                     return `
@@ -1069,12 +1101,29 @@
                                 data-action="payments-modal" data-trip="${trip.id}" data-item="${item.id}">➔</button>
                     </div>`;
                 }).join('');
+
+                // Renderizamos las líneas del presupuesto diario
+                if (dailyItems.length > 0) {
+                    rows += dailyItems.map(item => `
+                        <div class="tm-subcat-row" style="background: rgba(148,163,184,0.03); border-top: 1px dashed var(--tm-border);">
+                            <div class="tm-subcat-info">
+                                <div class="tm-subcat-name">📅 ${TripManager.esc(item.description || 'Presupuesto Diario')}</div>
+                                <div class="tm-subcat-detail">Gasto del día</div>
+                                <div class="tm-subcat-paid">${item.real > 0 ? 'Pagado ' + TripManager.fmt(item.real) : 'Sin pagos registrados'}</div>
+                            </div>
+                            <span class="tm-badge tm-badge-${item.real >= item.budgeted && item.real > 0 ? 'pagado' : 'pendiente'}">${item.real >= item.budgeted && item.real > 0 ? 'Pagado' : 'Pendiente'}</span>
+                            <span class="tm-subcat-total">${TripManager.fmt(item.budgeted)}</span>
+                            <span style="width:34px"></span> <!-- Espacio para alinear con el botón de la derecha -->
+                        </div>
+                    `).join('');
+                }
+
                 return `
                 <div class="tm-acc-item ${open ? 'open' : ''}">
                     <button type="button" class="tm-acc-head" data-action="toggle-acc" data-key="${key}">
                         <span class="tm-acc-icon">${cat.icon}</span>
                         <span class="tm-acc-title">${TripManager.esc(cat.name)}</span>
-                        <span class="tm-acc-sum">${TripManager.fmt(catPaid)} / ${TripManager.fmt(catTotal)}</span>
+                        <span class="tm-acc-sum">${TripManager.fmt(paidGeneral)} / ${TripManager.fmt(totalGeneral)}</span>
                         <span class="tm-acc-chev">▶</span>
                     </button>
                     <div class="tm-acc-body">${rows}</div>
@@ -1095,12 +1144,22 @@
             return trip.days.map((day, di) => {
                 const b = day.items.reduce((s, i) => s + (i.budgeted || 0), 0);
                 const r = day.items.reduce((s, i) => s + (i.real || 0), 0);
+                
                 const rows = day.items.map((it, ii) => {
                     const over = (it.real || 0) > (it.budgeted || 0) && (it.real || 0) > 0;
                     const catColor = (cats.find(c => c.name === it.category) || {}).color || 'var(--tm-primary)';
+                    
+                    // Renderizamos la descripción si existe
+                    const descHtml = it.description 
+                        ? `<span style="font-size:10px; color:var(--tm-text-muted); font-weight:400; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px;">${TripManager.esc(it.description)}</span>` 
+                        : '';
+
                     return `
                     <div class="tm-dline ${over ? 'over' : ''}">
-                        <span class="tm-dline-cat" style="--dot:${catColor}">${TripManager.esc(it.category || 'Otros')}</span>
+                        <div style="display:flex; flex-direction:column; min-width:0; justify-content:center;">
+                            <span class="tm-dline-cat" style="--dot:${catColor}">${TripManager.esc(it.category || 'Otros')}</span>
+                            ${descHtml}
+                        </div>
                         <input class="tm-input tm-input-xs" type="number" min="0" step="1" inputmode="decimal"
                                value="${it.budgeted}" data-action="day-budgeted" data-day="${di}" data-item="${ii}" title="Presupuesto">
                         <input class="tm-input tm-input-xs ${over ? 'neg' : ''}" type="number" min="0" step="1" inputmode="decimal"
@@ -1108,6 +1167,7 @@
                         <button type="button" class="tm-del" data-action="del-expense" data-day="${di}" data-item="${ii}" title="Eliminar">✕</button>
                     </div>`;
                 }).join('');
+                
                 return `
                 <div class="tm-day-card tm-day-card-h">
                     <div class="tm-day-head">
