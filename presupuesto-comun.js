@@ -731,6 +731,19 @@ const BudgetApp = (function () {
         }
     }
 
+    function openMoneyBudgetModal(type, id) {
+        const rows = getMoneyRows();
+        const row = [].concat(rows[type === 'recurring' ? 'recurring' : type + 's']).find(r => r.id === id);
+        if (!row) return;
+        const cur = row.budget;
+        const val = prompt(`Presupuesto ${App.formatPeriod(currentPeriod)} · ${row.name}\n(Deja el valor para mantenerlo)`, cur);
+        if (val === null) return;
+        const n = parseFloat(val);
+        if (isNaN(n) || n < 0) return;
+        if (App.updateBudgetItemAmount) App.updateBudgetItemAmount(id, type, n, currentPeriod);
+        render();
+    }
+
     function openMoneyModal(type, id) {
         if (type === 'wallet' && window.DineroApp) window.DineroApp.openWalletModal(id);
         else if (type === 'debt' && window.DineroApp) window.DineroApp.openDebtModal(id);
